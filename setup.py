@@ -1,31 +1,43 @@
+# setup.py
 from setuptools import setup, find_packages
-from pathlib import Path
+import pathlib
 
-this_directory = Path(__file__).parent
-long_description = (this_directory / "README.md").read_text(encoding="utf-8")
+HERE = pathlib.Path(__file__).parent
+
+# read the long description from your README
+long_description = (HERE / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="aiwaf",
-    version="0.1.3",
-    description="AI‑driven pluggable Web Application Firewall for Django (CSV or DB storage)",
+    version="0.2.0",
+    description="AI‑driven, self‑learning Web Application Firewall for Django",
     long_description=long_description,
-    long_description_content_type="text/markdown",  # <- required for markdown support
+    long_description_content_type="text/markdown",
     author="Aayush Gauba",
-    packages=find_packages(),
-    package_data={
-        "aiwaf": ["resources/*.pkl"],
-    },
-    include_package_data=True,
+    url="https://github.com/aayushgauba/aiwaf",
+    license="MIT",
+    packages=find_packages(exclude=["tests*", "docs*"]),
+    python_requires=">=3.8",
     install_requires=[
-        "django>=3.0",
-        "scikit-learn",
-        "numpy",
-        "pandas",
-        "joblib",
+        "Django>=3.2",
+        "numpy>=1.21",
+        "pandas>=1.3",
+        "scikit-learn>=1.0",
+        "joblib>=1.1",
     ],
+    include_package_data=True,
+    package_data={
+        # include your pretrained model and any JSON resources
+        "aiwaf": ["resources/*.pkl", "resources/*.json"]
+    },
     entry_points={
         "console_scripts": [
-            "aiwaf-detect=aiwaf.trainer:detect_and_train",
+            "aiwaf-detect=aiwaf.trainer:train",
         ]
     },
+    classifiers=[
+        "Framework :: Django",
+        "Programming Language :: Python :: 3",
+        "License :: MIT License",
+    ],
 )
