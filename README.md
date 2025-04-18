@@ -65,7 +65,7 @@ pip install aiwaf
 Or for local dev:
 
 ```bash
-git clone https://github.com/yourusername/aiwaf.git
+git clone https://github.com/aayushgauba/aiwaf.git
 cd aiwaf
 pip install -e .
 ```
