@@ -29,6 +29,7 @@ jobs:
       - name: Build release distributions
         run: |
           # NOTE: put your own distribution build steps here.
+          rm -rf dist/ build/ aiwaf.egg-info
           python -m pip install build
           python -m build
 
