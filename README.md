@@ -164,7 +164,7 @@ Schedule it to run daily via `cron`, `Celery beat`, or systemd timer.
 
 ---
 
-## 📄 License
+##  License
 
 This project is licensed under the **MIT License** — see `LICENSE` for details.
 
