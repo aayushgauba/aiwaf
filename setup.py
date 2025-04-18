@@ -6,7 +6,7 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="aiwaf",
-    version="0.1.1",
+    version="0.1.2",
     description="AI‑driven pluggable Web Application Firewall for Django (CSV or DB storage)",
     long_description=long_description,
     long_description_content_type="text/markdown",  # <- required for markdown support
