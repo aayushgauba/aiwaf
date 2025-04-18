@@ -80,6 +80,14 @@ pip install -e .
 ```python
 INSTALLED_APPS += ["aiwaf"]
 
+### Database Setup
+
+After adding `aiwaf` to your `INSTALLED_APPS`, create the necessary tables for the IP‐blacklist and dynamic‐keyword models:
+
+```bash
+python manage.py makemigrations aiwaf
+python manage.py migrate
+
 # Required
 AIWAF_ACCESS_LOG = "/var/log/nginx/access.log"
 
