@@ -1,4 +1,5 @@
-# AI‑WAF
+
+# AI‑WAF 
 
 > A self‑learning, Django‑friendly Web Application Firewall  
 > with rate‑limiting, anomaly detection, honeypots, UUID‑tamper protection, dynamic keyword extraction, file‑extension probing detection, and daily retraining.
