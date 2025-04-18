@@ -26,3 +26,11 @@ class BlacklistEntry(models.Model):
 
     def __str__(self):
         return f"{self.ip_address} ({self.reason})"
+
+class DynamicKeyword(models.Model):
+    keyword      = models.CharField(max_length=100, unique=True)
+    count        = models.PositiveIntegerField(default=0)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-count']

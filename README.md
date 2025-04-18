@@ -1,7 +1,7 @@
 # AI‑WAF
 
-> A self-learning, Django-friendly Web Application Firewall  
-> with rate-limiting, anomaly detection, honeypots, UUID-tamper protection, and daily retraining.
+> A self‑learning, Django‑friendly Web Application Firewall  
+> with rate‑limiting, anomaly detection, honeypots, UUID‑tamper protection, dynamic keyword extraction, file‑extension probing detection, and daily retraining.
 
 ---
 
@@ -12,15 +12,16 @@ aiwaf/
 ├── __init__.py
 ├── blacklist_manager.py
 ├── middleware.py
-├── trainer.py                   # exposes detect_and_train()
+├── trainer.py                   # exposes train()
 ├── utils.py
 ├── template_tags/
 │   └── aiwaf_tags.py
 ├── resources/
-│   └── model.pkl                # pre-trained base model
+│   ├── model.pkl                # pre‑trained base model
+│   └── dynamic_keywords.json    # evolves daily
 ├── management/
 │   └── commands/
-│       └── detect_and_train.py  # python manage.py detect_and_train
+│       └── detect_and_train.py  # `python manage.py detect_and_train`
 └── LICENSE
 ```
 
@@ -29,42 +30,44 @@ aiwaf/
 ## Features
 
 - **IP Blocklist**  
-  Automatically blocks suspicious IPs; optionally backed by CSV or Django model.
+  Instantly blocks suspicious IPs (supports CSV fallback or Django model).
 
 - **Rate Limiting**  
-  Sliding window logic blocks IPs exceeding a threshold of requests per second.
+  Sliding‑window blocks flooders (> `AIWAF_RATE_MAX` per `AIWAF_RATE_WINDOW`), then blacklists them.
 
 - **AI Anomaly Detection**  
-  IsolationForest trained on real logs with features like:
-  - Path length
-  - Keyword hits
-  - Response time
-  - Status code index
-  - Burst count
-  - Total 404s
+  IsolationForest on features:
+  - Path length  
+  - Keyword hits (static + dynamic)  
+  - Response time  
+  - Status‑code index  
+  - Burst count  
+  - Total 404s  
+
+- **Dynamic Keyword Extraction**  
+  Every retrain: top 10 most frequent “words” from 4xx/5xx paths are appended to your malicious keyword set.
+
+- **File‑Extension Probing Detection**  
+  Tracks repeated 404s on common web‑extensions (e.g. `.php`, `.asp`) and auto‑blocks after a burst.
 
 - **Honeypot Field**  
-  Hidden form field that bots are likely to fill — if triggered, the IP is blocked.
+  Hidden form field (via template tag) that bots fill → instant block.
 
 - **UUID Tampering Protection**  
-  Detects if someone is probing by injecting random/nonexistent UUIDs into URLs.
+  Any `<uuid:…>` URL that doesn’t map to **any** model in its Django app gets blocked.
 
 - **Daily Retraining**  
-  A single command retrains your model every day based on your logs.
+  Reads rotated/gzipped logs, auto‑blocks 404 floods (≥6), retrains the model, updates `model.pkl` + `dynamic_keywords.json`.
 
 ---
 
 ## Installation
 
-Install locally or from PyPI:
-
 ```bash
+# From PyPI
 pip install aiwaf
-```
 
-Or for local dev:
-
-```bash
+# Or for local development
 git clone https://github.com/aayushgauba/aiwaf.git
 cd aiwaf
 pip install -e .
@@ -75,25 +78,28 @@ pip install -e .
 ## ⚙️ Configuration (`settings.py`)
 
 ```python
-INSTALLED_APPS += [
-    "aiwaf",
-]
+INSTALLED_APPS += ["aiwaf"]
 
 # Required
 AIWAF_ACCESS_LOG = "/var/log/nginx/access.log"
 
-# Optional (defaults included)
-AIWAF_MODEL_PATH = BASE_DIR / "aiwaf" / "resources" / "model.pkl"
-AIWAF_MALICIOUS_KEYWORDS = [".php", "xmlrpc", "wp-", ".env", ".git", ".bak", "conflg", "shell", "filemanager"]
-AIWAF_STATUS_CODES = ["200", "403", "404", "500"]
-AIWAF_HONEYPOT_FIELD = "hp_field"
+# Optional (defaults shown)
+AIWAF_MODEL_PATH         = BASE_DIR / "aiwaf" / "resources" / "model.pkl"
+AIWAF_HONEYPOT_FIELD     = "hp_field"
+AIWAF_RATE_WINDOW        = 10         # seconds
+AIWAF_RATE_MAX           = 20         # max reqs/window
+AIWAF_RATE_FLOOD         = 10         # flood threshold
+AIWAF_WINDOW_SECONDS     = 60         # anomaly window
+AIWAF_FILE_EXTENSIONS    = [".php", ".asp", ".jsp"]  # 404‑burst tracked extensions
 ```
+
+> **Note:** You no longer need to define `AIWAF_MALICIOUS_KEYWORDS` or `AIWAF_STATUS_CODES` in your settings — they’re built in and evolve dynamically.
 
 ---
 
 ## Middleware Setup
 
-Add to `MIDDLEWARE` in order:
+Add in **this** order to your `MIDDLEWARE` list:
 
 ```python
 MIDDLEWARE = [
@@ -102,75 +108,63 @@ MIDDLEWARE = [
     "aiwaf.middleware.AIAnomalyMiddleware",
     "aiwaf.middleware.HoneypotMiddleware",
     "aiwaf.middleware.UUIDTamperMiddleware",
-    ...
+    # ... other middleware ...
 ]
 ```
 
 ---
 
-## Honeypot Field (in template)
+## Honeypot Field (in your template)
 
-```html
+```django
 {% load aiwaf_tags %}
 
 <form method="post">
   {% csrf_token %}
   {% honeypot_field %}
-  <!-- other fields -->
+  <!-- your real fields -->
 </form>
 ```
 
-The hidden field will be `<input type="hidden" name="hp_field">`.  
-If it’s ever filled → IP gets blocked.
+> Renders a hidden `<input name="hp_field" style="display:none">`.  
+> Any non‑empty submission → IP blacklisted.
 
 ---
 
-##  Run Detection + Training
+## Running Detection & Training
 
 ```bash
 python manage.py detect_and_train
 ```
 
-What it does:
-
-- Reads logs (supports `.gz` and rotated logs).
-- Detects excessive 404s (≥6) → instant block.
-- Builds feature vectors from logs.
-- Trains IsolationForest and saves `model.pkl`.
-
-Schedule it to run daily via `cron`, `Celery beat`, or systemd timer.
+**What happens:**
+1. Read access logs
+2. Auto‑block IPs with ≥ 6 total 404s
+3. Extract features & train IsolationForest
+4. Save `model.pkl`
+5. Extract top 10 dynamic keywords from 4xx/5xx
 
 ---
 
-## How It Works (Simplified)
+## How It Works
 
-| Middleware             | Functionality                                                |
-|------------------------|--------------------------------------------------------------|
-| IPBlockMiddleware      | Blocks requests from known blacklisted IPs                   |
-| RateLimitMiddleware    | Blocks flooders (>20/10s) and blacklists them (>10/10s)      |
-| AIAnomalyMiddleware    | Uses ML to detect suspicious behavior in request patterns    |
-| HoneypotMiddleware     | Detects bots filling hidden inputs in forms                  |
-| UUIDTamperMiddleware   | Detects guessing/probing by checking invalid UUID access     |
-
----
-
-## Development Roadmap
-
-- [ ] Add CSV blocklist fallback
-- [ ] Admin dashboard integration
-- [ ] Auto-pruning of old block entries
-- [ ] Real-time log streaming compatibility
-- [ ] Docker/Helm deployment guide
+| Middleware               | Purpose                                                         |
+|--------------------------|------------------------------------------------------------------|
+| IPBlockMiddleware        | Blocks requests from known blacklisted IPs                      |
+| RateLimitMiddleware      | Enforces burst & flood thresholds                               |
+| AIAnomalyMiddleware      | ML‑driven behavior analysis + block on anomaly                  |
+| HoneypotMiddleware       | Detects bots filling hidden inputs in forms                     |
+| UUIDTamperMiddleware     | Blocks guessed/nonexistent UUIDs across all models in an app    |
 
 ---
 
-##  License
+## License
 
-This project is licensed under the **MIT License** — see `LICENSE` for details.
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 ---
 
 ## Credits
 
-**AIWAF** by [Aayush Gauba](https://github.com/aayushgauba)  
-> "Let your firewall learn and evolve with your logs. Make your site a fortress."
+**AI‑WAF** by [Aayush Gauba](https://github.com/aayushgauba)  
+> “Let your firewall learn and evolve — keep your site a fortress.”
