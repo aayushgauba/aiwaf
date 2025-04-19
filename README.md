@@ -164,7 +164,6 @@ python manage.py detect_and_train
 | AIAnomalyMiddleware                | ML‑driven behavior analysis + block on anomaly                  |
 | HoneypotMiddleware                 | Detects bots filling hidden inputs in forms                     |
 | UUIDTamperMiddleware               | Blocks guessed/nonexistent UUIDs across all models in an app    |
-
 ---
 
 ## License
