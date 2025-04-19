@@ -157,13 +157,13 @@ python manage.py detect_and_train
 
 ## How It Works
 
-| Middleware               | Purpose                                                         |
-|--------------------------|------------------------------------------------------------------|
-| IPBlockMiddleware        | Blocks requests from known blacklisted IPs                      |
-| RateLimitMiddleware      | Enforces burst & flood thresholds                               |
-| AIAnomalyMiddleware      | ML‑driven behavior analysis + block on anomaly                  |
-| HoneypotMiddleware       | Detects bots filling hidden inputs in forms                     |
-| UUIDTamperMiddleware     | Blocks guessed/nonexistent UUIDs across all models in an app    |
+| Middleware                         | Purpose                                                         |
+|------------------------------------|-----------------------------------------------------------------|
+| IPAndKeywordBlockMiddleware        | Blocks requests from known blacklisted IPs and Keywords         |
+| RateLimitMiddleware                | Enforces burst & flood thresholds                               |
+| AIAnomalyMiddleware                | ML‑driven behavior analysis + block on anomaly                  |
+| HoneypotMiddleware                 | Detects bots filling hidden inputs in forms                     |
+| UUIDTamperMiddleware               | Blocks guessed/nonexistent UUIDs across all models in an app    |
 
 ---
 

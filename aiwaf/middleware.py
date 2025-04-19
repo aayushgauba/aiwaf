@@ -13,11 +13,11 @@ from django.conf import settings
 from django.core.cache import cache
 from django.db.models import F
 from django.apps import apps
+from django.urls import get_resolver
 
 from .blacklist_manager import BlacklistManager
 from .models import DynamicKeyword
 
-# ─── Model loading with fallback ────────────────────────────────────────────
 MODEL_PATH = getattr(
     settings,
     "AIWAF_MODEL_PATH",
@@ -25,7 +25,6 @@ MODEL_PATH = getattr(
 )
 MODEL = joblib.load(MODEL_PATH)
 
-# ─── Static keywords default ────────────────────────────────────────────────
 STATIC_KW = getattr(
     settings,
     "AIWAF_MALICIOUS_KEYWORDS",
@@ -41,15 +40,46 @@ def get_ip(request):
         return xff.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR", "")
 
-
-class IPBlockMiddleware:
+class IPAndKeywordBlockMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
+        self.url_patterns = self._collect_view_paths()
+
+    def _collect_view_paths(self):
+        resolver = get_resolver()
+        patterns = set()
+
+        def extract(patterns_list, prefix=""):
+            for p in patterns_list:
+                if hasattr(p, "url_patterns"):
+                    extract(p.url_patterns, prefix + str(p.pattern))
+                else:
+                    pat = (prefix + str(p.pattern)).strip("^$")
+                    patterns.add(pat)
+        extract(resolver.url_patterns)
+        return patterns
 
     def __call__(self, request):
         ip = get_ip(request)
+        path = request.path.lower()
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
+        segments = [seg for seg in re.split(r"\W+", path) if len(seg) > 3]
+        for seg in segments:
+            obj, _ = DynamicKeyword.objects.get_or_create(keyword=seg)
+            DynamicKeyword.objects.filter(pk=obj.pk).update(count=F("count") + 1)
+        dynamic_top = list(
+            DynamicKeyword.objects
+            .order_by("-count")
+            .values_list("keyword", flat=True)[: getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10)]
+        )
+        all_kw = set(STATIC_KW) | set(dynamic_top)
+        safe_kw = {kw for kw in all_kw if any(kw in pat for pat in self.url_patterns)}
+        suspicious_kw = all_kw - safe_kw
+        for seg in segments:
+            if seg in suspicious_kw:
+                BlacklistManager.block(ip, f"Keyword block: {seg}")
+                return JsonResponse({"error": "blocked"}, status=403)
         return self.get_response(request)
 
 
