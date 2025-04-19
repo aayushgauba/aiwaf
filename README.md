@@ -112,7 +112,7 @@ Add in **this** order to your `MIDDLEWARE` list:
 
 ```python
 MIDDLEWARE = [
-    "aiwaf.middleware.IPBlockMiddleware",
+    "aiwaf.middleware.IPAndKeywordBlockMiddleware",
     "aiwaf.middleware.RateLimitMiddleware",
     "aiwaf.middleware.AIAnomalyMiddleware",
     "aiwaf.middleware.HoneypotMiddleware",
