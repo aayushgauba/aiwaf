@@ -5,7 +5,7 @@ import re
 import os
 import numpy as np
 import joblib
-
+from django.db.models import UUIDField
 from collections import defaultdict
 from django.utils.deprecation import MiddlewareMixin
 from django.http import JsonResponse
@@ -178,8 +178,12 @@ class UUIDTamperMiddleware(MiddlewareMixin):
         app_label = view_func.__module__.split(".")[0]
         app_cfg   = apps.get_app_config(app_label)
         for Model in app_cfg.get_models():
-            if Model.objects.filter(pk=uid).exists():
-                return None
+            if isinstance(Model._meta.pk, UUIDField):
+                try:
+                    if Model.objects.filter(pk=uid).exists():
+                        return None
+                except (ValueError, TypeError):
+                    continue
 
         BlacklistManager.block(ip, "UUID tampering")
         return JsonResponse({"error": "blocked"}, status=403)
