@@ -43,25 +43,29 @@ def get_ip(request):
 class IPAndKeywordBlockMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
-        self.url_patterns = self._collect_view_paths()
+        self.safe_prefixes = self._collect_safe_prefixes()
 
-    def _collect_view_paths(self):
+    def _collect_safe_prefixes(self):
         resolver = get_resolver()
-        patterns = set()
+        prefixes = set()
 
         def extract(patterns_list, prefix=""):
             for p in patterns_list:
-                if hasattr(p, "url_patterns"):
+                if hasattr(p, "url_patterns"):  # include()
+                    full_prefix = (prefix + str(p.pattern)).strip("^/").split("/")[0]
+                    prefixes.add(full_prefix)
                     extract(p.url_patterns, prefix + str(p.pattern))
                 else:
                     pat = (prefix + str(p.pattern)).strip("^$")
-                    patterns.add(pat)
+                    path_parts = pat.strip("/").split("/")
+                    if path_parts:
+                        prefixes.add(path_parts[0])
         extract(resolver.url_patterns)
-        return patterns
+        return prefixes
 
     def __call__(self, request):
         ip = get_ip(request)
-        path = request.path.lower()
+        path = request.path.lower().lstrip("/")
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
         segments = [seg for seg in re.split(r"\W+", path) if len(seg) > 3]
@@ -74,8 +78,10 @@ class IPAndKeywordBlockMiddleware:
             .values_list("keyword", flat=True)[: getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10)]
         )
         all_kw = set(STATIC_KW) | set(dynamic_top)
-        safe_kw = {kw for kw in all_kw if any(kw in pat for pat in self.url_patterns)}
-        suspicious_kw = all_kw - safe_kw
+        suspicious_kw = {
+            kw for kw in all_kw
+            if not any(path.startswith(prefix) for prefix in self.safe_prefixes if prefix)
+        }
         for seg in segments:
             if seg in suspicious_kw:
                 BlacklistManager.block(ip, f"Keyword block: {seg}")
@@ -120,12 +126,9 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         now = time.time()
         key = f"aiwaf:{ip}"
         data = cache.get(key, [])
-        # TODO: you may want to capture real status & response_time in process_response
         data.append((now, request.path, 0, 0.0))
         data = [d for d in data if now - d[0] < self.WINDOW]
         cache.set(key, data, timeout=self.WINDOW)
-
-        # update dynamic‐keyword counts
         for seg in re.split(r"\W+", request.path.lower()):
             if len(seg) > 3:
                 obj, _ = DynamicKeyword.objects.get_or_create(keyword=seg)
@@ -133,8 +136,6 @@ class AIAnomalyMiddleware(MiddlewareMixin):
 
         if len(data) < 5:
             return None
-
-        # pull top‐N dynamic tokens
         top_dynamic = list(
             DynamicKeyword.objects
             .order_by("-count")

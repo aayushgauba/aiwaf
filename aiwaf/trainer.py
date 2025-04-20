@@ -12,6 +12,9 @@ import joblib
 from django.conf import settings
 from django.apps import apps
 from django.db.models import F
+from django.urls import get_resolver
+
+# ─── CONFIG ────────────────────────────────────────────────────────────────
 
 LOG_PATH = settings.AIWAF_ACCESS_LOG
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "resources", "model.pkl")
@@ -26,6 +29,27 @@ _LOG_RX = re.compile(
 
 BlacklistEntry = apps.get_model("aiwaf", "BlacklistEntry")
 DynamicKeyword = apps.get_model("aiwaf", "DynamicKeyword")
+
+
+
+def path_exists_in_django(path):
+    from django.urls import get_resolver
+    from django.urls.resolvers import URLPattern, URLResolver
+
+    path = path.split("?")[0].lstrip("/")
+    try:
+        get_resolver().resolve(f"/{path}")
+        return True
+    except:
+        pass
+    parts = path.split("/")
+    root_resolver = get_resolver()
+    for pattern in root_resolver.url_patterns:
+        if isinstance(pattern, URLResolver):
+            prefix = pattern.pattern.describe().strip("^/")
+            if prefix and path.startswith(prefix):
+                return True
+    return False
 
 
 def _read_all_logs():
@@ -62,10 +86,11 @@ def _parse(line):
     }
 
 
+
 def train():
     raw_lines = _read_all_logs()
     if not raw_lines:
-        print(" No log lines found – check AIWAF_ACCESS_LOG setting.")
+        print("No log lines found – check AIWAF_ACCESS_LOG setting.")
         return
     parsed = []
     ip_404 = defaultdict(int)
@@ -89,6 +114,7 @@ def train():
                 blocked_404.append(ip)
     if blocked_404:
         print(f"Blocked {len(blocked_404)} IPs for 404 flood: {blocked_404}")
+
     feature_dicts = []
     for r in parsed:
         ip = r["ip"]
@@ -97,7 +123,10 @@ def train():
             if (r["timestamp"] - t).total_seconds() <= 10
         )
         total404 = ip_404[ip]
-        kw_hits = sum(k in r["path"].lower() for k in STATIC_KW)
+        is_known_path = path_exists_in_django(r["path"])
+        kw_hits = 0
+        if not is_known_path:
+            kw_hits = sum(k in r["path"].lower() for k in STATIC_KW)
         status_idx = STATUS_IDX.index(r["status"]) if r["status"] in STATUS_IDX else -1
         feature_dicts.append({
             "ip": ip,
@@ -112,7 +141,6 @@ def train():
     if not feature_dicts:
         print("⚠️ Nothing to train on – no valid log entries.")
         return
-
     df = pd.DataFrame(feature_dicts)
     feature_cols = [c for c in df.columns if c != "ip"]
     X = df[feature_cols].astype(float).values
@@ -120,8 +148,8 @@ def train():
     model.fit(X)
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
     joblib.dump(model, MODEL_PATH)
-    print(f"✅ Model trained on {len(X)} samples → {MODEL_PATH}")
-    preds = model.predict(X)  # -1 for outliers
+    print(f"Model trained on {len(X)} samples → {MODEL_PATH}")
+    preds = model.predict(X)
     anomalous_ips = set(df.loc[preds == -1, 'ip'])
     blocked_anom = []
     for ip in anomalous_ips:
@@ -132,19 +160,21 @@ def train():
         if created:
             blocked_anom.append(ip)
     if blocked_anom:
-        print(f" Blocked {len(blocked_anom)} anomalous IPs: {blocked_anom}")
-
+        print(f"🚫 Blocked {len(blocked_anom)} anomalous IPs: {blocked_anom}")
     tokens = Counter()
     for r in parsed:
-        if r["status"].startswith(("4", "5")):
+        if r["status"].startswith(("4", "5")) and not path_exists_in_django(r["path"]):
             for seg in re.split(r"\W+", r["path"].lower()):
                 if len(seg) > 3 and seg not in STATIC_KW:
                     tokens[seg] += 1
+
     top_tokens = tokens.most_common(10)
     for kw, cnt in top_tokens:
         obj, _ = DynamicKeyword.objects.get_or_create(keyword=kw)
         DynamicKeyword.objects.filter(pk=obj.pk).update(count=F("count") + cnt)
-    print(f"DynamicKeyword DB updated with top tokens: {[kw for kw, _ in top_tokens]}")
+
+    print(f" DynamicKeyword DB updated with top tokens: {[kw for kw, _ in top_tokens]}")
+
 
 
 if __name__ == "__main__":
