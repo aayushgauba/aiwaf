@@ -18,6 +18,14 @@ from django.urls import get_resolver
 from .blacklist_manager import BlacklistManager
 from .models import DynamicKeyword
 
+def is_exempt_path(path):
+    path = path.lower()
+    exempt_paths = getattr(settings, "AIWAF_EXEMPT_PATHS", [])
+    for exempt in exempt_paths:
+        if path == exempt or path.startswith(exempt.rstrip("/") + "/"):
+            return True
+    return False
+
 MODEL_PATH = getattr(
     settings,
     "AIWAF_MODEL_PATH",
@@ -64,8 +72,11 @@ class IPAndKeywordBlockMiddleware:
         return prefixes
 
     def __call__(self, request):
+        raw_path = request.path.lower()
+        if is_exempt_path(raw_path):
+            return self.get_response(request)
         ip = get_ip(request)
-        path = request.path.lower().lstrip("/")
+        path = raw_path.lstrip("/")
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
         segments = [seg for seg in re.split(r"\W+", path) if len(seg) > 3]
@@ -99,6 +110,8 @@ class RateLimitMiddleware:
         self.logs = defaultdict(list)
 
     def __call__(self, request):
+        if is_exempt_path(request.path):
+            return self.get_response(request)
         ip  = get_ip(request)
         now = time.time()
         recs = [t for t in self.logs[ip] if now - t < self.WINDOW]
@@ -119,6 +132,8 @@ class AIAnomalyMiddleware(MiddlewareMixin):
     TOP_N  = getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10)
 
     def process_request(self, request):
+        if is_exempt_path(request.path):
+            return None
         ip = get_ip(request)
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
@@ -160,6 +175,8 @@ class AIAnomalyMiddleware(MiddlewareMixin):
 
 class HoneypotMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
+        if is_exempt_path(request.path):
+            return None
         trap = request.POST.get(getattr(settings, "AIWAF_HONEYPOT_FIELD", "hp_field"), "")
         if trap:
             ip = get_ip(request)
@@ -170,6 +187,8 @@ class HoneypotMiddleware(MiddlewareMixin):
 
 class UUIDTamperMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
+        if is_exempt_path(request.path):
+            return None
         uid = view_kwargs.get("uuid")
         if not uid:
             return None

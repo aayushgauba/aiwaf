@@ -14,7 +14,6 @@ from django.apps import apps
 from django.db.models import F
 from django.urls import get_resolver
 
-# ─── CONFIG ────────────────────────────────────────────────────────────────
 
 LOG_PATH = settings.AIWAF_ACCESS_LOG
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "resources", "model.pkl")
@@ -30,7 +29,13 @@ _LOG_RX = re.compile(
 BlacklistEntry = apps.get_model("aiwaf", "BlacklistEntry")
 DynamicKeyword = apps.get_model("aiwaf", "DynamicKeyword")
 
-
+def is_exempt_path(path):
+    path = path.lower()
+    exempt_paths = getattr(settings, "AIWAF_EXEMPT_PATHS", [])
+    for exempt in exempt_paths:
+        if path == exempt or path.startswith(exempt.rstrip("/") + "/"):
+            return True
+    return False
 
 def path_exists_in_django(path):
     from django.urls import get_resolver
@@ -51,6 +56,18 @@ def path_exists_in_django(path):
                 return True
     return False
 
+def remove_exempt_keywords():
+    exempt_paths = getattr(settings, "AIWAF_EXEMPT_PATHS", [])
+    exempt_tokens = set()
+
+    for path in exempt_paths:
+        path = path.strip("/").lower()
+        segments = re.split(r"\W+", path)
+        exempt_tokens.update(seg for seg in segments if len(seg) > 3)
+
+    if exempt_tokens:
+        deleted_count, _ = DynamicKeyword.objects.filter(keyword__in=exempt_tokens).delete()
+        print(f"Removed {deleted_count} dynamic keywords that are now exempt: {list(exempt_tokens)}")
 
 def _read_all_logs():
     lines = []
@@ -88,6 +105,7 @@ def _parse(line):
 
 
 def train():
+    remove_exempt_keywords()
     raw_lines = _read_all_logs()
     if not raw_lines:
         print("No log lines found – check AIWAF_ACCESS_LOG setting.")
@@ -125,7 +143,7 @@ def train():
         total404 = ip_404[ip]
         is_known_path = path_exists_in_django(r["path"])
         kw_hits = 0
-        if not is_known_path:
+        if not is_known_path and not is_exempt_path(r["path"]):
             kw_hits = sum(k in r["path"].lower() for k in STATIC_KW)
         status_idx = STATUS_IDX.index(r["status"]) if r["status"] in STATUS_IDX else -1
         feature_dicts.append({
