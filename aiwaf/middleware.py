@@ -101,29 +101,29 @@ class IPAndKeywordBlockMiddleware:
 
 
 class RateLimitMiddleware:
-    WINDOW = 10
-    MAX    = 20
-    FLOOD  = 10
+    WINDOW = 10  # seconds
+    MAX = 20     # soft limit
+    FLOOD = 40   # hard limit
 
     def __init__(self, get_response):
         self.get_response = get_response
-        self.logs = defaultdict(list)
 
     def __call__(self, request):
         if is_exempt_path(request.path):
             return self.get_response(request)
-        ip  = get_ip(request)
-        now = time.time()
-        recs = [t for t in self.logs[ip] if now - t < self.WINDOW]
-        recs.append(now)
-        self.logs[ip] = recs
 
-        if len(recs) > self.MAX:
-            return JsonResponse({"error": "too_many_requests"}, status=429)
-        if len(recs) > self.FLOOD:
+        ip = get_ip(request)
+        key = f"ratelimit:{ip}"
+        now = time.time()
+        timestamps = cache.get(key, [])
+        timestamps = [t for t in timestamps if now - t < self.WINDOW]
+        timestamps.append(now)
+        cache.set(key, timestamps, timeout=self.WINDOW)
+        if len(timestamps) > self.FLOOD:
             BlacklistManager.block(ip, "Flood pattern")
             return JsonResponse({"error": "blocked"}, status=403)
-
+        if len(timestamps) > self.MAX:
+            return JsonResponse({"error": "too_many_requests"}, status=429)
         return self.get_response(request)
 
 
