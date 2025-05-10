@@ -14,7 +14,7 @@ from django.core.cache import cache
 from django.db.models import F
 from django.apps import apps
 from django.urls import get_resolver
-from .trainer import STATIC_KW, STATUS_IDX, is_exempt_path, path_exists_in_django, get_ip
+from .trainer import STATIC_KW, STATUS_IDX, is_exempt_path, path_exists_in_django
 from .blacklist_manager import BlacklistManager
 from .models import DynamicKeyword
 
