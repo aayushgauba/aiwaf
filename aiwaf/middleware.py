@@ -14,7 +14,7 @@ from django.core.cache import cache
 from django.db.models import F
 from django.apps import apps
 from django.urls import get_resolver
-
+from .trainer import STATIC_KW, STATUS_IDX, is_exempt_path, path_exists_in_django, get_ip
 from .blacklist_manager import BlacklistManager
 from .models import DynamicKeyword
 
@@ -131,17 +131,45 @@ class AIAnomalyMiddleware(MiddlewareMixin):
     WINDOW = getattr(settings, "AIWAF_WINDOW_SECONDS", 60)
     TOP_N  = getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10)
 
+    def __init__(self, get_response=None):
+        super().__init__(get_response)
+        model_path = os.path.join(os.path.dirname(__file__), "resources", "model.pkl")
+        self.model = joblib.load(model_path)
+
     def process_request(self, request):
         if is_exempt_path(request.path):
             return None
+        request._start_time = time.time()
         ip = get_ip(request)
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
+        return None
 
+    def process_response(self, request, response):
+        if is_exempt_path(request.path):
+            return response
+        ip = get_ip(request)
         now = time.time()
         key = f"aiwaf:{ip}"
         data = cache.get(key, [])
-        data.append((now, request.path, 0, 0.0))
+        path_len = len(request.path)
+        if not path_exists_in_django(request.path) and not is_exempt_path(request.path):
+            kw_hits = sum(1 for kw in STATIC_KW if kw in request.path.lower())
+        else:
+            kw_hits = 0
+
+        resp_time = now - getattr(request, "_start_time", now)
+        status_code = str(response.status_code)
+        status_idx = STATUS_IDX.index(status_code) if status_code in STATUS_IDX else -1
+        burst_count = sum(1 for (t, _, _, _) in data if now - t <= 10)
+        total_404 = sum(1 for (_, _, st, _) in data if st == 404)
+        feats = [path_len, kw_hits, resp_time, status_idx, burst_count, total_404]
+        X = np.array(feats, dtype=float).reshape(1, -1)
+        if self.model.predict(X)[0] == -1:
+            BlacklistManager.block(ip, "AI anomaly")
+            return JsonResponse({"error": "blocked"}, status=403)
+
+        data.append((now, request.path, response.status_code, resp_time))
         data = [d for d in data if now - d[0] < self.WINDOW]
         cache.set(key, data, timeout=self.WINDOW)
         for seg in re.split(r"\W+", request.path.lower()):
@@ -149,28 +177,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                 obj, _ = DynamicKeyword.objects.get_or_create(keyword=seg)
                 DynamicKeyword.objects.filter(pk=obj.pk).update(count=F("count") + 1)
 
-        if len(data) < 5:
-            return None
-        top_dynamic = list(
-            DynamicKeyword.objects
-            .order_by("-count")
-            .values_list("keyword", flat=True)[: self.TOP_N]
-        )
-        ALL_KW = set(STATIC_KW) | set(top_dynamic)
-
-        total    = len(data)
-        ratio404 = sum(1 for (_, _, st, _) in data if st == 404) / total
-        hits     = sum(any(kw in path.lower() for kw in ALL_KW) for (_, path, _, _) in data)
-        avg_rt   = np.mean([rt for (_, _, _, rt) in data]) if data else 0.0
-        ivs      = [data[i][0] - data[i - 1][0] for i in range(1, total)]
-        avg_iv   = np.mean(ivs) if ivs else 0.0
-
-        X = np.array([[total, ratio404, hits, avg_rt, avg_iv]], dtype=float)
-        if MODEL.predict(X)[0] == -1:
-            BlacklistManager.block(ip, "AI anomaly")
-            return JsonResponse({"error": "blocked"}, status=403)
-
-        return None
+        return response
 
 
 class HoneypotMiddleware(MiddlewareMixin):
