@@ -62,12 +62,31 @@ aiwaf/
 - **UUID Tampering Protection**  
   Blocks guessed or invalid UUIDs that don’t resolve to real models.
 
-- **Exempt Path Awareness**  
-  Fully respects `AIWAF_EXEMPT_PATHS` across all modules — exempt paths are:
+
+**Exempt Path & IP Awareness**
+
+**Exempt Paths:**
+Fully respects `AIWAF_EXEMPT_PATHS` across all modules — exempt paths are:
   - Skipped from keyword learning
   - Immune to AI blocking
   - Ignored in log training
   - Cleaned from `DynamicKeyword` model automatically
+
+**Exempt IPs:**
+You can exempt specific IP addresses from all blocking and blacklisting logic. Exempted IPs will:
+  - Never be added to the blacklist (even if they trigger rules)
+  - Be automatically removed from the blacklist during retraining
+  - Bypass all block/deny logic in middleware
+
+### Managing Exempt IPs
+
+Add an IP to the exemption list using the management command:
+
+```bash
+python manage.py add_ipexemption <ip-address> --reason "optional reason"
+```
+
+This will ensure the IP is never blocked by AI‑WAF. You can also manage exemptions via the Django admin interface.
 
 - **Daily Retraining**  
   Reads rotated logs, auto‑blocks 404 floods, retrains the IsolationForest, updates `model.pkl`, and evolves the keyword DB.
