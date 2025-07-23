@@ -16,7 +16,9 @@ from django.apps import apps
 from django.urls import get_resolver
 from .trainer import STATIC_KW, STATUS_IDX, is_exempt_path, path_exists_in_django
 from .blacklist_manager import BlacklistManager
-from .models import DynamicKeyword
+from .models import DynamicKeyword, IPExemption
+def is_ip_exempted(ip):
+    return IPExemption.objects.filter(ip_address=ip).exists()
 
 def is_exempt_path(path):
     path = path.lower()
@@ -77,6 +79,8 @@ class IPAndKeywordBlockMiddleware:
             return self.get_response(request)
         ip = get_ip(request)
         path = raw_path.lstrip("/")
+        if is_ip_exempted(ip):
+            return self.get_response(request)
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
         segments = [seg for seg in re.split(r"\W+", path) if len(seg) > 3]
@@ -95,8 +99,9 @@ class IPAndKeywordBlockMiddleware:
         }
         for seg in segments:
             if seg in suspicious_kw:
-                BlacklistManager.block(ip, f"Keyword block: {seg}")
-                return JsonResponse({"error": "blocked"}, status=403)
+                if not is_ip_exempted(ip):
+                    BlacklistManager.block(ip, f"Keyword block: {seg}")
+                    return JsonResponse({"error": "blocked"}, status=403)
         return self.get_response(request)
 
 
@@ -120,8 +125,9 @@ class RateLimitMiddleware:
         timestamps.append(now)
         cache.set(key, timestamps, timeout=self.WINDOW)
         if len(timestamps) > self.FLOOD:
-            BlacklistManager.block(ip, "Flood pattern")
-            return JsonResponse({"error": "blocked"}, status=403)
+            if not is_ip_exempted(ip):
+                BlacklistManager.block(ip, "Flood pattern")
+                return JsonResponse({"error": "blocked"}, status=403)
         if len(timestamps) > self.MAX:
             return JsonResponse({"error": "too_many_requests"}, status=429)
         return self.get_response(request)
@@ -141,6 +147,8 @@ class AIAnomalyMiddleware(MiddlewareMixin):
             return None
         request._start_time = time.time()
         ip = get_ip(request)
+        if is_ip_exempted(ip):
+            return None
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
         return None
@@ -166,8 +174,9 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         feats = [path_len, kw_hits, resp_time, status_idx, burst_count, total_404]
         X = np.array(feats, dtype=float).reshape(1, -1)
         if self.model.predict(X)[0] == -1:
-            BlacklistManager.block(ip, "AI anomaly")
-            return JsonResponse({"error": "blocked"}, status=403)
+            if not is_ip_exempted(ip):
+                BlacklistManager.block(ip, "AI anomaly")
+                return JsonResponse({"error": "blocked"}, status=403)
 
         data.append((now, request.path, response.status_code, resp_time))
         data = [d for d in data if now - d[0] < self.WINDOW]
@@ -187,8 +196,9 @@ class HoneypotMiddleware(MiddlewareMixin):
         trap = request.POST.get(getattr(settings, "AIWAF_HONEYPOT_FIELD", "hp_field"), "")
         if trap:
             ip = get_ip(request)
-            BlacklistManager.block(ip, "HONEYPOT triggered")
-            return JsonResponse({"error": "bot_detected"}, status=403)
+            if not is_ip_exempted(ip):
+                BlacklistManager.block(ip, "HONEYPOT triggered")
+                return JsonResponse({"error": "bot_detected"}, status=403)
         return None
 
 
@@ -211,5 +221,6 @@ class UUIDTamperMiddleware(MiddlewareMixin):
                 except (ValueError, TypeError):
                     continue
 
-        BlacklistManager.block(ip, "UUID tampering")
-        return JsonResponse({"error": "blocked"}, status=403)
+        if not is_ip_exempted(ip):
+            BlacklistManager.block(ip, "UUID tampering")
+            return JsonResponse({"error": "blocked"}, status=403)

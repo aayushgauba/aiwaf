@@ -26,8 +26,10 @@ _LOG_RX = re.compile(
     r'(\d{3}).*?"(.*?)" "(.*?)".*?response-time=(\d+\.\d+)'
 )
 
+
 BlacklistEntry = apps.get_model("aiwaf", "BlacklistEntry")
 DynamicKeyword = apps.get_model("aiwaf", "DynamicKeyword")
+IPExemption = apps.get_model("aiwaf", "IPExemption")
 
 
 def is_exempt_path(path: str) -> bool:
@@ -103,6 +105,10 @@ def _parse(line: str) -> dict | None:
 
 def train() -> None:
     remove_exempt_keywords()
+    # Remove any IPs in IPExemption from the blacklist
+    exempt_ips = set(IPExemption.objects.values_list("ip_address", flat=True))
+    if exempt_ips:
+        BlacklistEntry.objects.filter(ip_address__in=exempt_ips).delete()
     raw_lines = _read_all_logs()
     if not raw_lines:
         print("No log lines found – check AIWAF_ACCESS_LOG setting.")

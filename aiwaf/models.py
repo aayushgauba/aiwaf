@@ -34,3 +34,13 @@ class DynamicKeyword(models.Model):
 
     class Meta:
         ordering = ['-count']
+
+
+# Model to store IP addresses that are exempt from blacklisting
+class IPExemption(models.Model):
+    ip_address = models.GenericIPAddressField(unique=True, db_index=True)
+    reason     = models.CharField(max_length=100, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.ip_address} (Exempted: {self.reason})"
