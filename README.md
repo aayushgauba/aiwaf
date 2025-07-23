@@ -66,7 +66,7 @@ aiwaf/
 **Exempt Path & IP Awareness**
 
 **Exempt Paths:**
-Fully respects `AIWAF_EXEMPT_PATHS` across all modules — exempt paths are:
+Set `AIWAF_EXEMPT_PATHS` in your Django `settings.py` (not in your code). Fully respects this setting across all modules — exempt paths are:
   - Skipped from keyword learning
   - Immune to AI blocking
   - Ignored in log training
@@ -128,7 +128,7 @@ AIWAF_RATE_MAX           = 20         # max requests per window
 AIWAF_RATE_FLOOD         = 10         # flood threshold
 AIWAF_WINDOW_SECONDS     = 60         # anomaly detection window
 AIWAF_FILE_EXTENSIONS    = [".php", ".asp", ".jsp"]
-AIWAF_EXEMPT_PATHS       = [          # optional but highly recommended
+AIWAF_EXEMPT_PATHS = [          # optional but highly recommended
     "/favicon.ico",
     "/robots.txt",
     "/static/",
