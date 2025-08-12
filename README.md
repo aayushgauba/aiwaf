@@ -143,6 +143,7 @@ AIWAF_ACCESS_LOG = "/var/log/nginx/access.log"
 ```python
 AIWAF_MODEL_PATH         = BASE_DIR / "aiwaf" / "resources" / "model.pkl"
 AIWAF_MIN_FORM_TIME      = 1.0        # minimum seconds between GET and POST
+AIWAF_AI_CONTAMINATION   = 0.05       # AI anomaly detection sensitivity (5%)
 AIWAF_RATE_WINDOW        = 10         # seconds
 AIWAF_RATE_MAX           = 20         # max requests per window
 AIWAF_RATE_FLOOD         = 10         # flood threshold

@@ -167,7 +167,10 @@ def train() -> None:
     df = pd.DataFrame(feature_dicts)
     feature_cols = [c for c in df.columns if c != "ip"]
     X = df[feature_cols].astype(float).values
-    model = IsolationForest(contamination=0.01, random_state=42)
+    model = IsolationForest(
+        contamination=getattr(settings, "AIWAF_AI_CONTAMINATION", 0.05), 
+        random_state=42
+    )
     model.fit(X)
 
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
