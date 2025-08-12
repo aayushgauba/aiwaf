@@ -34,6 +34,23 @@ IPExemption = apps.get_model("aiwaf", "IPExemption")
 
 def is_exempt_path(path: str) -> bool:
     path = path.lower()
+    
+    # Default login paths that should always be exempt
+    default_login_paths = [
+        "/admin/login/",
+        "/admin/",
+        "/login/",
+        "/accounts/login/",
+        "/auth/login/",
+        "/signin/",
+    ]
+    
+    # Check default login paths
+    for login_path in default_login_paths:
+        if path.startswith(login_path):
+            return True
+    
+    # Check user-configured exempt paths
     for exempt in getattr(settings, "AIWAF_EXEMPT_PATHS", []):
         if path == exempt or path.startswith(exempt.rstrip("/") + "/"):
             return True
@@ -116,6 +133,7 @@ def train() -> None:
 
     parsed = []
     ip_404   = defaultdict(int)
+    ip_404_login = defaultdict(int)  # Track 404s on login paths separately
     ip_times = defaultdict(list)
 
     for line in raw_lines:
@@ -125,15 +143,24 @@ def train() -> None:
         parsed.append(rec)
         ip_times[rec["ip"]].append(rec["timestamp"])
         if rec["status"] == "404":
-            ip_404[rec["ip"]] += 1
+            if is_exempt_path(rec["path"]):
+                ip_404_login[rec["ip"]] += 1  # Login path 404s
+            else:
+                ip_404[rec["ip"]] += 1  # Non-login path 404s
 
-    # 3. Optional immediate 404‐flood blocking
+    # 3. Optional immediate 404‐flood blocking (only for non-login paths)
     for ip, count in ip_404.items():
         if count >= 6:
-            BlacklistEntry.objects.get_or_create(
-                ip_address=ip,
-                defaults={"reason": "Excessive 404s (≥6)"}
-            )
+            # Only block if they have significant non-login 404s
+            login_404s = ip_404_login.get(ip, 0)
+            total_404s = count + login_404s
+            
+            # Don't block if majority of 404s are on login paths
+            if count > login_404s:  # More non-login 404s than login 404s
+                BlacklistEntry.objects.get_or_create(
+                    ip_address=ip,
+                    defaults={"reason": f"Excessive 404s (≥6 non-login, {count}/{total_404s})"}
+                )
 
     feature_dicts = []
     for r in parsed:

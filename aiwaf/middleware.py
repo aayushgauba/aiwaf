@@ -22,10 +22,28 @@ def is_ip_exempted(ip):
 
 def is_exempt_path(path):
     path = path.lower()
+    
+    # Default login paths that should always be exempt
+    default_login_paths = [
+        "/admin/login/",
+        "/admin/",
+        "/login/",
+        "/accounts/login/",
+        "/auth/login/",
+        "/signin/",
+    ]
+    
+    # Check default login paths
+    for login_path in default_login_paths:
+        if path.startswith(login_path):
+            return True
+    
+    # Check user-configured exempt paths
     exempt_paths = getattr(settings, "AIWAF_EXEMPT_PATHS", [])
     for exempt in exempt_paths:
         if path == exempt or path.startswith(exempt.rstrip("/") + "/"):
             return True
+    
     return False
 
 MODEL_PATH = getattr(

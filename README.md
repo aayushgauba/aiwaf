@@ -68,7 +68,17 @@ aiwaf/
 **Exempt Path & IP Awareness**
 
 **Exempt Paths:**
-Set `AIWAF_EXEMPT_PATHS` in your Django `settings.py` (not in your code). Fully respects this setting across all modules — exempt paths are:
+AI‑WAF automatically exempts common login paths (`/admin/`, `/login/`, `/accounts/login/`, etc.) from all blocking mechanisms. You can add additional exempt paths in your Django `settings.py`:
+
+```python
+AIWAF_EXEMPT_PATHS = [
+    "/api/webhooks/",
+    "/health/",
+    "/special-endpoint/",
+]
+```
+
+All exempt paths are:
   - Skipped from keyword learning
   - Immune to AI blocking
   - Ignored in log training
