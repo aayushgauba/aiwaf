@@ -189,16 +189,37 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         return response
 
 
-class HoneypotMiddleware(MiddlewareMixin):
-    def process_view(self, request, view_func, view_args, view_kwargs):
+class HoneypotTimingMiddleware(MiddlewareMixin):
+    MIN_FORM_TIME = getattr(settings, "AIWAF_MIN_FORM_TIME", 1.0)  # seconds
+    
+    def process_request(self, request):
         if is_exempt_path(request.path):
             return None
-        trap = request.POST.get(getattr(settings, "AIWAF_HONEYPOT_FIELD", "hp_field"), "")
-        if trap:
-            ip = get_ip(request)
-            if not is_ip_exempted(ip):
-                BlacklistManager.block(ip, "HONEYPOT triggered")
-                return JsonResponse({"error": "bot_detected"}, status=403)
+            
+        ip = get_ip(request)
+        if is_ip_exempted(ip):
+            return None
+            
+        if request.method == "GET":
+            # Store timestamp for this IP's GET request
+            cache.set(f"honeypot_get:{ip}", time.time(), timeout=300)  # 5 min timeout
+        
+        elif request.method == "POST":
+            # Check if there was a preceding GET request
+            get_time = cache.get(f"honeypot_get:{ip}")
+            
+            if get_time is None:
+                # No GET request - likely bot posting directly
+                BlacklistManager.block(ip, "Direct POST without GET")
+                return JsonResponse({"error": "blocked"}, status=403)
+            
+            # Check timing
+            time_diff = time.time() - get_time
+            if time_diff < self.MIN_FORM_TIME:
+                # Posted too quickly - likely bot
+                BlacklistManager.block(ip, f"Form submitted too quickly ({time_diff:.2f}s)")
+                return JsonResponse({"error": "blocked"}, status=403)
+        
         return None
 
 

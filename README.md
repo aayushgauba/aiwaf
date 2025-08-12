@@ -56,8 +56,10 @@ aiwaf/
 - **File‑Extension Probing Detection**  
   Tracks repeated 404s on common extensions (e.g. `.php`, `.asp`) and blocks IPs.
 
-- **Honeypot Field**  
-  Hidden field for bot detection → IP blacklisted on fill.
+- **Timing-Based Honeypot**  
+  Tracks GET→POST timing patterns. Blocks IPs that:
+  - POST directly without a preceding GET request
+  - Submit forms faster than `AIWAF_MIN_FORM_TIME` seconds (default: 1 second)
 
 - **UUID Tampering Protection**  
   Blocks guessed or invalid UUIDs that don’t resolve to real models.
@@ -84,6 +86,24 @@ Add an IP to the exemption list using the management command:
 
 ```bash
 python manage.py add_ipexemption <ip-address> --reason "optional reason"
+```
+
+### Resetting AI-WAF
+
+Clear all blacklist and exemption entries:
+
+```bash
+# Clear everything (with confirmation prompt)
+python manage.py aiwaf_reset
+
+# Clear everything without confirmation
+python manage.py aiwaf_reset --confirm
+
+# Clear only blacklist entries
+python manage.py aiwaf_reset --blacklist-only
+
+# Clear only exemption entries  
+python manage.py aiwaf_reset --exemptions-only
 ```
 
 This will ensure the IP is never blocked by AI‑WAF. You can also manage exemptions via the Django admin interface.
@@ -122,7 +142,7 @@ AIWAF_ACCESS_LOG = "/var/log/nginx/access.log"
 
 ```python
 AIWAF_MODEL_PATH         = BASE_DIR / "aiwaf" / "resources" / "model.pkl"
-AIWAF_HONEYPOT_FIELD     = "hp_field"
+AIWAF_MIN_FORM_TIME      = 1.0        # minimum seconds between GET and POST
 AIWAF_RATE_WINDOW        = 10         # seconds
 AIWAF_RATE_MAX           = 20         # max requests per window
 AIWAF_RATE_FLOOD         = 10         # flood threshold
@@ -150,7 +170,7 @@ MIDDLEWARE = [
     "aiwaf.middleware.IPAndKeywordBlockMiddleware",
     "aiwaf.middleware.RateLimitMiddleware",
     "aiwaf.middleware.AIAnomalyMiddleware",
-    "aiwaf.middleware.HoneypotMiddleware",
+    "aiwaf.middleware.HoneypotTimingMiddleware",
     "aiwaf.middleware.UUIDTamperMiddleware",
     # ... other middleware ...
 ]
@@ -158,24 +178,7 @@ MIDDLEWARE = [
 
 ---
 
-## 🕵️ Honeypot Field (in your template)
-
-```django
-{% load aiwaf_tags %}
-
-<form method="post">
-  {% csrf_token %}
-  {% honeypot_field %}
-  <!-- your real fields -->
-</form>
-```
-
-> Renders a hidden `<input name="hp_field" style="display:none">`.  
-> Any non‑empty submission → IP blacklisted.
-
----
-
-## 🔁 Running Detection & Training
+##  Running Detection & Training
 
 ```bash
 python manage.py detect_and_train
@@ -198,7 +201,7 @@ python manage.py detect_and_train
 | IPAndKeywordBlockMiddleware        | Blocks requests from known blacklisted IPs and Keywords         |
 | RateLimitMiddleware                | Enforces burst & flood thresholds                               |
 | AIAnomalyMiddleware                | ML‑driven behavior analysis + block on anomaly                  |
-| HoneypotMiddleware                 | Detects bots filling hidden inputs in forms                     |
+| HoneypotTimingMiddleware           | Detects bots via GET→POST timing analysis                       |
 | UUIDTamperMiddleware               | Blocks guessed/nonexistent UUIDs across all models in an app    |
 
 ---
