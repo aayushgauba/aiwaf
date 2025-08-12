@@ -16,8 +16,9 @@ from django.apps import apps
 from django.urls import get_resolver
 from .trainer import STATIC_KW, STATUS_IDX, path_exists_in_django
 from .blacklist_manager import BlacklistManager
-from .models import DynamicKeyword, IPExemption
+from .models import IPExemption
 from .utils import is_exempt, get_ip, is_ip_exempted
+from .storage import get_keyword_store
 
 MODEL_PATH = getattr(
     settings,
@@ -74,15 +75,14 @@ class IPAndKeywordBlockMiddleware:
             return self.get_response(request)
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
+        
+        keyword_store = get_keyword_store()
         segments = [seg for seg in re.split(r"\W+", path) if len(seg) > 3]
+        
         for seg in segments:
-            obj, _ = DynamicKeyword.objects.get_or_create(keyword=seg)
-            DynamicKeyword.objects.filter(pk=obj.pk).update(count=F("count") + 1)
-        dynamic_top = list(
-            DynamicKeyword.objects
-            .order_by("-count")
-            .values_list("keyword", flat=True)[: getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10)]
-        )
+            keyword_store.add_keyword(seg)
+            
+        dynamic_top = keyword_store.get_top_keywords(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
         all_kw = set(STATIC_KW) | set(dynamic_top)
         suspicious_kw = {
             kw for kw in all_kw
@@ -172,10 +172,11 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         data.append((now, request.path, response.status_code, resp_time))
         data = [d for d in data if now - d[0] < self.WINDOW]
         cache.set(key, data, timeout=self.WINDOW)
+        
+        keyword_store = get_keyword_store()
         for seg in re.split(r"\W+", request.path.lower()):
             if len(seg) > 3:
-                obj, _ = DynamicKeyword.objects.get_or_create(keyword=seg)
-                DynamicKeyword.objects.filter(pk=obj.pk).update(count=F("count") + 1)
+                keyword_store.add_keyword(seg)
 
         return response
 

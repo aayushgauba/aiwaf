@@ -167,6 +167,31 @@ AIWAF_ACCESS_LOG = "/var/log/nginx/access.log"
 
 ---
 
+### Storage Configuration
+
+**Choose storage backend:**
+
+```python
+# Use Django models (default) - requires database tables
+AIWAF_STORAGE_MODE = "models"
+
+# OR use CSV files - no database required
+AIWAF_STORAGE_MODE = "csv"
+AIWAF_CSV_DATA_DIR = "aiwaf_data"  # Directory for CSV files
+```
+
+**CSV Mode Features:**
+- No database migrations required
+- Files stored in `aiwaf_data/` directory:
+  - `blacklist.csv` - Blocked IP addresses
+  - `exemptions.csv` - Exempt IP addresses  
+  - `keywords.csv` - Dynamic keywords
+  - `access_samples.csv` - Feature samples for ML training
+- Perfect for lightweight deployments or when you prefer file-based storage
+- Management commands work identically in both modes
+
+---
+
 ### Optional (defaults shown)
 
 ```python

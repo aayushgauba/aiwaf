@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand, CommandError
-from aiwaf.models import IPExemption
+from aiwaf.storage import get_exemption_store
 
 class Command(BaseCommand):
     help = 'Add an IP address to the IPExemption list (prevents blacklisting)'
@@ -11,12 +11,13 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         ip = options['ip']
         reason = options['reason']
-        obj, created = IPExemption.objects.get_or_create(ip_address=ip, defaults={'reason': reason})
-        if not created:
+        
+        store = get_exemption_store()
+        
+        if store.is_exempted(ip):
             self.stdout.write(self.style.WARNING(f'IP {ip} is already exempted.'))
         else:
+            store.add_ip(ip, reason)
             self.stdout.write(self.style.SUCCESS(f'IP {ip} added to exemption list.'))
-        if reason:
-            obj.reason = reason
-            obj.save()
-            self.stdout.write(self.style.SUCCESS(f'Reason set to: {reason}'))
+            if reason:
+                self.stdout.write(self.style.SUCCESS(f'Reason: {reason}'))

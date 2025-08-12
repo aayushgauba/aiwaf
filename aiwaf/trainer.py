@@ -14,6 +14,7 @@ from django.conf import settings
 from django.apps import apps
 from django.db.models import F
 from .utils import is_exempt_path
+from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
 
 # ─────────── Configuration ───────────
 LOG_PATH   = settings.AIWAF_ACCESS_LOG
@@ -26,11 +27,6 @@ _LOG_RX = re.compile(
     r'(\d+\.\d+\.\d+\.\d+).*\[(.*?)\].*"(?:GET|POST) (.*?) HTTP/.*?" '
     r'(\d{3}).*?"(.*?)" "(.*?)".*?response-time=(\d+\.\d+)'
 )
-
-
-BlacklistEntry = apps.get_model("aiwaf", "BlacklistEntry")
-DynamicKeyword = apps.get_model("aiwaf", "DynamicKeyword")
-IPExemption = apps.get_model("aiwaf", "IPExemption")
 
 
 def path_exists_in_django(path: str) -> bool:
@@ -54,13 +50,17 @@ def path_exists_in_django(path: str) -> bool:
 
 
 def remove_exempt_keywords() -> None:
+    keyword_store = get_keyword_store()
     exempt_tokens = set()
+    
     for path in getattr(settings, "AIWAF_EXEMPT_PATHS", []):
         for seg in re.split(r"\W+", path.strip("/").lower()):
             if len(seg) > 3:
                 exempt_tokens.add(seg)
-    if exempt_tokens:
-        DynamicKeyword.objects.filter(keyword__in=exempt_tokens).delete()
+    
+    # Remove exempt tokens from keyword storage
+    for token in exempt_tokens:
+        keyword_store.remove_keyword(token)
 
 
 def _read_all_logs() -> list[str]:
@@ -98,10 +98,15 @@ def _parse(line: str) -> dict | None:
 
 def train() -> None:
     remove_exempt_keywords()
-    # Remove any IPs in IPExemption from the blacklist
-    exempt_ips = set(IPExemption.objects.values_list("ip_address", flat=True))
-    if exempt_ips:
-        BlacklistEntry.objects.filter(ip_address__in=exempt_ips).delete()
+    
+    # Remove any IPs in IPExemption from the blacklist using storage system
+    exemption_store = get_exemption_store()
+    blacklist_store = get_blacklist_store()
+    
+    exempted_ips = [entry['ip_address'] for entry in exemption_store.get_all()]
+    for ip in exempted_ips:
+        blacklist_store.remove_ip(ip)
+    
     raw_lines = _read_all_logs()
     if not raw_lines:
         print("No log lines found – check AIWAF_ACCESS_LOG setting.")
@@ -133,10 +138,8 @@ def train() -> None:
             
             # Don't block if majority of 404s are on login paths
             if count > login_404s:  # More non-login 404s than login 404s
-                BlacklistEntry.objects.get_or_create(
-                    ip_address=ip,
-                    defaults={"reason": f"Excessive 404s (≥6 non-login, {count}/{total_404s})"}
-                )
+                blacklist_store = get_blacklist_store()
+                blacklist_store.add_ip(ip, f"Excessive 404s (≥6 non-login, {count}/{total_404s})")
 
     feature_dicts = []
     for r in parsed:
@@ -187,10 +190,13 @@ def train() -> None:
     if anomalous_ips:
         print(f"⚠️  Detected {len(anomalous_ips)} potentially anomalous IPs during training")
         
+        exemption_store = get_exemption_store()
+        blacklist_store = get_blacklist_store()
         blocked_count = 0
+        
         for ip in anomalous_ips:
             # Skip if IP is exempted
-            if IPExemption.objects.filter(ip_address=ip).exists():
+            if exemption_store.is_exempted(ip):
                 continue
             
             # Get this IP's behavior from the data
@@ -213,10 +219,7 @@ def train() -> None:
                 continue
             
             # Block if it shows clear signs of malicious behavior
-            BlacklistEntry.objects.get_or_create(
-                ip_address=ip,
-                defaults={"reason": f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})"}
-            )
+            blacklist_store.add_ip(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
             blocked_count += 1
             print(f"   - {ip}: Blocked for suspicious behavior (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
         
@@ -230,8 +233,10 @@ def train() -> None:
                 if len(seg) > 3 and seg not in STATIC_KW:
                     tokens[seg] += 1
 
-    for kw, cnt in tokens.most_common(10):
-        obj, _ = DynamicKeyword.objects.get_or_create(keyword=kw)
-        DynamicKeyword.objects.filter(pk=obj.pk).update(count=F("count") + cnt)
+    keyword_store = get_keyword_store()
+    top_tokens = tokens.most_common(10)
+    
+    for kw, cnt in top_tokens:
+        keyword_store.add_keyword(kw, cnt)
 
-    print(f"DynamicKeyword DB updated with top tokens: {[kw for kw, _ in tokens.most_common(10)]}")
+    print(f"DynamicKeyword storage updated with top tokens: {[kw for kw, _ in top_tokens]}")

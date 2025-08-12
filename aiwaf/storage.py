@@ -2,19 +2,33 @@ import os, csv, gzip, glob
 import numpy as np
 import pandas as pd
 from django.conf import settings
-from .models import FeatureSample
+from django.utils import timezone
+from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
 
-DATA_FILE  = getattr(settings, "AIWAF_CSV_PATH", "access_samples.csv")
+# Configuration
+STORAGE_MODE = getattr(settings, "AIWAF_STORAGE_MODE", "models")  # "models" or "csv"
+CSV_DATA_DIR = getattr(settings, "AIWAF_CSV_DATA_DIR", "aiwaf_data")
+FEATURE_CSV = getattr(settings, "AIWAF_CSV_PATH", os.path.join(CSV_DATA_DIR, "access_samples.csv"))
+BLACKLIST_CSV = os.path.join(CSV_DATA_DIR, "blacklist.csv")
+EXEMPTION_CSV = os.path.join(CSV_DATA_DIR, "exemptions.csv") 
+KEYWORDS_CSV = os.path.join(CSV_DATA_DIR, "keywords.csv")
+
 CSV_HEADER = [
     "ip","path_len","kw_hits","resp_time",
     "status_idx","burst_count","total_404","label"
 ]
 
+def ensure_csv_directory():
+    """Ensure the CSV data directory exists"""
+    if STORAGE_MODE == "csv" and not os.path.exists(CSV_DATA_DIR):
+        os.makedirs(CSV_DATA_DIR)
+
 class CsvFeatureStore:
     @staticmethod
     def persist_rows(rows):
-        new_file = not os.path.exists(DATA_FILE)
-        with open(DATA_FILE, "a", newline="", encoding="utf-8") as f:
+        ensure_csv_directory()
+        new_file = not os.path.exists(FEATURE_CSV)
+        with open(FEATURE_CSV, "a", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             if new_file:
                 w.writerow(CSV_HEADER)
@@ -22,10 +36,10 @@ class CsvFeatureStore:
 
     @staticmethod
     def load_matrix():
-        if not os.path.exists(DATA_FILE):
+        if not os.path.exists(FEATURE_CSV):
             return np.empty((0,6))
         df = pd.read_csv(
-            DATA_FILE,
+            FEATURE_CSV,
             names=CSV_HEADER,
             skiprows=1,
             engine="python",
@@ -59,3 +73,279 @@ def get_store():
     if getattr(settings, "AIWAF_FEATURE_STORE", "csv") == "db":
         return DbFeatureStore
     return CsvFeatureStore
+
+
+# ============= CSV Storage Classes =============
+
+class CsvBlacklistStore:
+    """CSV-based storage for IP blacklist entries"""
+    
+    @staticmethod
+    def add_ip(ip_address, reason):
+        ensure_csv_directory()
+        # Check if IP already exists
+        if CsvBlacklistStore.is_blocked(ip_address):
+            return
+        
+        # Add new entry
+        new_file = not os.path.exists(BLACKLIST_CSV)
+        with open(BLACKLIST_CSV, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if new_file:
+                writer.writerow(["ip_address", "reason", "created_at"])
+            writer.writerow([ip_address, reason, timezone.now().isoformat()])
+    
+    @staticmethod
+    def is_blocked(ip_address):
+        if not os.path.exists(BLACKLIST_CSV):
+            return False
+        
+        with open(BLACKLIST_CSV, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row["ip_address"] == ip_address:
+                    return True
+        return False
+    
+    @staticmethod
+    def get_all():
+        """Return list of dictionaries with blacklist entries"""
+        if not os.path.exists(BLACKLIST_CSV):
+            return []
+        
+        entries = []
+        with open(BLACKLIST_CSV, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                entries.append(row)
+        return entries
+    
+    @staticmethod
+    def remove_ip(ip_address):
+        if not os.path.exists(BLACKLIST_CSV):
+            return
+        
+        # Read all entries except the one to remove
+        entries = []
+        with open(BLACKLIST_CSV, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            entries = [row for row in reader if row["ip_address"] != ip_address]
+        
+        # Write back the filtered entries
+        with open(BLACKLIST_CSV, "w", newline="", encoding="utf-8") as f:
+            if entries:
+                writer = csv.DictWriter(f, fieldnames=["ip_address", "reason", "created_at"])
+                writer.writeheader()
+                writer.writerows(entries)
+
+
+class CsvExemptionStore:
+    """CSV-based storage for IP exemption entries"""
+    
+    @staticmethod
+    def add_ip(ip_address, reason=""):
+        ensure_csv_directory()
+        # Check if IP already exists
+        if CsvExemptionStore.is_exempted(ip_address):
+            return
+        
+        # Add new entry
+        new_file = not os.path.exists(EXEMPTION_CSV)
+        with open(EXEMPTION_CSV, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if new_file:
+                writer.writerow(["ip_address", "reason", "created_at"])
+            writer.writerow([ip_address, reason, timezone.now().isoformat()])
+    
+    @staticmethod
+    def is_exempted(ip_address):
+        if not os.path.exists(EXEMPTION_CSV):
+            return False
+        
+        with open(EXEMPTION_CSV, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row["ip_address"] == ip_address:
+                    return True
+        return False
+    
+    @staticmethod
+    def get_all():
+        """Return list of dictionaries with exemption entries"""
+        if not os.path.exists(EXEMPTION_CSV):
+            return []
+        
+        entries = []
+        with open(EXEMPTION_CSV, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                entries.append(row)
+        return entries
+    
+    @staticmethod
+    def remove_ip(ip_address):
+        if not os.path.exists(EXEMPTION_CSV):
+            return
+        
+        # Read all entries except the one to remove
+        entries = []
+        with open(EXEMPTION_CSV, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            entries = [row for row in reader if row["ip_address"] != ip_address]
+        
+        # Write back the filtered entries
+        with open(EXEMPTION_CSV, "w", newline="", encoding="utf-8") as f:
+            if entries:
+                writer = csv.DictWriter(f, fieldnames=["ip_address", "reason", "created_at"])
+                writer.writeheader()
+                writer.writerows(entries)
+
+
+class CsvKeywordStore:
+    """CSV-based storage for dynamic keywords"""
+    
+    @staticmethod
+    def add_keyword(keyword, count=1):
+        ensure_csv_directory()
+        
+        # Read existing keywords
+        keywords = CsvKeywordStore._load_keywords()
+        
+        # Update or add keyword
+        keywords[keyword] = keywords.get(keyword, 0) + count
+        
+        # Save back to file
+        CsvKeywordStore._save_keywords(keywords)
+    
+    @staticmethod
+    def get_top_keywords(limit=10):
+        keywords = CsvKeywordStore._load_keywords()
+        # Sort by count in descending order and return top N
+        sorted_keywords = sorted(keywords.items(), key=lambda x: x[1], reverse=True)
+        return [kw for kw, count in sorted_keywords[:limit]]
+    
+    @staticmethod
+    def remove_keyword(keyword):
+        keywords = CsvKeywordStore._load_keywords()
+        if keyword in keywords:
+            del keywords[keyword]
+            CsvKeywordStore._save_keywords(keywords)
+    
+    @staticmethod
+    def clear_all():
+        if os.path.exists(KEYWORDS_CSV):
+            os.remove(KEYWORDS_CSV)
+    
+    @staticmethod
+    def _load_keywords():
+        """Load keywords from CSV file as a dictionary"""
+        if not os.path.exists(KEYWORDS_CSV):
+            return {}
+        
+        keywords = {}
+        with open(KEYWORDS_CSV, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                keywords[row["keyword"]] = int(row["count"])
+        return keywords
+    
+    @staticmethod
+    def _save_keywords(keywords):
+        """Save keywords dictionary to CSV file"""
+        with open(KEYWORDS_CSV, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["keyword", "count", "last_updated"])
+            for keyword, count in keywords.items():
+                writer.writerow([keyword, count, timezone.now().isoformat()])
+
+
+# ============= Storage Factory Functions =============
+
+def get_blacklist_store():
+    """Return appropriate blacklist storage class based on settings"""
+    if STORAGE_MODE == "csv":
+        return CsvBlacklistStore
+    else:
+        # Return a wrapper for Django models
+        return ModelBlacklistStore
+
+
+def get_exemption_store():
+    """Return appropriate exemption storage class based on settings"""
+    if STORAGE_MODE == "csv":
+        return CsvExemptionStore
+    else:
+        return ModelExemptionStore
+
+
+def get_keyword_store():
+    """Return appropriate keyword storage class based on settings"""
+    if STORAGE_MODE == "csv":
+        return CsvKeywordStore
+    else:
+        return ModelKeywordStore
+
+
+# ============= Django Model Wrappers =============
+
+class ModelBlacklistStore:
+    """Django model-based storage for blacklist entries"""
+    
+    @staticmethod
+    def add_ip(ip_address, reason):
+        BlacklistEntry.objects.get_or_create(ip_address=ip_address, defaults={"reason": reason})
+    
+    @staticmethod
+    def is_blocked(ip_address):
+        return BlacklistEntry.objects.filter(ip_address=ip_address).exists()
+    
+    @staticmethod
+    def get_all():
+        return list(BlacklistEntry.objects.values("ip_address", "reason", "created_at"))
+    
+    @staticmethod
+    def remove_ip(ip_address):
+        BlacklistEntry.objects.filter(ip_address=ip_address).delete()
+
+
+class ModelExemptionStore:
+    """Django model-based storage for exemption entries"""
+    
+    @staticmethod
+    def add_ip(ip_address, reason=""):
+        IPExemption.objects.get_or_create(ip_address=ip_address, defaults={"reason": reason})
+    
+    @staticmethod
+    def is_exempted(ip_address):
+        return IPExemption.objects.filter(ip_address=ip_address).exists()
+    
+    @staticmethod
+    def get_all():
+        return list(IPExemption.objects.values("ip_address", "reason", "created_at"))
+    
+    @staticmethod
+    def remove_ip(ip_address):
+        IPExemption.objects.filter(ip_address=ip_address).delete()
+
+
+class ModelKeywordStore:
+    """Django model-based storage for dynamic keywords"""
+    
+    @staticmethod
+    def add_keyword(keyword, count=1):
+        obj, created = DynamicKeyword.objects.get_or_create(keyword=keyword, defaults={"count": count})
+        if not created:
+            obj.count += count
+            obj.save()
+    
+    @staticmethod
+    def get_top_keywords(limit=10):
+        return list(DynamicKeyword.objects.order_by("-count").values_list("keyword", flat=True)[:limit])
+    
+    @staticmethod
+    def remove_keyword(keyword):
+        DynamicKeyword.objects.filter(keyword=keyword).delete()
+    
+    @staticmethod
+    def clear_all():
+        DynamicKeyword.objects.all().delete()

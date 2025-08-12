@@ -4,7 +4,7 @@ import glob
 import gzip
 from datetime import datetime
 from django.conf import settings
-from .models import IPExemption
+from .storage import get_exemption_store
 
 _LOG_RX = re.compile(
     r'(\d+\.\d+\.\d+\.\d+).*\[(.*?)\].*"(GET|POST) (.*?) HTTP/.*?" (\d{3}).*?"(.*?)" "(.*?)"'
@@ -53,7 +53,8 @@ def parse_log_line(line):
 
 def is_ip_exempted(ip):
     """Check if IP is in exemption list"""
-    return IPExemption.objects.filter(ip_address=ip).exists()
+    store = get_exemption_store()
+    return store.is_exempted(ip)
 
 def is_view_exempt(request):
     """Check if the current view is marked as AI-WAF exempt"""
