@@ -14,37 +14,10 @@ from django.core.cache import cache
 from django.db.models import F
 from django.apps import apps
 from django.urls import get_resolver
-from .trainer import STATIC_KW, STATUS_IDX, is_exempt_path, path_exists_in_django
+from .trainer import STATIC_KW, STATUS_IDX, path_exists_in_django
 from .blacklist_manager import BlacklistManager
 from .models import DynamicKeyword, IPExemption
-def is_ip_exempted(ip):
-    return IPExemption.objects.filter(ip_address=ip).exists()
-
-def is_exempt_path(path):
-    path = path.lower()
-    
-    # Default login paths that should always be exempt
-    default_login_paths = [
-        "/admin/login/",
-        "/admin/",
-        "/login/",
-        "/accounts/login/",
-        "/auth/login/",
-        "/signin/",
-    ]
-    
-    # Check default login paths
-    for login_path in default_login_paths:
-        if path.startswith(login_path):
-            return True
-    
-    # Check user-configured exempt paths
-    exempt_paths = getattr(settings, "AIWAF_EXEMPT_PATHS", [])
-    for exempt in exempt_paths:
-        if path == exempt or path.startswith(exempt.rstrip("/") + "/"):
-            return True
-    
-    return False
+from .utils import is_exempt, get_ip, is_ip_exempted
 
 MODEL_PATH = getattr(
     settings,
@@ -93,7 +66,7 @@ class IPAndKeywordBlockMiddleware:
 
     def __call__(self, request):
         raw_path = request.path.lower()
-        if is_exempt_path(raw_path):
+        if is_exempt(request):
             return self.get_response(request)
         ip = get_ip(request)
         path = raw_path.lstrip("/")
@@ -132,7 +105,7 @@ class RateLimitMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if is_exempt_path(request.path):
+        if is_exempt(request):
             return self.get_response(request)
 
         ip = get_ip(request)
@@ -161,7 +134,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         self.model = joblib.load(model_path)
 
     def process_request(self, request):
-        if is_exempt_path(request.path):
+        if is_exempt(request):
             return None
         request._start_time = time.time()
         ip = get_ip(request)
@@ -172,14 +145,14 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         return None
 
     def process_response(self, request, response):
-        if is_exempt_path(request.path):
+        if is_exempt(request):
             return response
         ip = get_ip(request)
         now = time.time()
         key = f"aiwaf:{ip}"
         data = cache.get(key, [])
         path_len = len(request.path)
-        if not path_exists_in_django(request.path) and not is_exempt_path(request.path):
+        if not path_exists_in_django(request.path) and not is_exempt(request):
             kw_hits = sum(1 for kw in STATIC_KW if kw in request.path.lower())
         else:
             kw_hits = 0
@@ -211,7 +184,7 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
     MIN_FORM_TIME = getattr(settings, "AIWAF_MIN_FORM_TIME", 1.0)  # seconds
     
     def process_request(self, request):
-        if is_exempt_path(request.path):
+        if is_exempt(request):
             return None
             
         ip = get_ip(request)
@@ -255,7 +228,7 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
 
 class UUIDTamperMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
-        if is_exempt_path(request.path):
+        if is_exempt(request):
             return None
         uid = view_kwargs.get("uuid")
         if not uid:

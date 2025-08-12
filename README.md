@@ -78,7 +78,26 @@ AIWAF_EXEMPT_PATHS = [
 ]
 ```
 
-All exempt paths are:
+**Exempt Views (Decorator):**
+Use the `@aiwaf_exempt` decorator to exempt specific views from all AI-WAF protection:
+
+```python
+from aiwaf.decorators import aiwaf_exempt
+from django.http import JsonResponse
+
+@aiwaf_exempt
+def my_api_view(request):
+    """This view will be exempt from all AI-WAF protection"""
+    return JsonResponse({"status": "success"})
+
+# Works with class-based views too
+@aiwaf_exempt
+class MyAPIView(View):
+    def get(self, request):
+        return JsonResponse({"method": "GET"})
+```
+
+All exempt paths and views are:
   - Skipped from keyword learning
   - Immune to AI blocking
   - Ignored in log training

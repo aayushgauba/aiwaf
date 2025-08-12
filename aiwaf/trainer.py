@@ -13,6 +13,7 @@ from sklearn.ensemble import IsolationForest
 from django.conf import settings
 from django.apps import apps
 from django.db.models import F
+from .utils import is_exempt_path
 
 # ─────────── Configuration ───────────
 LOG_PATH   = settings.AIWAF_ACCESS_LOG
@@ -30,31 +31,6 @@ _LOG_RX = re.compile(
 BlacklistEntry = apps.get_model("aiwaf", "BlacklistEntry")
 DynamicKeyword = apps.get_model("aiwaf", "DynamicKeyword")
 IPExemption = apps.get_model("aiwaf", "IPExemption")
-
-
-def is_exempt_path(path: str) -> bool:
-    path = path.lower()
-    
-    # Default login paths that should always be exempt
-    default_login_paths = [
-        "/admin/login/",
-        "/admin/",
-        "/login/",
-        "/accounts/login/",
-        "/auth/login/",
-        "/signin/",
-    ]
-    
-    # Check default login paths
-    for login_path in default_login_paths:
-        if path.startswith(login_path):
-            return True
-    
-    # Check user-configured exempt paths
-    for exempt in getattr(settings, "AIWAF_EXEMPT_PATHS", []):
-        if path == exempt or path.startswith(exempt.rstrip("/") + "/"):
-            return True
-    return False
 
 
 def path_exists_in_django(path: str) -> bool:
