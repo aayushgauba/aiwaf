@@ -62,7 +62,28 @@ aiwaf/
   - Submit forms faster than `AIWAF_MIN_FORM_TIME` seconds (default: 1 second)
 
 - **UUID Tampering Protection**  
-  Blocks guessed or invalid UUIDs that don’t resolve to real models.
+  Blocks guessed or invalid UUIDs that don't resolve to real models.
+
+- **Built-in Request Logger**  
+  Optional middleware logger that captures requests to CSV:
+  - **Automatic fallback** when main access logs unavailable
+  - **CSV format** for easy analysis and training
+  - **Captures response times** for better anomaly detection
+  - **Zero configuration** - works out of the box
+
+
+**Exempt Path & IP Awareness**
+
+**Exempt Paths:**
+AI‑WAF automatically exempts common login paths (`/admin/`, `/login/`, `/accounts/login/`, etc.) from all blocking mechanisms. You can add additional exempt paths in your Django `settings.py`:
+
+```python
+AIWAF_EXEMPT_PATHS = [
+    "/api/webhooks/",
+    "/health/",
+    "/special-endpoint/",
+]
+```
 
 
 **Exempt Path & IP Awareness**
@@ -192,6 +213,42 @@ AIWAF_CSV_DATA_DIR = "aiwaf_data"  # Directory for CSV files
 
 ---
 
+### Built-in Request Logger (Optional)
+
+Enable AI-WAF's built-in request logger as a fallback when main access logs aren't available:
+
+```python
+# Enable middleware logging
+AIWAF_MIDDLEWARE_LOGGING = True                    # Enable/disable logging
+AIWAF_MIDDLEWARE_LOG = "aiwaf_requests.log"        # Log file path
+AIWAF_MIDDLEWARE_CSV = True                        # Use CSV format (recommended)
+```
+
+**Then add middleware to MIDDLEWARE list:**
+
+```python
+MIDDLEWARE = [
+    # ... your existing middleware ...
+    'aiwaf.middleware_logger.AIWAFLoggerMiddleware',  # Add near the end
+]
+```
+
+**Manage middleware logging:**
+
+```bash
+python manage.py aiwaf_logging --status    # Check logging status
+python manage.py aiwaf_logging --enable    # Show setup instructions  
+python manage.py aiwaf_logging --clear     # Clear log files
+```
+
+**Benefits:**
+- **Automatic fallback** when `AIWAF_ACCESS_LOG` unavailable
+- **CSV format** with precise timestamps and response times
+- **Zero configuration** - trainer automatically detects and uses CSV logs
+- **Lightweight** - fails silently to avoid breaking your application
+
+---
+
 ### Optional (defaults shown)
 
 ```python
@@ -223,12 +280,38 @@ Add in **this** order to your `MIDDLEWARE` list:
 ```python
 MIDDLEWARE = [
     "aiwaf.middleware.IPAndKeywordBlockMiddleware",
-    "aiwaf.middleware.RateLimitMiddleware",
+    "aiwaf.middleware.RateLimitMiddleware", 
     "aiwaf.middleware.AIAnomalyMiddleware",
     "aiwaf.middleware.HoneypotTimingMiddleware",
     "aiwaf.middleware.UUIDTamperMiddleware",
     # ... other middleware ...
+    "aiwaf.middleware_logger.AIWAFLoggerMiddleware",  # Optional: Add if using built-in logger
 ]
+```
+
+> **⚠️ Order matters!** AI-WAF protection middleware should come early. The logger middleware should come near the end to capture final response data.
+
+---
+
+##  Running Detection & Training
+
+```bash
+python manage.py detect_and_train
+```
+
+### What happens:
+1. Read access logs (incl. rotated or gzipped) **OR** AI-WAF middleware CSV logs
+2. Auto‑block IPs with ≥ 6 total 404s
+3. Extract features & train IsolationForest
+4. Save `model.pkl`
+5. Extract top 10 dynamic keywords from 4xx/5xx
+6. Remove any keywords associated with newly exempt paths
+
+**Note:** If main access log (`AIWAF_ACCESS_LOG`) is unavailable, trainer automatically falls back to AI-WAF middleware CSV logs.
+
+---
+
+## 🧠 How It Works
 ```
 
 ---

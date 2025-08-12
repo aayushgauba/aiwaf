@@ -65,16 +65,31 @@ def remove_exempt_keywords() -> None:
 
 def _read_all_logs() -> list[str]:
     lines = []
+    
+    # First try to read from main access log
     if LOG_PATH and os.path.exists(LOG_PATH):
         with open(LOG_PATH, "r", errors="ignore") as f:
             lines.extend(f.readlines())
-    for p in sorted(glob.glob(f"{LOG_PATH}.*")):
-        opener = gzip.open if p.endswith(".gz") else open
-        try:
-            with opener(p, "rt", errors="ignore") as f:
-                lines.extend(f.readlines())
-        except OSError:
-            continue
+        for p in sorted(glob.glob(f"{LOG_PATH}.*")):
+            opener = gzip.open if p.endswith(".gz") else open
+            try:
+                with opener(p, "rt", errors="ignore") as f:
+                    lines.extend(f.readlines())
+            except OSError:
+                continue
+    
+    # If no lines found from main log, try AI-WAF middleware CSV log
+    if not lines:
+        middleware_csv = getattr(settings, "AIWAF_MIDDLEWARE_LOG", "aiwaf_requests.log").replace('.log', '.csv')
+        if os.path.exists(middleware_csv):
+            try:
+                from .middleware_logger import AIWAFCSVLogParser
+                csv_lines = AIWAFCSVLogParser.get_log_lines_for_trainer(middleware_csv)
+                lines.extend(csv_lines)
+                print(f"📋 Using AI-WAF middleware CSV log: {middleware_csv} ({len(csv_lines)} entries)")
+            except Exception as e:
+                print(f"⚠️  Failed to read middleware CSV log: {e}")
+    
     return lines
 
 
