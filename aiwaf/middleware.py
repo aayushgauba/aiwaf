@@ -219,7 +219,8 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             return None
             
         if request.method == "GET":
-            # Store timestamp for this IP's GET request
+            # Store timestamp for this IP's GET request  
+            # Use a general key for the IP, not path-specific
             cache.set(f"honeypot_get:{ip}", time.time(), timeout=300)  # 5 min timeout
         
         elif request.method == "POST":
@@ -228,15 +229,26 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             
             if get_time is None:
                 # No GET request - likely bot posting directly
-                BlacklistManager.block(ip, "Direct POST without GET")
-                return JsonResponse({"error": "blocked"}, status=403)
-            
-            # Check timing
-            time_diff = time.time() - get_time
-            if time_diff < self.MIN_FORM_TIME:
-                # Posted too quickly - likely bot
-                BlacklistManager.block(ip, f"Form submitted too quickly ({time_diff:.2f}s)")
-                return JsonResponse({"error": "blocked"}, status=403)
+                # But be more lenient for login paths since users might bookmark them
+                if not any(request.path.lower().startswith(login_path) for login_path in [
+                    "/admin/login/", "/login/", "/accounts/login/", "/auth/login/", "/signin/"
+                ]):
+                    BlacklistManager.block(ip, "Direct POST without GET")
+                    return JsonResponse({"error": "blocked"}, status=403)
+            else:
+                # Check timing - be more lenient for login paths
+                time_diff = time.time() - get_time
+                min_time = self.MIN_FORM_TIME
+                
+                # Use shorter time threshold for login paths (users can login quickly)
+                if any(request.path.lower().startswith(login_path) for login_path in [
+                    "/admin/login/", "/login/", "/accounts/login/", "/auth/login/", "/signin/"
+                ]):
+                    min_time = 0.1  # Very short threshold for login forms
+                
+                if time_diff < min_time:
+                    BlacklistManager.block(ip, f"Form submitted too quickly ({time_diff:.2f}s)")
+                    return JsonResponse({"error": "blocked"}, status=403)
         
         return None
 

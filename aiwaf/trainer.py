@@ -203,13 +203,48 @@ def train() -> None:
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
     joblib.dump(model, MODEL_PATH)
     print(f"Model trained on {len(X)} samples → {MODEL_PATH}")
+    
+    # Check for anomalies and intelligently decide which IPs to block
     preds = model.predict(X)
     anomalous_ips = set(df.loc[preds == -1, "ip"])
-    for ip in anomalous_ips:
-        BlacklistEntry.objects.get_or_create(
-            ip_address=ip,
-            defaults={"reason": "Anomalous behavior"}
-        )
+    
+    if anomalous_ips:
+        print(f"⚠️  Detected {len(anomalous_ips)} potentially anomalous IPs during training")
+        
+        blocked_count = 0
+        for ip in anomalous_ips:
+            # Skip if IP is exempted
+            if IPExemption.objects.filter(ip_address=ip).exists():
+                continue
+            
+            # Get this IP's behavior from the data
+            ip_data = df[df["ip"] == ip]
+            
+            # Criteria to determine if this is likely a legitimate user vs threat:
+            avg_kw_hits = ip_data["kw_hits"].mean()
+            max_404s = ip_data["total_404"].max()
+            avg_burst = ip_data["burst_count"].mean()
+            total_requests = len(ip_data)
+            
+            # Don't block if it looks like legitimate behavior:
+            if (
+                avg_kw_hits < 2 and           # Not hitting many malicious keywords
+                max_404s < 10 and            # Not excessive 404s
+                avg_burst < 15 and           # Not excessive burst activity
+                total_requests < 100         # Not excessive total requests
+            ):
+                print(f"   - {ip}: Anomalous but looks legitimate (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f}) - NOT blocking")
+                continue
+            
+            # Block if it shows clear signs of malicious behavior
+            BlacklistEntry.objects.get_or_create(
+                ip_address=ip,
+                defaults={"reason": f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})"}
+            )
+            blocked_count += 1
+            print(f"   - {ip}: Blocked for suspicious behavior (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
+        
+        print(f"   → Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs (others looked legitimate)")
 
     tokens = Counter()
     for r in parsed:
