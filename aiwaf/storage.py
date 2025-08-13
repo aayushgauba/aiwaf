@@ -189,17 +189,28 @@ class CsvExemptionStore:
     @staticmethod
     def is_exempted(ip_address):
         if not os.path.exists(EXEMPTION_CSV):
+            # Debug: Let user know file doesn't exist
+            if getattr(settings, 'DEBUG', False):
+                print(f"DEBUG: Exemption CSV not found: {EXEMPTION_CSV}")
             return False
         
         try:
             with open(EXEMPTION_CSV, "r", newline="", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
-                for row in reader:
-                    if row["ip_address"] == ip_address:
+                for row_num, row in enumerate(reader):
+                    stored_ip = row.get("ip_address", "").strip()
+                    if getattr(settings, 'DEBUG', False) and row_num < 5:  # Show first 5 for debug
+                        print(f"DEBUG: Row {row_num}: comparing '{stored_ip}' with '{ip_address}'")
+                    if stored_ip == ip_address:
+                        if getattr(settings, 'DEBUG', False):
+                            print(f"DEBUG: Found exemption match for {ip_address}")
                         return True
         except Exception as e:
             print(f"Error reading exemption CSV: {e}")
             return False
+        
+        if getattr(settings, 'DEBUG', False):
+            print(f"DEBUG: No exemption found for {ip_address}")
         return False
     
     @staticmethod
@@ -309,12 +320,22 @@ def get_blacklist_store():
 
 def get_exemption_store():
     """Return appropriate exemption storage class based on settings"""
+    if getattr(settings, 'DEBUG', False):
+        print(f"DEBUG: Storage mode = {STORAGE_MODE}, CSV mode = {STORAGE_MODE == 'csv'}")
+    
     if STORAGE_MODE == "csv":
+        if getattr(settings, 'DEBUG', False):
+            print("DEBUG: Using CsvExemptionStore")
         return CsvExemptionStore
     else:
+        _import_models()
         if IPExemption is not None:
+            if getattr(settings, 'DEBUG', False):
+                print("DEBUG: Using ModelExemptionStore")
             return ModelExemptionStore
         else:
+            if getattr(settings, 'DEBUG', False):
+                print("DEBUG: Falling back to CsvExemptionStore (models not available)")
             return CsvExemptionStore
 
 

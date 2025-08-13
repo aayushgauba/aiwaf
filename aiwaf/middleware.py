@@ -107,8 +107,8 @@ class IPAndKeywordBlockMiddleware:
             return self.get_response(request)
         ip = get_ip(request)
         path = raw_path.lstrip("/")
-        if is_ip_exempted(ip):
-            return self.get_response(request)
+        
+        # BlacklistManager now handles exemption checking internally
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
         
@@ -126,8 +126,10 @@ class IPAndKeywordBlockMiddleware:
         }
         for seg in segments:
             if seg in suspicious_kw:
-                if not is_ip_exempted(ip):
-                    BlacklistManager.block(ip, f"Keyword block: {seg}")
+                # BlacklistManager.block() now checks exemptions internally
+                BlacklistManager.block(ip, f"Keyword block: {seg}")
+                # Check again after blocking attempt (exempted IPs won't be blocked)
+                if BlacklistManager.is_blocked(ip):
                     return JsonResponse({"error": "blocked"}, status=403)
         return self.get_response(request)
 
@@ -152,8 +154,10 @@ class RateLimitMiddleware:
         timestamps.append(now)
         cache.set(key, timestamps, timeout=self.WINDOW)
         if len(timestamps) > self.FLOOD:
-            if not is_ip_exempted(ip):
-                BlacklistManager.block(ip, "Flood pattern")
+            # BlacklistManager.block() now checks exemptions internally
+            BlacklistManager.block(ip, "Flood pattern")
+            # Check if actually blocked (exempted IPs won't be blocked)
+            if BlacklistManager.is_blocked(ip):
                 return JsonResponse({"error": "blocked"}, status=403)
         if len(timestamps) > self.MAX:
             return JsonResponse({"error": "too_many_requests"}, status=429)
@@ -174,8 +178,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
             return None
         request._start_time = time.time()
         ip = get_ip(request)
-        if is_ip_exempted(ip):
-            return None
+        # BlacklistManager now handles exemption checking internally
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
         return None
@@ -203,8 +206,10 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         
         # Only use AI model if it's available
         if self.model is not None and self.model.predict(X)[0] == -1:
-            if not is_ip_exempted(ip):
-                BlacklistManager.block(ip, "AI anomaly")
+            # BlacklistManager.block() now checks exemptions internally
+            BlacklistManager.block(ip, "AI anomaly")
+            # Check if actually blocked (exempted IPs won't be blocked)
+            if BlacklistManager.is_blocked(ip):
                 return JsonResponse({"error": "blocked"}, status=403)
 
         data.append((now, request.path, response.status_code, resp_time))
@@ -227,8 +232,7 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             return None
             
         ip = get_ip(request)
-        if is_ip_exempted(ip):
-            return None
+        # BlacklistManager now handles exemption checking internally
             
         if request.method == "GET":
             # Store timestamp for this IP's GET request  
@@ -245,8 +249,11 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 if not any(request.path.lower().startswith(login_path) for login_path in [
                     "/admin/login/", "/login/", "/accounts/login/", "/auth/login/", "/signin/"
                 ]):
+                    # BlacklistManager.block() now checks exemptions internally
                     BlacklistManager.block(ip, "Direct POST without GET")
-                    return JsonResponse({"error": "blocked"}, status=403)
+                    # Check if actually blocked (exempted IPs won't be blocked)
+                    if BlacklistManager.is_blocked(ip):
+                        return JsonResponse({"error": "blocked"}, status=403)
             else:
                 # Check timing - be more lenient for login paths
                 time_diff = time.time() - get_time
@@ -259,8 +266,11 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                     min_time = 0.1  # Very short threshold for login forms
                 
                 if time_diff < min_time:
+                    # BlacklistManager.block() now checks exemptions internally
                     BlacklistManager.block(ip, f"Form submitted too quickly ({time_diff:.2f}s)")
-                    return JsonResponse({"error": "blocked"}, status=403)
+                    # Check if actually blocked (exempted IPs won't be blocked)
+                    if BlacklistManager.is_blocked(ip):
+                        return JsonResponse({"error": "blocked"}, status=403)
         
         return None
 
@@ -284,6 +294,8 @@ class UUIDTamperMiddleware(MiddlewareMixin):
                 except (ValueError, TypeError):
                     continue
 
-        if not is_ip_exempted(ip):
-            BlacklistManager.block(ip, "UUID tampering")
+        # BlacklistManager.block() now checks exemptions internally
+        BlacklistManager.block(ip, "UUID tampering")
+        # Check if actually blocked (exempted IPs won't be blocked)
+        if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
