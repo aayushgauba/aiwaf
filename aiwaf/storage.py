@@ -167,28 +167,39 @@ class CsvExemptionStore:
     @staticmethod
     def add_ip(ip_address, reason=""):
         ensure_csv_directory()
-        # Check if IP already exists
+        
+        # Check if IP already exists to avoid duplicates
         if CsvExemptionStore.is_exempted(ip_address):
             return
         
         # Add new entry
         new_file = not os.path.exists(EXEMPTION_CSV)
-        with open(EXEMPTION_CSV, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            if new_file:
-                writer.writerow(["ip_address", "reason", "created_at"])
-            writer.writerow([ip_address, reason, timezone.now().isoformat()])
+        try:
+            with open(EXEMPTION_CSV, "a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                if new_file:
+                    writer.writerow(["ip_address", "reason", "created_at"])
+                writer.writerow([ip_address, reason, timezone.now().isoformat()])
+        except Exception as e:
+            print(f"Error writing to exemption CSV: {e}")
+            print(f"File path: {EXEMPTION_CSV}")
+            print(f"Directory exists: {os.path.exists(CSV_DATA_DIR)}")
+            raise
     
     @staticmethod
     def is_exempted(ip_address):
         if not os.path.exists(EXEMPTION_CSV):
             return False
         
-        with open(EXEMPTION_CSV, "r", newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if row["ip_address"] == ip_address:
-                    return True
+        try:
+            with open(EXEMPTION_CSV, "r", newline="", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row["ip_address"] == ip_address:
+                        return True
+        except Exception as e:
+            print(f"Error reading exemption CSV: {e}")
+            return False
         return False
     
     @staticmethod

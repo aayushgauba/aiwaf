@@ -28,7 +28,11 @@ class AIWAFLoggerMiddleware(MiddlewareMixin):
     def _ensure_csv_header(self):
         """Ensure CSV file has proper header row"""
         if not os.path.exists(self.csv_file):
-            os.makedirs(os.path.dirname(self.csv_file), exist_ok=True) if os.path.dirname(self.csv_file) else None
+            # Create directory if it doesn't exist
+            csv_dir = os.path.dirname(self.csv_file)
+            if csv_dir and not os.path.exists(csv_dir):
+                os.makedirs(csv_dir, exist_ok=True)
+            
             with open(self.csv_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([
@@ -73,6 +77,11 @@ class AIWAFLoggerMiddleware(MiddlewareMixin):
     def _log_to_csv(self, data):
         """Write log entry to CSV file"""
         try:
+            # Ensure directory exists before writing
+            csv_dir = os.path.dirname(self.csv_file)
+            if csv_dir and not os.path.exists(csv_dir):
+                os.makedirs(csv_dir, exist_ok=True)
+                
             with open(self.csv_file, 'a', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow([

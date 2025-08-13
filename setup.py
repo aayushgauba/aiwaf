@@ -1,5 +1,4 @@
-# setup.py
-from setuptools import setup, find_packages
+# setup.py    version="0.1.9.0.4",from setuptools import setup, find_packages
 import pathlib
 
 HERE = pathlib.Path(__file__).parent
