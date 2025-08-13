@@ -1,6 +1,11 @@
 default_app_config = "aiwaf.apps.AiwafConfig"
 
-__version__ = "0.1.9.0"
+__version__ = "0.1.9.0.1"
+
+# Note: Middleware classes are available from aiwaf.middleware
+# Import them only when needed to avoid circular imports during Django app loading= "aiwaf.apps.AiwafConfig"
+
+__version__ = "0.1.9.0.1"
 
 # Import main middleware classes for easier access
 try:

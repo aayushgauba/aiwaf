@@ -14,6 +14,14 @@ class Command(BaseCommand):
             import aiwaf
             version = getattr(aiwaf, '__version__', 'Unknown')
             self.stdout.write(self.style.SUCCESS(f"✅ AI-WAF imported successfully (version: {version})"))
+            
+            # Test critical imports that caused AppRegistryNotReady
+            try:
+                from aiwaf import storage, utils, trainer
+                self.stdout.write(self.style.SUCCESS("✅ Critical modules (storage, utils, trainer) imported successfully"))
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f"❌ Critical module import failed: {e}"))
+                
         except ImportError as e:
             self.stdout.write(self.style.ERROR(f"❌ AI-WAF import failed: {e}"))
             return

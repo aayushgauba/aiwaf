@@ -19,6 +19,15 @@ def check_aiwaf_installation():
         import aiwaf
         version = getattr(aiwaf, '__version__', 'Unknown')
         print(f"✅ AI-WAF imported successfully (version: {version})")
+        
+        # Test critical imports that caused AppRegistryNotReady
+        try:
+            from aiwaf import storage, utils, trainer
+            print("✅ Critical modules (storage, utils, trainer) imported successfully")
+        except Exception as e:
+            print(f"❌ Critical module import failed: {e}")
+            print("   This may indicate the AppRegistryNotReady issue persists")
+            
     except ImportError as e:
         print(f"❌ AI-WAF import failed: {e}")
         print("   Solution: Run 'pip install aiwaf' or 'pip install --upgrade aiwaf'")

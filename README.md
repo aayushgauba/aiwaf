@@ -349,6 +349,7 @@ MIDDLEWARE = [
    ```
 
 **Common Issues:**
+- **AppRegistryNotReady Error**: Fixed in v0.1.9.0.1 - update with `pip install --upgrade aiwaf`
 - Missing Django: `pip install Django`
 - Old AI-WAF version: `pip install --upgrade aiwaf`
 - Missing migrations: `python manage.py migrate`

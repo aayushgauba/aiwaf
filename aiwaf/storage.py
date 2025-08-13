@@ -4,17 +4,23 @@ import pandas as pd
 from django.conf import settings
 from django.utils import timezone
 
-# Only import models if aiwaf is in INSTALLED_APPS
-try:
-    from django.apps import apps
-    if apps.is_installed('aiwaf'):
-        from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
-    else:
-        # Create dummy classes to avoid import errors
-        FeatureSample = BlacklistEntry = IPExemption = DynamicKeyword = None
-except (ImportError, RuntimeError):
-    # Handle cases where Django isn't fully initialized yet
-    FeatureSample = BlacklistEntry = IPExemption = DynamicKeyword = None
+# Defer model imports to avoid AppRegistryNotReady during Django app loading
+FeatureSample = BlacklistEntry = IPExemption = DynamicKeyword = None
+
+def _import_models():
+    """Import Django models only when needed and apps are ready."""
+    global FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
+    
+    if FeatureSample is not None:
+        return  # Already imported
+    
+    try:
+        from django.apps import apps
+        if apps.ready and apps.is_installed('aiwaf'):
+            from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
+    except (ImportError, RuntimeError, Exception):
+        # Keep models as None if can't import
+        pass
 
 # Configuration
 STORAGE_MODE = getattr(settings, "AIWAF_STORAGE_MODE", "models")  # "models" or "csv"
@@ -63,6 +69,7 @@ class CsvFeatureStore:
 class DbFeatureStore:
     @staticmethod
     def persist_rows(rows):
+        _import_models()
         if FeatureSample is not None:
             objs = []
             for ip,pl,kw,rt,si,bc,t404,label in rows:
@@ -76,6 +83,7 @@ class DbFeatureStore:
 
     @staticmethod
     def load_matrix():
+        _import_models()
         if FeatureSample is not None:
             qs = FeatureSample.objects.all().values_list(
                 "path_len","kw_hits","resp_time","status_idx","burst_count","total_404"
@@ -317,23 +325,27 @@ class ModelBlacklistStore:
     
     @staticmethod
     def add_ip(ip_address, reason):
+        _import_models()
         if BlacklistEntry is not None:
             BlacklistEntry.objects.get_or_create(ip_address=ip_address, defaults={"reason": reason})
     
     @staticmethod
     def is_blocked(ip_address):
+        _import_models()
         if BlacklistEntry is not None:
             return BlacklistEntry.objects.filter(ip_address=ip_address).exists()
         return False
     
     @staticmethod
     def get_all():
+        _import_models()
         if BlacklistEntry is not None:
             return list(BlacklistEntry.objects.values("ip_address", "reason", "created_at"))
         return []
     
     @staticmethod
     def remove_ip(ip_address):
+        _import_models()
         if BlacklistEntry is not None:
             BlacklistEntry.objects.filter(ip_address=ip_address).delete()
 
@@ -343,23 +355,27 @@ class ModelExemptionStore:
     
     @staticmethod
     def add_ip(ip_address, reason=""):
+        _import_models()
         if IPExemption is not None:
             IPExemption.objects.get_or_create(ip_address=ip_address, defaults={"reason": reason})
     
     @staticmethod
     def is_exempted(ip_address):
+        _import_models()
         if IPExemption is not None:
             return IPExemption.objects.filter(ip_address=ip_address).exists()
         return False
     
     @staticmethod
     def get_all():
+        _import_models()
         if IPExemption is not None:
             return list(IPExemption.objects.values("ip_address", "reason", "created_at"))
         return []
     
     @staticmethod
     def remove_ip(ip_address):
+        _import_models()
         if IPExemption is not None:
             IPExemption.objects.filter(ip_address=ip_address).delete()
 
@@ -369,6 +385,7 @@ class ModelKeywordStore:
     
     @staticmethod
     def add_keyword(keyword, count=1):
+        _import_models()
         if DynamicKeyword is not None:
             obj, created = DynamicKeyword.objects.get_or_create(keyword=keyword, defaults={"count": count})
             if not created:
@@ -377,16 +394,19 @@ class ModelKeywordStore:
     
     @staticmethod
     def get_top_keywords(limit=10):
+        _import_models()
         if DynamicKeyword is not None:
             return list(DynamicKeyword.objects.order_by("-count").values_list("keyword", flat=True)[:limit])
         return []
     
     @staticmethod
     def remove_keyword(keyword):
+        _import_models()
         if DynamicKeyword is not None:
             DynamicKeyword.objects.filter(keyword=keyword).delete()
     
     @staticmethod
     def clear_all():
+        _import_models()
         if DynamicKeyword is not None:
             DynamicKeyword.objects.all().delete()
