@@ -117,6 +117,11 @@ class ModelBlacklistStore:
         ModelBlacklistStore.unblock_ip(ip)
 
     @staticmethod
+    def add_ip(ip, reason="Automated block"):
+        """Add IP to blacklist (alias for block_ip)"""
+        ModelBlacklistStore.block_ip(ip, reason)
+
+    @staticmethod
     def get_all_blocked_ips():
         """Get all blocked IPs"""
         _import_models()
@@ -189,7 +194,7 @@ class ModelExemptionStore:
 
 class ModelKeywordStore:
     @staticmethod
-    def add_keyword(keyword):
+    def add_keyword(keyword, count=1):
         """Add a keyword to the dynamic keyword list"""
         _import_models()
         if DynamicKeyword is None:
@@ -197,10 +202,24 @@ class ModelKeywordStore:
         try:
             obj, created = DynamicKeyword.objects.get_or_create(keyword=keyword)
             if not created:
-                obj.count += 1
+                obj.count += count
+                obj.save()
+            else:
+                obj.count = count
                 obj.save()
         except Exception as e:
             print(f"Error adding keyword {keyword}: {e}")
+
+    @staticmethod
+    def remove_keyword(keyword):
+        """Remove a keyword from the dynamic keyword list"""
+        _import_models()
+        if DynamicKeyword is None:
+            return
+        try:
+            DynamicKeyword.objects.filter(keyword=keyword).delete()
+        except Exception as e:
+            print(f"Error removing keyword {keyword}: {e}")
 
     @staticmethod
     def get_top_keywords(n=10):
