@@ -498,7 +498,9 @@ class Command(BaseCommand):
                 else u['package']['name'] 
                 for u in safe_upgrades
             ])
-            self.stdout.write(f"Command that would be executed:\n   {upgrade_cmd}")
+            self.stdout.write(f"Commands that would be executed:")
+            self.stdout.write(f"   {upgrade_cmd}")
+            self.stdout.write(f"   pip cache purge  # Clear pip cache after upgrades")
             return []
             return []
         else:
@@ -537,6 +539,20 @@ class Command(BaseCommand):
             self.stdout.write(f"\n🎉 Upgrade complete: {success_count}/{len(safe_upgrades)} packages upgraded successfully")
             
             if success_count > 0:
+                # Clear pip cache after successful upgrades
+                self.stdout.write(self.style.HTTP_INFO("\n🧹 Clearing pip cache..."))
+                try:
+                    cache_result = subprocess.run(['pip', 'cache', 'purge'], 
+                                                capture_output=True, text=True, timeout=60)
+                    if cache_result.returncode == 0:
+                        self.stdout.write(self.style.SUCCESS("   ✅ Pip cache cleared successfully"))
+                    else:
+                        self.stdout.write(self.style.WARNING(f"   ⚠️  Cache clear warning: {cache_result.stderr}"))
+                except subprocess.TimeoutExpired:
+                    self.stdout.write(self.style.WARNING("   ⚠️  Pip cache clear timed out"))
+                except Exception as e:
+                    self.stdout.write(self.style.WARNING(f"   ⚠️  Could not clear pip cache: {e}"))
+                
                 self.stdout.write(self.style.HTTP_INFO("\n💡 Recommendations after upgrade:"))
                 self.stdout.write("   1. Run tests to ensure everything works correctly")
                 self.stdout.write("   2. Run 'python manage.py check_dependencies' again to verify")

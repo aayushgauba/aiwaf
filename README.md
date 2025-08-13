@@ -226,6 +226,7 @@ python manage.py check_dependencies --upgrade --check-security --update-requirem
 - ✅ **Dry run mode** for testing upgrade plans
 - ✅ **AIWAF compatibility validation**
 - ✅ **Automatic requirements.txt updates** after successful upgrades
+- ✅ **Pip cache clearing** to prevent cache-related issues
 
 **Safe Upgrade System:**
 
@@ -282,6 +283,9 @@ The upgrade system is designed to maintain AIWAF stability while keeping your pa
 
 🎉 Upgrade complete: 2/2 packages upgraded successfully
 
+🧹 Clearing pip cache...
+   ✅ Pip cache cleared successfully
+
 📝 Updating requirements.txt...
    📋 Backup created: requirements.txt.backup
    📦 pandas: pandas>=1.3 → pandas>=1.5.3
@@ -300,6 +304,7 @@ The upgrade system is designed to maintain AIWAF stability while keeping your pa
 - 🧪 **Dry Run Mode**: Test upgrade plans before execution
 - ⚠️ **Clear Blocking Reasons**: Explains why upgrades are blocked
 - 📝 **Requirements.txt Updates**: Automatically updates dependency files
+- 🧹 **Cache Management**: Clears pip cache after successful upgrades
 
 **Recommended Upgrade Workflow:**
 
@@ -338,6 +343,7 @@ The system uses a multi-layer decision process:
 - **Layer 3**: Analyze cross-package dependencies  
 - **Layer 4**: Select highest safe version within constraints
 - **Layer 5**: Execute with error handling and rollback capability
+- **Layer 6**: Clear pip cache and update requirements.txt after success
 
 This will ensure the IP is never blocked by AI‑WAF. You can also manage exemptions via the Django admin interface.
 
