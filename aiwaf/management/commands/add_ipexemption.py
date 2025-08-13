@@ -17,7 +17,7 @@ class Command(BaseCommand):
         if store.is_exempted(ip):
             self.stdout.write(self.style.WARNING(f'IP {ip} is already exempted.'))
         else:
-            store.add_ip(ip, reason)
+            store.add_exemption(ip, reason)
             self.stdout.write(self.style.SUCCESS(f'IP {ip} added to exemption list.'))
             if reason:
                 self.stdout.write(self.style.SUCCESS(f'Reason: {reason}'))

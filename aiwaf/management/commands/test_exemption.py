@@ -63,7 +63,7 @@ class Command(BaseCommand):
             
             # Create the exemption
             try:
-                exemption_store.add_ip(test_ip, "Test exemption from debug")
+                exemption_store.add_exemption(test_ip, "Test exemption from debug")
                 self.stdout.write(self.style.SUCCESS("✅ Created test exemption"))
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f"❌ Failed to create exemption: {e}"))
