@@ -12,7 +12,7 @@ class BlacklistManager:
             return  # Don't block exempted IPs
         
         store = get_blacklist_store()
-        store.add_ip(ip, reason)
+        store.block_ip(ip, reason)
 
     @staticmethod
     def is_blocked(ip):
@@ -29,9 +29,9 @@ class BlacklistManager:
     @staticmethod
     def all_blocked():
         store = get_blacklist_store()
-        return store.get_all()
+        return store.get_all_blocked_ips()
     
     @staticmethod
     def unblock(ip):
         store = get_blacklist_store()
-        store.remove_ip(ip)
+        store.unblock_ip(ip)

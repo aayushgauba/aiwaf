@@ -44,10 +44,6 @@ INSTALLED_APPS = [
 ```python
 # AI-WAF Configuration
 AIWAF_ACCESS_LOG = "/var/log/nginx/access.log"  # Path to your access log
-
-# Optional: Choose storage mode
-AIWAF_STORAGE_MODE = "csv"  # or "models" (default)
-AIWAF_CSV_DATA_DIR = "aiwaf_data"  # For CSV mode
 ```
 
 ### **Required: Add Middleware**
@@ -77,7 +73,7 @@ MIDDLEWARE = [
 
 ## 🗄️ Step 3: Database Setup
 
-### **Option A: Using Django Models (default)**
+### **Django Models Setup**
 
 ```bash
 # Create migrations
@@ -87,15 +83,7 @@ python manage.py makemigrations aiwaf
 python manage.py migrate
 ```
 
-### **Option B: Using CSV Files (no database required)**
-
-```python
-# In settings.py
-AIWAF_STORAGE_MODE = "csv"
-AIWAF_CSV_DATA_DIR = "aiwaf_data"
-```
-
-No migrations needed! CSV files are created automatically.
+All data is stored in Django models for real-time performance.
 
 ## 🚀 Step 4: Test Installation
 
@@ -117,8 +105,6 @@ python manage.py aiwaf_logging --status
 ```python
 # settings.py
 AIWAF_MIDDLEWARE_LOGGING = True
-AIWAF_MIDDLEWARE_LOG = "aiwaf_requests.log"
-AIWAF_MIDDLEWARE_CSV = True
 ```
 
 ### **Exempt Paths**
@@ -180,20 +166,10 @@ pip install --upgrade aiwaf
 **Solutions:**
 1. Fix log path in settings
 2. Enable middleware logger: `AIWAF_MIDDLEWARE_LOGGING = True`
-3. Use CSV mode for built-in logging
-
-### **Error: Permission denied on CSV files**
-
-**Problem:** Can't write to CSV directory.
-
-**Solutions:**
-1. Check directory permissions
-2. Change `AIWAF_CSV_DATA_DIR` to writable location
-3. Run Django with proper user permissions
 
 ## 📁 File Structure After Installation
 
-### **Models Mode:**
+### **Django Models Storage:**
 ```
 your_project/
 ├── manage.py
@@ -207,12 +183,15 @@ your_project/
 your_project/
 ├── manage.py  
 ├── settings.py
-├── aiwaf_data/              # Created automatically
-│   ├── blacklist.csv
-│   ├── exemptions.csv  
-│   ├── keywords.csv
-│   └── access_samples.csv
-└── aiwaf_requests.log       # Middleware logger
+└── db.sqlite3               # Contains AI-WAF model tables
+```
+
+**Database Tables Created:**
+- `aiwaf_blacklistentry` - Blocked IP addresses
+- `aiwaf_ipexemption` - Exempt IP addresses  
+- `aiwaf_dynamickeyword` - Dynamic keywords with counts
+- `aiwaf_featuresample` - Feature samples for ML training
+- `aiwaf_requestlog` - Request logs (if middleware logging enabled)
 ```
 
 ## ✅ Verification Checklist
@@ -220,9 +199,9 @@ your_project/
 - [ ] `aiwaf` added to `INSTALLED_APPS`
 - [ ] `AIWAF_ACCESS_LOG` configured
 - [ ] Middleware added to `MIDDLEWARE`
-- [ ] Migrations run (if using models mode)
+- [ ] Migrations run: `python manage.py migrate aiwaf`
 - [ ] `python manage.py check` passes
-- [ ] Test command works: `python manage.py add_ipexemption 127.0.0.1`
+- [ ] Test command works: `python manage.py add_exemption 127.0.0.1`
 
 ## 🏃‍♂️ Quick Start (Minimal Setup)
 

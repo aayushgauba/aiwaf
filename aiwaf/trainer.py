@@ -78,18 +78,6 @@ def _read_all_logs() -> list[str]:
             except OSError:
                 continue
     
-    # If no lines found from main log, try AI-WAF middleware CSV log
-    if not lines:
-        middleware_csv = getattr(settings, "AIWAF_MIDDLEWARE_LOG", "aiwaf_requests.log").replace('.log', '.csv')
-        if os.path.exists(middleware_csv):
-            try:
-                from .middleware_logger import AIWAFCSVLogParser
-                csv_lines = AIWAFCSVLogParser.get_log_lines_for_trainer(middleware_csv)
-                lines.extend(csv_lines)
-                print(f"📋 Using AI-WAF middleware CSV log: {middleware_csv} ({len(csv_lines)} entries)")
-            except Exception as e:
-                print(f"⚠️  Failed to read middleware CSV log: {e}")
-    
     return lines
 
 

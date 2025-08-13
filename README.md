@@ -47,7 +47,7 @@ aiwaf/
 ## 🚀 Features
 
 - **IP Blocklist**  
-  Instantly blocks suspicious IPs (supports CSV fallback or Django model).
+  Instantly blocks suspicious IPs using Django models with real-time performance.
 
 - **Rate Limiting**  
   Sliding‑window blocks flooders (> `AIWAF_RATE_MAX` per `AIWAF_RATE_WINDOW`), then blacklists them.
@@ -77,9 +77,9 @@ aiwaf/
   Blocks guessed or invalid UUIDs that don't resolve to real models.
 
 - **Built-in Request Logger**  
-  Optional middleware logger that captures requests to CSV:
+  Optional middleware logger that captures requests to Django models:
   - **Automatic fallback** when main access logs unavailable
-  - **CSV format** for easy analysis and training
+  - **Real-time storage** in database for instant access
   - **Captures response times** for better anomaly detection
   - **Zero configuration** - works out of the box
 
@@ -200,28 +200,33 @@ AIWAF_ACCESS_LOG = "/var/log/nginx/access.log"
 
 ---
 
-### Storage Configuration
+### Database Models
 
-**Choose storage backend:**
+AI-WAF uses Django models for real-time, high-performance storage:
 
 ```python
-# Use Django models (default) - requires database tables
-AIWAF_STORAGE_MODE = "models"
-
-# OR use CSV files - no database required
-AIWAF_STORAGE_MODE = "csv"
-AIWAF_CSV_DATA_DIR = "aiwaf_data"  # Directory for CSV files
+# All data is stored in Django models - no configuration needed
+# Tables created automatically with migrations:
+# - aiwaf_blacklistentry     # Blocked IP addresses
+# - aiwaf_ipexemption        # Exempt IP addresses  
+# - aiwaf_dynamickeyword     # Dynamic keywords with counts
+# - aiwaf_featuresample      # Feature samples for ML training
+# - aiwaf_requestlog         # Request logs (if middleware logging enabled)
 ```
 
-**CSV Mode Features:**
-- No database migrations required
-- Files stored in `aiwaf_data/` directory:
-  - `blacklist.csv` - Blocked IP addresses
-  - `exemptions.csv` - Exempt IP addresses  
-  - `keywords.csv` - Dynamic keywords
-  - `access_samples.csv` - Feature samples for ML training
-- Perfect for lightweight deployments or when you prefer file-based storage
-- Management commands work identically in both modes
+**Benefits of Django Models:**
+- ⚡ **Real-time performance** - No file I/O bottlenecks
+- 🔄 **Instant updates** - Changes visible immediately across all processes
+- 🚀 **Better concurrency** - No file locking issues
+- 📊 **Rich querying** - Use Django ORM for complex operations
+- 🔍 **Admin integration** - View/manage data through Django admin
+
+**Database Setup:**
+```bash
+# Create and apply migrations
+python manage.py makemigrations aiwaf
+python manage.py migrate aiwaf
+```
 
 ---
 
@@ -232,8 +237,6 @@ Enable AI-WAF's built-in request logger as a fallback when main access logs aren
 ```python
 # Enable middleware logging
 AIWAF_MIDDLEWARE_LOGGING = True                    # Enable/disable logging
-AIWAF_MIDDLEWARE_LOG = "aiwaf_requests.log"        # Log file path
-AIWAF_MIDDLEWARE_CSV = True                        # Use CSV format (recommended)
 ```
 
 **Then add middleware to MIDDLEWARE list:**
@@ -255,8 +258,8 @@ python manage.py aiwaf_logging --clear     # Clear log files
 
 **Benefits:**
 - **Automatic fallback** when `AIWAF_ACCESS_LOG` unavailable
-- **CSV format** with precise timestamps and response times
-- **Zero configuration** - trainer automatically detects and uses CSV logs
+- **Database storage** with precise timestamps and response times
+- **Zero configuration** - trainer automatically detects and uses model logs
 - **Lightweight** - fails silently to avoid breaking your application
 
 ---
@@ -365,7 +368,7 @@ python manage.py detect_and_train
 ```
 
 ### What happens:
-1. Read access logs (incl. rotated or gzipped) **OR** AI-WAF middleware CSV logs
+1. Read access logs (incl. rotated or gzipped) **OR** AI-WAF middleware model logs
 2. Auto‑block IPs with ≥ 6 total 404s
 3. Extract features & train IsolationForest
 4. Save `model.pkl` with current scikit-learn version
@@ -390,7 +393,7 @@ python manage.py detect_and_train
 5. Extract top 10 dynamic keywords from 4xx/5xx
 6. Remove any keywords associated with newly exempt paths
 
-**Note:** If main access log (`AIWAF_ACCESS_LOG`) is unavailable, trainer automatically falls back to AI-WAF middleware CSV logs.
+**Note:** If main access log (`AIWAF_ACCESS_LOG`) is unavailable, trainer automatically falls back to AI-WAF middleware model logs.
 
 ---
 
