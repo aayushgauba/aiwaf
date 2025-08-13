@@ -3,7 +3,18 @@ import numpy as np
 import pandas as pd
 from django.conf import settings
 from django.utils import timezone
-from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
+
+# Only import models if aiwaf is in INSTALLED_APPS
+try:
+    from django.apps import apps
+    if apps.is_installed('aiwaf'):
+        from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
+    else:
+        # Create dummy classes to avoid import errors
+        FeatureSample = BlacklistEntry = IPExemption = DynamicKeyword = None
+except (ImportError, RuntimeError):
+    # Handle cases where Django isn't fully initialized yet
+    FeatureSample = BlacklistEntry = IPExemption = DynamicKeyword = None
 
 # Configuration
 STORAGE_MODE = getattr(settings, "AIWAF_STORAGE_MODE", "models")  # "models" or "csv"
@@ -52,22 +63,25 @@ class CsvFeatureStore:
 class DbFeatureStore:
     @staticmethod
     def persist_rows(rows):
-        objs = []
-        for ip,pl,kw,rt,si,bc,t404,label in rows:
-            objs.append(FeatureSample(
-                ip=ip, path_len=pl, kw_hits=kw,
-                resp_time=rt, status_idx=si,
-                burst_count=bc, total_404=t404,
-                label=label
-            ))
-        FeatureSample.objects.bulk_create(objs, ignore_conflicts=True)
+        if FeatureSample is not None:
+            objs = []
+            for ip,pl,kw,rt,si,bc,t404,label in rows:
+                objs.append(FeatureSample(
+                    ip=ip, path_len=pl, kw_hits=kw,
+                    resp_time=rt, status_idx=si,
+                    burst_count=bc, total_404=t404,
+                    label=label
+                ))
+            FeatureSample.objects.bulk_create(objs, ignore_conflicts=True)
 
     @staticmethod
     def load_matrix():
-        qs = FeatureSample.objects.all().values_list(
-            "path_len","kw_hits","resp_time","status_idx","burst_count","total_404"
-        )
-        return np.array(list(qs), dtype=float)
+        if FeatureSample is not None:
+            qs = FeatureSample.objects.all().values_list(
+                "path_len","kw_hits","resp_time","status_idx","burst_count","total_404"
+            )
+            return np.array(list(qs), dtype=float)
+        return np.empty((0,6))
 
 def get_store():
     if getattr(settings, "AIWAF_FEATURE_STORE", "csv") == "db":
@@ -266,8 +280,12 @@ def get_blacklist_store():
     if STORAGE_MODE == "csv":
         return CsvBlacklistStore
     else:
-        # Return a wrapper for Django models
-        return ModelBlacklistStore
+        # Return a wrapper for Django models (only if models are available)
+        if BlacklistEntry is not None:
+            return ModelBlacklistStore
+        else:
+            # Fallback to CSV if models aren't available
+            return CsvBlacklistStore
 
 
 def get_exemption_store():
@@ -275,7 +293,10 @@ def get_exemption_store():
     if STORAGE_MODE == "csv":
         return CsvExemptionStore
     else:
-        return ModelExemptionStore
+        if IPExemption is not None:
+            return ModelExemptionStore
+        else:
+            return CsvExemptionStore
 
 
 def get_keyword_store():
@@ -283,7 +304,10 @@ def get_keyword_store():
     if STORAGE_MODE == "csv":
         return CsvKeywordStore
     else:
-        return ModelKeywordStore
+        if DynamicKeyword is not None:
+            return ModelKeywordStore
+        else:
+            return CsvKeywordStore
 
 
 # ============= Django Model Wrappers =============
@@ -293,19 +317,25 @@ class ModelBlacklistStore:
     
     @staticmethod
     def add_ip(ip_address, reason):
-        BlacklistEntry.objects.get_or_create(ip_address=ip_address, defaults={"reason": reason})
+        if BlacklistEntry is not None:
+            BlacklistEntry.objects.get_or_create(ip_address=ip_address, defaults={"reason": reason})
     
     @staticmethod
     def is_blocked(ip_address):
-        return BlacklistEntry.objects.filter(ip_address=ip_address).exists()
+        if BlacklistEntry is not None:
+            return BlacklistEntry.objects.filter(ip_address=ip_address).exists()
+        return False
     
     @staticmethod
     def get_all():
-        return list(BlacklistEntry.objects.values("ip_address", "reason", "created_at"))
+        if BlacklistEntry is not None:
+            return list(BlacklistEntry.objects.values("ip_address", "reason", "created_at"))
+        return []
     
     @staticmethod
     def remove_ip(ip_address):
-        BlacklistEntry.objects.filter(ip_address=ip_address).delete()
+        if BlacklistEntry is not None:
+            BlacklistEntry.objects.filter(ip_address=ip_address).delete()
 
 
 class ModelExemptionStore:
@@ -313,19 +343,25 @@ class ModelExemptionStore:
     
     @staticmethod
     def add_ip(ip_address, reason=""):
-        IPExemption.objects.get_or_create(ip_address=ip_address, defaults={"reason": reason})
+        if IPExemption is not None:
+            IPExemption.objects.get_or_create(ip_address=ip_address, defaults={"reason": reason})
     
     @staticmethod
     def is_exempted(ip_address):
-        return IPExemption.objects.filter(ip_address=ip_address).exists()
+        if IPExemption is not None:
+            return IPExemption.objects.filter(ip_address=ip_address).exists()
+        return False
     
     @staticmethod
     def get_all():
-        return list(IPExemption.objects.values("ip_address", "reason", "created_at"))
+        if IPExemption is not None:
+            return list(IPExemption.objects.values("ip_address", "reason", "created_at"))
+        return []
     
     @staticmethod
     def remove_ip(ip_address):
-        IPExemption.objects.filter(ip_address=ip_address).delete()
+        if IPExemption is not None:
+            IPExemption.objects.filter(ip_address=ip_address).delete()
 
 
 class ModelKeywordStore:
@@ -333,19 +369,24 @@ class ModelKeywordStore:
     
     @staticmethod
     def add_keyword(keyword, count=1):
-        obj, created = DynamicKeyword.objects.get_or_create(keyword=keyword, defaults={"count": count})
-        if not created:
-            obj.count += count
-            obj.save()
+        if DynamicKeyword is not None:
+            obj, created = DynamicKeyword.objects.get_or_create(keyword=keyword, defaults={"count": count})
+            if not created:
+                obj.count += count
+                obj.save()
     
     @staticmethod
     def get_top_keywords(limit=10):
-        return list(DynamicKeyword.objects.order_by("-count").values_list("keyword", flat=True)[:limit])
+        if DynamicKeyword is not None:
+            return list(DynamicKeyword.objects.order_by("-count").values_list("keyword", flat=True)[:limit])
+        return []
     
     @staticmethod
     def remove_keyword(keyword):
-        DynamicKeyword.objects.filter(keyword=keyword).delete()
+        if DynamicKeyword is not None:
+            DynamicKeyword.objects.filter(keyword=keyword).delete()
     
     @staticmethod
     def clear_all():
-        DynamicKeyword.objects.all().delete()
+        if DynamicKeyword is not None:
+            DynamicKeyword.objects.all().delete()

@@ -6,6 +6,18 @@
 
 ---
 
+## 🚀 Quick Installation
+
+```bash
+pip install aiwaf
+```
+
+**⚠️ Important:** Add `'aiwaf'` to your Django `INSTALLED_APPS` to avoid setup errors.
+
+**📋 Complete Setup Guide:** See [INSTALLATION.md](INSTALLATION.md) for detailed installation instructions and troubleshooting.
+
+---
+
 ## System Requirements
 
 No GPU needed—AI-WAF runs entirely on CPU with just Python 3.8+, Django 3.2+, a single vCPU and ~512 MB RAM for small sites; for moderate production traffic you can bump to 2–4 vCPUs and 2–4 GB RAM, offload the daily detect-and-train job to a worker, and rotate logs to keep memory use bounded.
