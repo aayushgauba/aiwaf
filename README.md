@@ -100,6 +100,9 @@ aiwaf/
   - **Missing dependency** detection
   - **Security vulnerability** scanning
   - **Smart upgrade suggestions** with compatibility validation
+  - **Safe automated upgrades** that preserve AIWAF stability
+  - **Dry run mode** for testing upgrade plans
+  - **Cross-package dependency** analysis and conflict resolution
 
 
 **Exempt Path & IP Awareness**
@@ -199,14 +202,47 @@ python manage.py check_dependencies --format json
 
 # Include security vulnerability scanning
 python manage.py check_dependencies --check-security
+
+# Dry run - show what would be upgraded
+python manage.py check_dependencies --upgrade --dry-run
+
+# Actually upgrade packages safely
+python manage.py check_dependencies --upgrade
+
+# Full workflow: check, upgrade, and scan for vulnerabilities
+python manage.py check_dependencies --upgrade --check-security
 ```
 
-**Features:**
+**Core Features:**
 - ✅ **Parses pyproject.toml and requirements.txt**
 - ✅ **Shows current vs latest versions** 
 - ✅ **Checks package compatibility** (NumPy 2.0 vs pandas, etc.)
 - ✅ **Detects missing dependencies**
 - ✅ **Security vulnerability scanning** (requires `safety` package)
+- ✅ **Safe package upgrades** (maintains AIWAF stability)
+- ✅ **Dry run mode** for testing upgrade plans
+- ✅ **AIWAF compatibility validation**
+
+**Safe Upgrade System:**
+
+The upgrade system is designed to maintain AIWAF stability while keeping your packages up to date:
+
+| Protection Level | Description | Example |
+|------------------|-------------|---------|
+| 🛡️ **AIWAF Core** | Never upgrades AIWAF itself | Skips `aiwaf` package |
+| 🔒 **Breaking Changes** | Avoids known problematic versions | Blocks NumPy 2.0+ |
+| 🧠 **Smart Constraints** | Respects AIWAF compatibility matrix | pandas ≤ 2.9.99 |
+| 🔍 **Dependency Analysis** | Checks cross-package compatibility | NumPy vs pandas versions |
+
+**AIWAF Compatibility Matrix:**
+
+| Package | Safe Range | Blocked Versions | Reason |
+|---------|------------|------------------|---------|
+| Django | 3.2+ | None | AIWAF compatible with all Django versions |
+| NumPy | 1.21 - 1.99 | 2.0+ | Avoid breaking changes |
+| pandas | 1.3 - 2.9 | 3.0+ | AIWAF compatibility |
+| scikit-learn | 1.0 - 1.99 | 2.0+ | Model compatibility |
+| joblib | 1.1 - 1.99 | 2.0+ | AIWAF tested range |
 - ✅ **Provides upgrade commands**
 
 **Example Output:**
@@ -226,9 +262,68 @@ python manage.py check_dependencies --check-security
 🔍 Checking package compatibility...
 ✅ All packages appear to be compatible!
 
-💡 To update outdated packages, run:
-   pip install --upgrade pandas numpy
+� Planning safe package upgrades...
+
+✅ SAFE UPGRADES PLANNED:
+────────────────────────────────────────
+📦 pandas              1.3.5        → 1.5.3        (Latest: 2.2.2)
+   💡 Upgraded to latest safe version (AIWAF constraint: <=1.99.99)
+📦 joblib              1.1.0        → 1.4.2        (Latest: 1.4.2)
+   💡 Safe to upgrade to latest version
+
+⚠️  UPGRADES BLOCKED FOR STABILITY:
+────────────────────────────────────────
+❌ numpy               1.21.0       ✗ 2.0.1
+   🚨 NumPy 2.0+ may cause compatibility issues (max safe: 1.99.99)
+
+�💡 To update outdated packages, run:
+   pip install --upgrade pandas==1.5.3 joblib
 ```
+
+**Safe Upgrade System:**
+- 🛡️ **AIWAF Protection**: Never breaks AIWAF functionality
+- 🔍 **Compatibility Validation**: Checks package interdependencies  
+- 📊 **Conservative Constraints**: Avoids known problematic versions
+- 🧪 **Dry Run Mode**: Test upgrade plans before execution
+- ⚠️ **Clear Blocking Reasons**: Explains why upgrades are blocked
+
+**Recommended Upgrade Workflow:**
+
+1. **Check current status:**
+   ```bash
+   python manage.py check_dependencies
+   ```
+
+2. **Preview safe upgrades:**
+   ```bash
+   python manage.py check_dependencies --upgrade --dry-run
+   ```
+
+3. **Execute safe upgrades:**
+   ```bash
+   python manage.py check_dependencies --upgrade
+   ```
+
+4. **Verify after upgrade:**
+   ```bash
+   python manage.py check_dependencies
+   python manage.py detect_and_train  # Retrain with new packages
+   ```
+
+5. **Test your application:**
+   ```bash
+   python manage.py test  # Run your test suite
+   ```
+
+**Upgrade Decision Logic:**
+
+The system uses a multi-layer decision process:
+
+- **Layer 1**: Skip AIWAF itself (manual upgrade recommended)
+- **Layer 2**: Check AIWAF compatibility constraints
+- **Layer 3**: Analyze cross-package dependencies  
+- **Layer 4**: Select highest safe version within constraints
+- **Layer 5**: Execute with error handling and rollback capability
 
 This will ensure the IP is never blocked by AI‑WAF. You can also manage exemptions via the Django admin interface.
 
@@ -420,6 +515,68 @@ MIDDLEWARE = [
 - Old AI-WAF version: `pip install --upgrade aiwaf`
 - Missing migrations: `python manage.py migrate`
 - Import errors: Check `INSTALLED_APPS` includes `'aiwaf'`
+
+### **Dependency Upgrade Troubleshooting**
+
+**Common Upgrade Scenarios:**
+
+1. **NumPy 2.0 Upgrade Blocked:**
+   ```bash
+   # Check pandas compatibility first
+   python manage.py check_dependencies --upgrade --dry-run
+   
+   # If pandas < 2.1, upgrade pandas first
+   pip install 'pandas>=2.1,<3.0'
+   
+   # Then allow NumPy upgrade
+   python manage.py check_dependencies --upgrade
+   ```
+
+2. **All Upgrades Blocked:**
+   ```bash
+   # Check what's blocking upgrades
+   python manage.py check_dependencies --upgrade --dry-run
+   
+   # Manual override (use with caution)
+   pip install --upgrade package-name
+   
+   # Verify AIWAF still works
+   python manage.py detect_and_train
+   ```
+
+3. **Package Conflict After Upgrade:**
+   ```bash
+   # Check current compatibility
+   python manage.py check_dependencies
+   
+   # Downgrade to last known good version
+   pip install package-name==previous-version
+   
+   # Find safe upgrade path
+   python manage.py check_dependencies --upgrade --dry-run
+   ```
+
+4. **AIWAF Model Issues After Upgrade:**
+   ```bash
+   # Regenerate model with new package versions
+   python manage.py regenerate_model
+   
+   # Retrain with current environment
+   python manage.py detect_and_train
+   ```
+
+**Emergency Rollback:**
+If an upgrade breaks your system:
+```bash
+# Reinstall exact previous versions
+pip install package-name==old-version
+
+# Or use requirements.txt backup
+pip install -r requirements.txt.backup
+
+# Verify AIWAF functionality
+python manage.py aiwaf_diagnose
+```
 
 ---
 

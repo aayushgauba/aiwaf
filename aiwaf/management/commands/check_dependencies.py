@@ -30,6 +30,16 @@ class Command(BaseCommand):
             default=True,
             help='Check for package compatibility issues (default: True)'
         )
+        parser.add_argument(
+            '--upgrade',
+            action='store_true',
+            help='Automatically upgrade packages while maintaining stability'
+        )
+        parser.add_argument(
+            '--dry-run',
+            action='store_true',
+            help='Show what would be upgraded without actually upgrading'
+        )
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('🔍 Checking project dependencies...\n'))
@@ -49,6 +59,9 @@ class Command(BaseCommand):
             
             if options['check_compatibility']:
                 self.check_compatibility(results)
+            
+            if options['upgrade']:
+                self.perform_safe_upgrade(results, options['dry_run'])
             
             if options['check_security']:
                 self.check_security_vulnerabilities(dependencies)
@@ -338,18 +351,6 @@ class Command(BaseCommand):
                         'severity': 'error'
                     }
                 ]
-            },
-            {
-                'package': 'django',
-                'conflicts_with': [
-                    {
-                        'package': 'pandas',
-                        'django_versions': '>=4.0',
-                        'pandas_versions': '<1.3',
-                        'message': 'Django 4.0+ works better with pandas 1.3+',
-                        'severity': 'warning'
-                    }
-                ]
             }
         ]
 
@@ -432,6 +433,264 @@ class Command(BaseCommand):
                         })
         
         return conflicts
+
+    def perform_safe_upgrade(self, results, dry_run=False):
+        """Perform safe package upgrades while maintaining AIWAF compatibility"""
+        self.stdout.write(self.style.HTTP_INFO("\n🔄 Planning safe package upgrades..."))
+        
+        # AIWAF compatibility constraints
+        aiwaf_constraints = self.get_aiwaf_compatibility_constraints()
+        
+        # Get packages that can be safely upgraded
+        safe_upgrades = []
+        blocked_upgrades = []
+        
+        for pkg in results:
+            if pkg['status'] == 'outdated' and pkg['name'].lower() != 'aiwaf':
+                upgrade_plan = self.plan_safe_upgrade(pkg, aiwaf_constraints, results)
+                if upgrade_plan['safe']:
+                    safe_upgrades.append(upgrade_plan)
+                else:
+                    blocked_upgrades.append(upgrade_plan)
+        
+        # Display upgrade plan
+        if safe_upgrades:
+            self.stdout.write(self.style.SUCCESS("\n✅ SAFE UPGRADES PLANNED:"))
+            self.stdout.write("─" * 80)
+            for upgrade in safe_upgrades:
+                pkg = upgrade['package']
+                target_version = upgrade['target_version']
+                self.stdout.write(
+                    f"📦 {pkg['name']:<20} {pkg['installed']:<12} → {target_version:<12} "
+                    f"(Latest: {pkg['latest']})"
+                )
+                if upgrade['reason']:
+                    self.stdout.write(f"   💡 {upgrade['reason']}")
+        
+        if blocked_upgrades:
+            self.stdout.write(self.style.WARNING("\n⚠️  UPGRADES BLOCKED FOR STABILITY:"))
+            self.stdout.write("─" * 80)
+            for upgrade in blocked_upgrades:
+                pkg = upgrade['package']
+                self.stdout.write(
+                    f"❌ {pkg['name']:<20} {pkg['installed']:<12} ✗ {pkg['latest']:<12}"
+                )
+                self.stdout.write(f"   🚨 {upgrade['reason']}")
+        
+        if not safe_upgrades:
+            self.stdout.write(self.style.NOTICE("ℹ️  No safe upgrades available at this time."))
+            return
+        
+        # Execute upgrades
+        if dry_run:
+            self.stdout.write(self.style.NOTICE("\n🏃 DRY RUN MODE - No packages will be upgraded"))
+            upgrade_cmd = "pip install --upgrade " + " ".join([
+                f"{u['package']['name']}=={u['target_version']}" if u['target_version'] != u['package']['latest'] 
+                else u['package']['name'] 
+                for u in safe_upgrades
+            ])
+            self.stdout.write(f"Command that would be executed:\n   {upgrade_cmd}")
+        else:
+            self.stdout.write(self.style.HTTP_INFO("\n🚀 Executing safe upgrades..."))
+            success_count = 0
+            
+            for upgrade in safe_upgrades:
+                pkg_name = upgrade['package']['name']
+                target_version = upgrade['target_version']
+                
+                try:
+                    if target_version == upgrade['package']['latest']:
+                        cmd = ['pip', 'install', '--upgrade', pkg_name]
+                    else:
+                        cmd = ['pip', 'install', f"{pkg_name}=={target_version}"]
+                    
+                    self.stdout.write(f"   Upgrading {pkg_name}...")
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                    
+                    if result.returncode == 0:
+                        self.stdout.write(self.style.SUCCESS(f"   ✅ {pkg_name} upgraded successfully"))
+                        success_count += 1
+                    else:
+                        self.stdout.write(self.style.ERROR(f"   ❌ Failed to upgrade {pkg_name}: {result.stderr}"))
+                
+                except subprocess.TimeoutExpired:
+                    self.stdout.write(self.style.ERROR(f"   ❌ Timeout upgrading {pkg_name}"))
+                except Exception as e:
+                    self.stdout.write(self.style.ERROR(f"   ❌ Error upgrading {pkg_name}: {e}"))
+            
+            self.stdout.write(f"\n🎉 Upgrade complete: {success_count}/{len(safe_upgrades)} packages upgraded successfully")
+            
+            if success_count > 0:
+                self.stdout.write(self.style.HTTP_INFO("\n💡 Recommendations after upgrade:"))
+                self.stdout.write("   1. Run tests to ensure everything works correctly")
+                self.stdout.write("   2. Run 'python manage.py check_dependencies' again to verify")
+                self.stdout.write("   3. Consider running 'python manage.py detect_and_train' to retrain with new packages")
+
+    def get_aiwaf_compatibility_constraints(self):
+        """Get AIWAF's compatibility constraints to ensure stability"""
+        return {
+            'django': {
+                'min_version': '3.2',
+                'max_version': '99.0',  # AIWAF works with all Django versions
+                'reason': 'AIWAF is compatible with Django 3.2+'
+            },
+            'numpy': {
+                'min_version': '1.21',
+                'max_version': '1.99.99',  # Avoid NumPy 2.0 breaking changes
+                'reason': 'NumPy 2.0+ may cause compatibility issues'
+            },
+            'pandas': {
+                'min_version': '1.3',
+                'max_version': '2.9.99',
+                'reason': 'AIWAF tested with pandas 1.3-2.x series'
+            },
+            'scikit-learn': {
+                'min_version': '1.0',
+                'max_version': '1.99.99',  # Stay in 1.x series
+                'reason': 'AIWAF models trained with scikit-learn 1.x'
+            },
+            'joblib': {
+                'min_version': '1.1',
+                'max_version': '1.99.99',
+                'reason': 'AIWAF compatible with joblib 1.x series'
+            },
+            'packaging': {
+                'min_version': '21.0',
+                'max_version': '99.0',
+                'reason': 'Required for dependency checking'
+            },
+            'requests': {
+                'min_version': '2.25.0',
+                'max_version': '2.99.99',
+                'reason': 'Required for PyPI API access'
+            }
+        }
+
+    def plan_safe_upgrade(self, pkg, aiwaf_constraints, all_results):
+        """Plan a safe upgrade for a package considering AIWAF compatibility"""
+        pkg_name = pkg['name'].lower()
+        current_version = pkg['installed']
+        latest_version = pkg['latest']
+        
+        # Skip AIWAF itself
+        if pkg_name == 'aiwaf':
+            return {
+                'package': pkg,
+                'safe': False,
+                'target_version': None,
+                'reason': 'AIWAF should be upgraded separately using pip install --upgrade aiwaf'
+            }
+        
+        # Check AIWAF constraints
+        if pkg_name in aiwaf_constraints:
+            constraint = aiwaf_constraints[pkg_name]
+            max_version = constraint['max_version']
+            
+            try:
+                if version.parse(latest_version) > version.parse(max_version):
+                    # Find the highest safe version
+                    safe_version = self.find_highest_safe_version(pkg_name, max_version)
+                    if safe_version and version.parse(safe_version) > version.parse(current_version):
+                        return {
+                            'package': pkg,
+                            'safe': True,
+                            'target_version': safe_version,
+                            'reason': f'Upgraded to latest safe version (AIWAF constraint: <={max_version})'
+                        }
+                    else:
+                        return {
+                            'package': pkg,
+                            'safe': False,
+                            'target_version': None,
+                            'reason': f'{constraint["reason"]} (max safe: {max_version})'
+                        }
+                else:
+                    # Latest version is within AIWAF constraints
+                    # Check for other compatibility issues
+                    compatibility_check = self.check_upgrade_compatibility(pkg, latest_version, all_results)
+                    if compatibility_check['safe']:
+                        return {
+                            'package': pkg,
+                            'safe': True,
+                            'target_version': latest_version,
+                            'reason': 'Safe to upgrade to latest version'
+                        }
+                    else:
+                        return {
+                            'package': pkg,
+                            'safe': False,
+                            'target_version': None,
+                            'reason': compatibility_check['reason']
+                        }
+            except Exception as e:
+                return {
+                    'package': pkg,
+                    'safe': False,
+                    'target_version': None,
+                    'reason': f'Version parsing error: {e}'
+                }
+        else:
+            # No specific AIWAF constraints, check general compatibility
+            compatibility_check = self.check_upgrade_compatibility(pkg, latest_version, all_results)
+            return {
+                'package': pkg,
+                'safe': compatibility_check['safe'],
+                'target_version': latest_version if compatibility_check['safe'] else None,
+                'reason': compatibility_check['reason'] if not compatibility_check['safe'] else 'No known compatibility issues'
+            }
+
+    def find_highest_safe_version(self, package_name, max_version):
+        """Find the highest version that's still within constraints"""
+        try:
+            response = requests.get(f'https://pypi.org/pypi/{package_name}/json', timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                releases = data.get('releases', {})
+                
+                safe_versions = []
+                for ver in releases.keys():
+                    try:
+                        if version.parse(ver) <= version.parse(max_version):
+                            safe_versions.append(ver)
+                    except:
+                        continue
+                
+                if safe_versions:
+                    # Sort and return the highest safe version
+                    safe_versions.sort(key=lambda x: version.parse(x), reverse=True)
+                    return safe_versions[0]
+        except Exception:
+            pass
+        return None
+
+    def check_upgrade_compatibility(self, pkg, target_version, all_results):
+        """Check if upgrading a package to target version would cause conflicts"""
+        pkg_name = pkg['name'].lower()
+        
+        # Known problematic upgrade scenarios
+        if pkg_name == 'numpy' and version.parse(target_version) >= version.parse('2.0.0'):
+            # Check if pandas is compatible with NumPy 2.0
+            pandas_pkg = next((p for p in all_results if p['name'].lower() == 'pandas'), None)
+            if pandas_pkg and pandas_pkg['status'] != 'not_installed':
+                pandas_version = pandas_pkg['installed']
+                if version.parse(pandas_version) < version.parse('2.1.0'):
+                    return {
+                        'safe': False,
+                        'reason': f'NumPy 2.0+ requires pandas 2.1+, but pandas {pandas_version} is installed'
+                    }
+        
+        if pkg_name == 'pandas' and version.parse(target_version) >= version.parse('2.0.0'):
+            # Check if NumPy is compatible
+            numpy_pkg = next((p for p in all_results if p['name'].lower() == 'numpy'), None)
+            if numpy_pkg and numpy_pkg['status'] != 'not_installed':
+                numpy_version = numpy_pkg['installed']
+                if version.parse(numpy_version) < version.parse('1.22.0'):
+                    return {
+                        'safe': False,
+                        'reason': f'pandas 2.0+ requires NumPy 1.22+, but NumPy {numpy_version} is installed'
+                    }
+        
+        return {'safe': True, 'reason': 'No compatibility issues detected'}
 
     def check_security_vulnerabilities(self, dependencies):
         """Check for known security vulnerabilities using safety"""
