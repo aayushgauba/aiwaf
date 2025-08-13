@@ -67,7 +67,7 @@ def remove_exempt_keywords() -> None:
 def _read_all_logs() -> list[str]:
     lines = []
     
-    # First try to read from main access log
+    # First try to read from main access log files
     if LOG_PATH and os.path.exists(LOG_PATH):
         with open(LOG_PATH, "r", errors="ignore") as f:
             lines.extend(f.readlines())
@@ -79,7 +79,43 @@ def _read_all_logs() -> list[str]:
             except OSError:
                 continue
     
+    # If no log files found, fall back to RequestLog model data
+    if not lines:
+        lines = _get_logs_from_model()
+    
     return lines
+
+
+def _get_logs_from_model() -> list[str]:
+    """Get log data from RequestLog model when log files are not available"""
+    try:
+        # Import here to avoid circular imports
+        from .models import RequestLog
+        from datetime import datetime, timedelta
+        
+        # Get logs from the last 30 days
+        cutoff_date = datetime.now() - timedelta(days=30)
+        request_logs = RequestLog.objects.filter(timestamp__gte=cutoff_date).order_by('timestamp')
+        
+        log_lines = []
+        for log in request_logs:
+            # Convert RequestLog to Apache-style log format that _parse() expects
+            # Format: IP - - [timestamp] "METHOD path HTTP/1.1" status content_length "referer" "user_agent" response-time=X.X
+            timestamp_str = log.timestamp.strftime("%d/%b/%Y:%H:%M:%S %z")
+            log_line = (
+                f'{log.ip_address} - - [{timestamp_str}] '
+                f'"{log.method} {log.path} HTTP/1.1" {log.status_code} '
+                f'{log.content_length} "{log.referer}" "{log.user_agent}" '
+                f'response-time={log.response_time}\n'
+            )
+            log_lines.append(log_line)
+        
+        print(f"Loaded {len(log_lines)} log entries from RequestLog model")
+        return log_lines
+        
+    except Exception as e:
+        print(f"Warning: Could not load logs from RequestLog model: {e}")
+        return []
 
 
 def _parse(line: str) -> dict | None:
