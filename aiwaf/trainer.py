@@ -192,11 +192,28 @@ def train() -> None:
         contamination=getattr(settings, "AIWAF_AI_CONTAMINATION", 0.05), 
         random_state=42
     )
-    model.fit(X)
+    
+    # Suppress sklearn warnings during training
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+        model.fit(X)
 
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-    joblib.dump(model, MODEL_PATH)
-    print(f"Model trained on {len(X)} samples → {MODEL_PATH}")
+    
+    # Save model with version metadata
+    import sklearn
+    from django.utils import timezone as django_timezone
+    model_data = {
+        'model': model,
+        'sklearn_version': sklearn.__version__,
+        'created_at': str(django_timezone.now()),
+        'feature_count': len(feature_cols),
+        'samples_count': len(X)
+    }
+    joblib.dump(model_data, MODEL_PATH)
+    print(f"✅ Model trained on {len(X)} samples → {MODEL_PATH}")
+    print(f"📦 Created with scikit-learn v{sklearn.__version__}")
     
     # Check for anomalies and intelligently decide which IPs to block
     preds = model.predict(X)

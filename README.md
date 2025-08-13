@@ -350,6 +350,7 @@ MIDDLEWARE = [
 
 **Common Issues:**
 - **AppRegistryNotReady Error**: Fixed in v0.1.9.0.1 - update with `pip install --upgrade aiwaf`
+- **Scikit-learn Version Warnings**: Fixed in v0.1.9.0.3 - regenerate model with `python manage.py regenerate_model`
 - Missing Django: `pip install Django`
 - Old AI-WAF version: `pip install --upgrade aiwaf`
 - Missing migrations: `python manage.py migrate`
@@ -367,6 +368,24 @@ python manage.py detect_and_train
 1. Read access logs (incl. rotated or gzipped) **OR** AI-WAF middleware CSV logs
 2. Auto‑block IPs with ≥ 6 total 404s
 3. Extract features & train IsolationForest
+4. Save `model.pkl` with current scikit-learn version
+
+### Model Regeneration
+
+If you see scikit-learn version warnings, regenerate the model:
+
+```bash
+# Quick model regeneration (recommended)
+python manage.py regenerate_model
+
+# Full retraining with fresh data
+python manage.py detect_and_train
+```
+
+**Benefits:**
+- ✅ Eliminates version compatibility warnings
+- ✅ Uses current scikit-learn optimizations
+- ✅ Maintains same protection level
 4. Save `model.pkl`
 5. Extract top 10 dynamic keywords from 4xx/5xx
 6. Remove any keywords associated with newly exempt paths

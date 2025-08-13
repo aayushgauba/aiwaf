@@ -25,7 +25,43 @@ MODEL_PATH = getattr(
     "AIWAF_MODEL_PATH",
     os.path.join(os.path.dirname(__file__), "resources", "model.pkl")
 )
-MODEL = joblib.load(MODEL_PATH)
+
+def load_model_safely():
+    """Load the AI model with version compatibility checking."""
+    import warnings
+    import sklearn
+    
+    try:
+        # Suppress sklearn version warnings temporarily
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.base")
+            model_data = joblib.load(MODEL_PATH)
+            
+            # Handle both old format (direct model) and new format (with metadata)
+            if isinstance(model_data, dict) and 'model' in model_data:
+                # New format with metadata
+                model = model_data['model']
+                stored_version = model_data.get('sklearn_version', 'unknown')
+                current_version = sklearn.__version__
+                
+                if stored_version != current_version:
+                    print(f"ℹ️  Model was trained with sklearn v{stored_version}, current v{current_version}")
+                    print("   Run 'python manage.py detect_and_train' to update model if needed.")
+                
+                return model
+            else:
+                # Old format - direct model object
+                print("ℹ️  Using legacy model format. Consider retraining for better compatibility.")
+                return model_data
+                
+    except Exception as e:
+        print(f"Warning: Could not load AI model from {MODEL_PATH}: {e}")
+        print("AI anomaly detection will be disabled until model is retrained.")
+        print("Run 'python manage.py detect_and_train' to regenerate the model.")
+        return None
+
+# Load model with safety checks
+MODEL = load_model_safely()
 
 STATIC_KW = getattr(
     settings,
@@ -130,8 +166,8 @@ class AIAnomalyMiddleware(MiddlewareMixin):
 
     def __init__(self, get_response=None):
         super().__init__(get_response)
-        model_path = os.path.join(os.path.dirname(__file__), "resources", "model.pkl")
-        self.model = joblib.load(model_path)
+        # Use the safely loaded global MODEL instead of loading again
+        self.model = MODEL
 
     def process_request(self, request):
         if is_exempt(request):
@@ -164,7 +200,9 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         total_404 = sum(1 for (_, _, st, _) in data if st == 404)
         feats = [path_len, kw_hits, resp_time, status_idx, burst_count, total_404]
         X = np.array(feats, dtype=float).reshape(1, -1)
-        if self.model.predict(X)[0] == -1:
+        
+        # Only use AI model if it's available
+        if self.model is not None and self.model.predict(X)[0] == -1:
             if not is_ip_exempted(ip):
                 BlacklistManager.block(ip, "AI anomaly")
                 return JsonResponse({"error": "blocked"}, status=403)
