@@ -17,7 +17,7 @@ from .utils import is_exempt_path
 from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
 
 # ─────────── Configuration ───────────
-LOG_PATH   = settings.AIWAF_ACCESS_LOG
+LOG_PATH   = getattr(settings, 'AIWAF_ACCESS_LOG', None)
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "resources", "model.pkl")
 
 STATIC_KW  = [".php", "xmlrpc", "wp-", ".env", ".git", ".bak", "conflg", "shell", "filemanager"]
