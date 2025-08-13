@@ -15,6 +15,7 @@ from django.apps import apps
 from django.db.models import F
 from .utils import is_exempt_path
 from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
+from .blacklist_manager import BlacklistManager
 
 # ─────────── Configuration ───────────
 LOG_PATH   = getattr(settings, 'AIWAF_ACCESS_LOG', None)
@@ -102,13 +103,12 @@ def _parse(line: str) -> dict | None:
 def train() -> None:
     remove_exempt_keywords()
     
-    # Remove any IPs in IPExemption from the blacklist using storage system
+    # Remove any IPs in IPExemption from the blacklist using BlacklistManager
     exemption_store = get_exemption_store()
-    blacklist_store = get_blacklist_store()
     
     exempted_ips = [entry['ip_address'] for entry in exemption_store.get_all()]
     for ip in exempted_ips:
-        blacklist_store.remove_ip(ip)
+        BlacklistManager.unblock(ip)
     
     raw_lines = _read_all_logs()
     if not raw_lines:
@@ -141,8 +141,7 @@ def train() -> None:
             
             # Don't block if majority of 404s are on login paths
             if count > login_404s:  # More non-login 404s than login 404s
-                blacklist_store = get_blacklist_store()
-                blacklist_store.add_ip(ip, f"Excessive 404s (≥6 non-login, {count}/{total_404s})")
+                BlacklistManager.block(ip, f"Excessive 404s (≥6 non-login, {count}/{total_404s})")
 
     feature_dicts = []
     for r in parsed:
@@ -239,7 +238,7 @@ def train() -> None:
                 continue
             
             # Block if it shows clear signs of malicious behavior
-            blacklist_store.add_ip(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
+            BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
             blocked_count += 1
             print(f"   - {ip}: Blocked for suspicious behavior (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
         
