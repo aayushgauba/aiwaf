@@ -1,4 +1,5 @@
-# setup.py    version="0.1.9.0.4",from setuptools import setup, find_packages
+# setup.py
+from setuptools import setup, find_packages
 import pathlib
 
 HERE = pathlib.Path(__file__).parent
@@ -8,7 +9,7 @@ long_description = (HERE / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="aiwaf",
-    version="0.1.9.0.3",
+    version="0.1.9.0.4",
     description="AI‑driven, self‑learning Web Application Firewall for Django",
     long_description=long_description,
     long_description_content_type="text/markdown",
