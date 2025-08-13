@@ -135,12 +135,12 @@ class IPAndKeywordBlockMiddleware:
 
 
 class RateLimitMiddleware:
-    WINDOW = 10  # seconds
-    MAX = 20     # soft limit
-    FLOOD = 40   # hard limit
-
     def __init__(self, get_response):
         self.get_response = get_response
+        # Make rate limiting configurable via Django settings
+        self.WINDOW = getattr(settings, "AIWAF_RATE_WINDOW", 10)  # seconds
+        self.MAX = getattr(settings, "AIWAF_RATE_MAX", 20)        # soft limit
+        self.FLOOD = getattr(settings, "AIWAF_RATE_FLOOD", 40)    # hard limit
 
     def __call__(self, request):
         if is_exempt(request):
