@@ -303,6 +303,57 @@ MIDDLEWARE = [
 
 > **⚠️ Order matters!** AI-WAF protection middleware should come early. The logger middleware should come near the end to capture final response data.
 
+### **Troubleshooting Middleware Errors**
+
+**Error: `Module "aiwaf.middleware" does not define a "UUIDTamperMiddleware" attribute/class`**
+
+**Solutions:**
+1. **Update AI-WAF to latest version:**
+   ```bash
+   pip install --upgrade aiwaf
+   ```
+
+2. **Run diagnostic commands:**
+   ```bash
+   # Quick debug script (from AI-WAF directory)
+   python debug_aiwaf.py
+   
+   # Django management command  
+   python manage.py aiwaf_diagnose
+   ```
+
+3. **Check available middleware classes:**
+   ```python
+   # In Django shell: python manage.py shell
+   import aiwaf.middleware
+   print(dir(aiwaf.middleware))
+   ```
+
+4. **Verify AI-WAF is in INSTALLED_APPS:**
+   ```python
+   # In settings.py
+   INSTALLED_APPS = [
+       # ... other apps ...
+       'aiwaf',  # Must be included
+   ]
+   ```
+
+5. **Use minimal middleware setup if needed:**
+   ```python
+   MIDDLEWARE = [
+       # ... your existing middleware ...
+       "aiwaf.middleware.IPAndKeywordBlockMiddleware",  # Core protection
+       "aiwaf.middleware.RateLimitMiddleware",          # Rate limiting  
+       "aiwaf.middleware.AIAnomalyMiddleware",          # AI detection
+   ]
+   ```
+
+**Common Issues:**
+- Missing Django: `pip install Django`
+- Old AI-WAF version: `pip install --upgrade aiwaf`
+- Missing migrations: `python manage.py migrate`
+- Import errors: Check `INSTALLED_APPS` includes `'aiwaf'`
+
 ---
 
 ##  Running Detection & Training
