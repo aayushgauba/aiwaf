@@ -171,6 +171,17 @@ class ModelExemptionStore:
         except Exception:
             return []
 
+    @staticmethod
+    def get_all():
+        """Get all exempted IP entries as dictionaries"""
+        _import_models()
+        if IPExemption is None:
+            return []
+        try:
+            return list(IPExemption.objects.values('ip_address', 'reason', 'created_at'))
+        except Exception:
+            return []
+
 class ModelKeywordStore:
     @staticmethod
     def add_keyword(keyword):
