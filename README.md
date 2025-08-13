@@ -38,7 +38,11 @@ aiwaf/
 │   └── dynamic_keywords.json    # evolves daily
 ├── management/
 │   └── commands/
-│       └── detect_and_train.py  # `python manage.py detect_and_train`
+│       ├── detect_and_train.py      # `python manage.py detect_and_train`
+│       ├── check_dependencies.py    # `python manage.py check_dependencies`
+│       ├── add_ipexemption.py       # `python manage.py add_ipexemption`
+│       ├── aiwaf_reset.py           # `python manage.py aiwaf_reset`
+│       └── aiwaf_logging.py         # `python manage.py aiwaf_logging`
 └── LICENSE
 ```
 
@@ -82,6 +86,20 @@ aiwaf/
   - **Real-time storage** in database for instant access
   - **Captures response times** for better anomaly detection
   - **Zero configuration** - works out of the box
+
+- **Smart Training System**  
+  AI trainer automatically uses the best available data source:
+  - **Primary**: Configured access log files (`AIWAF_ACCESS_LOG`)
+  - **Fallback**: Database RequestLog model when files unavailable
+  - **Seamless switching** between data sources
+  - **Enhanced compatibility** with exemption system
+
+- **Dependency Management**  
+  Built-in dependency checker ensures package compatibility:
+  - **Version compatibility** checking (NumPy 2.0 vs pandas, etc.)
+  - **Missing dependency** detection
+  - **Security vulnerability** scanning
+  - **Smart upgrade suggestions** with compatibility validation
 
 
 **Exempt Path & IP Awareness**
@@ -166,6 +184,50 @@ python manage.py aiwaf_reset --blacklist-only
 
 # Clear only exemption entries  
 python manage.py aiwaf_reset --exemptions-only
+```
+
+### Checking Dependencies
+
+Check your project's dependencies for updates and compatibility issues:
+
+```bash
+# Basic dependency check
+python manage.py check_dependencies
+
+# JSON format output
+python manage.py check_dependencies --format json
+
+# Include security vulnerability scanning
+python manage.py check_dependencies --check-security
+```
+
+**Features:**
+- ✅ **Parses pyproject.toml and requirements.txt**
+- ✅ **Shows current vs latest versions** 
+- ✅ **Checks package compatibility** (NumPy 2.0 vs pandas, etc.)
+- ✅ **Detects missing dependencies**
+- ✅ **Security vulnerability scanning** (requires `safety` package)
+- ✅ **Provides upgrade commands**
+
+**Example Output:**
+```
+🔍 Checking project dependencies...
+
+📊 Summary: 5 packages checked
+   ✅ Up to date: 2
+   ⚠️  Outdated: 2
+   ❌ Not installed: 0
+
+⚠️  OUTDATED PACKAGES:
+────────────────────────────────────────
+📦 pandas    1.3.5 → 2.2.2 (constraint: pandas>=1.3)
+📦 numpy     1.21.0 → 1.26.4 (constraint: numpy>=1.21)
+
+🔍 Checking package compatibility...
+✅ All packages appear to be compatible!
+
+💡 To update outdated packages, run:
+   pip install --upgrade pandas numpy
 ```
 
 This will ensure the IP is never blocked by AI‑WAF. You can also manage exemptions via the Django admin interface.
