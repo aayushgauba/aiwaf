@@ -112,6 +112,11 @@ class ModelBlacklistStore:
             print(f"Error unblocking IP {ip}: {e}")
 
     @staticmethod
+    def remove_ip(ip):
+        """Remove IP from blacklist (alias for unblock_ip)"""
+        ModelBlacklistStore.unblock_ip(ip)
+
+    @staticmethod
     def get_all_blocked_ips():
         """Get all blocked IPs"""
         _import_models()
