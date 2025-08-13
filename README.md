@@ -209,8 +209,11 @@ python manage.py check_dependencies --upgrade --dry-run
 # Actually upgrade packages safely
 python manage.py check_dependencies --upgrade
 
+# Upgrade packages and update requirements.txt
+python manage.py check_dependencies --upgrade --update-requirements
+
 # Full workflow: check, upgrade, and scan for vulnerabilities
-python manage.py check_dependencies --upgrade --check-security
+python manage.py check_dependencies --upgrade --check-security --update-requirements
 ```
 
 **Core Features:**
@@ -222,6 +225,7 @@ python manage.py check_dependencies --upgrade --check-security
 - ✅ **Safe package upgrades** (maintains AIWAF stability)
 - ✅ **Dry run mode** for testing upgrade plans
 - ✅ **AIWAF compatibility validation**
+- ✅ **Automatic requirements.txt updates** after successful upgrades
 
 **Safe Upgrade System:**
 
@@ -276,6 +280,15 @@ The upgrade system is designed to maintain AIWAF stability while keeping your pa
 ❌ numpy               1.21.0       ✗ 2.0.1
    🚨 NumPy 2.0+ may cause compatibility issues (max safe: 1.99.99)
 
+🎉 Upgrade complete: 2/2 packages upgraded successfully
+
+📝 Updating requirements.txt...
+   📋 Backup created: requirements.txt.backup
+   📦 pandas: pandas>=1.3 → pandas>=1.5.3
+   📦 joblib: joblib>=1.1 → joblib>=1.4.2
+   ✅ Updated 2 packages in requirements.txt
+   💾 Original backed up as: requirements.txt.backup
+
 �💡 To update outdated packages, run:
    pip install --upgrade pandas==1.5.3 joblib
 ```
@@ -286,6 +299,7 @@ The upgrade system is designed to maintain AIWAF stability while keeping your pa
 - 📊 **Conservative Constraints**: Avoids known problematic versions
 - 🧪 **Dry Run Mode**: Test upgrade plans before execution
 - ⚠️ **Clear Blocking Reasons**: Explains why upgrades are blocked
+- 📝 **Requirements.txt Updates**: Automatically updates dependency files
 
 **Recommended Upgrade Workflow:**
 
@@ -301,7 +315,7 @@ The upgrade system is designed to maintain AIWAF stability while keeping your pa
 
 3. **Execute safe upgrades:**
    ```bash
-   python manage.py check_dependencies --upgrade
+   python manage.py check_dependencies --upgrade --update-requirements
    ```
 
 4. **Verify after upgrade:**

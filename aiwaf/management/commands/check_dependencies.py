@@ -40,6 +40,11 @@ class Command(BaseCommand):
             action='store_true',
             help='Show what would be upgraded without actually upgrading'
         )
+        parser.add_argument(
+            '--update-requirements',
+            action='store_true',
+            help='Update requirements.txt with upgraded package versions'
+        )
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('🔍 Checking project dependencies...\n'))
@@ -61,7 +66,10 @@ class Command(BaseCommand):
                 self.check_compatibility(results)
             
             if options['upgrade']:
-                self.perform_safe_upgrade(results, options['dry_run'])
+                upgraded_packages = self.perform_safe_upgrade(results, options['dry_run'])
+                
+                if options['update_requirements'] and upgraded_packages and not options['dry_run']:
+                    self.update_requirements_file(upgraded_packages)
             
             if options['check_security']:
                 self.check_security_vulnerabilities(dependencies)
@@ -444,6 +452,7 @@ class Command(BaseCommand):
         # Get packages that can be safely upgraded
         safe_upgrades = []
         blocked_upgrades = []
+        upgraded_packages = []  # Track successfully upgraded packages
         
         for pkg in results:
             if pkg['status'] == 'outdated' and pkg['name'].lower() != 'aiwaf':
@@ -479,7 +488,7 @@ class Command(BaseCommand):
         
         if not safe_upgrades:
             self.stdout.write(self.style.NOTICE("ℹ️  No safe upgrades available at this time."))
-            return
+            return []
         
         # Execute upgrades
         if dry_run:
@@ -490,6 +499,8 @@ class Command(BaseCommand):
                 for u in safe_upgrades
             ])
             self.stdout.write(f"Command that would be executed:\n   {upgrade_cmd}")
+            return []
+            return []
         else:
             self.stdout.write(self.style.HTTP_INFO("\n🚀 Executing safe upgrades..."))
             success_count = 0
@@ -510,6 +521,11 @@ class Command(BaseCommand):
                     if result.returncode == 0:
                         self.stdout.write(self.style.SUCCESS(f"   ✅ {pkg_name} upgraded successfully"))
                         success_count += 1
+                        upgraded_packages.append({
+                            'name': pkg_name,
+                            'old_version': upgrade['package']['installed'],
+                            'new_version': target_version
+                        })
                     else:
                         self.stdout.write(self.style.ERROR(f"   ❌ Failed to upgrade {pkg_name}: {result.stderr}"))
                 
@@ -525,6 +541,8 @@ class Command(BaseCommand):
                 self.stdout.write("   1. Run tests to ensure everything works correctly")
                 self.stdout.write("   2. Run 'python manage.py check_dependencies' again to verify")
                 self.stdout.write("   3. Consider running 'python manage.py detect_and_train' to retrain with new packages")
+            
+            return upgraded_packages
 
     def get_aiwaf_compatibility_constraints(self):
         """Get AIWAF's compatibility constraints to ensure stability"""
@@ -691,6 +709,91 @@ class Command(BaseCommand):
                     }
         
         return {'safe': True, 'reason': 'No compatibility issues detected'}
+
+    def update_requirements_file(self, upgraded_packages):
+        """Update requirements.txt with new package versions"""
+        self.stdout.write(self.style.HTTP_INFO("\n📝 Updating requirements.txt..."))
+        
+        requirements_path = os.path.join(settings.BASE_DIR, 'requirements.txt')
+        
+        if not os.path.exists(requirements_path):
+            self.stdout.write(self.style.WARNING(f"   ⚠️  requirements.txt not found at {requirements_path}"))
+            self.stdout.write("   💡 You can create one manually with updated versions")
+            return
+        
+        try:
+            # Read current requirements.txt
+            with open(requirements_path, 'r') as f:
+                lines = f.readlines()
+            
+            # Create backup
+            backup_path = requirements_path + '.backup'
+            with open(backup_path, 'w') as f:
+                f.writelines(lines)
+            self.stdout.write(f"   📋 Backup created: {backup_path}")
+            
+            # Update lines with new versions
+            updated_lines = []
+            updated_count = 0
+            
+            for line in lines:
+                original_line = line.strip()
+                updated_line = line
+                
+                if original_line and not original_line.startswith('#'):
+                    # Check if this line contains an upgraded package
+                    for pkg in upgraded_packages:
+                        pkg_name = pkg['name']
+                        new_version = pkg['new_version']
+                        
+                        # Check various formats: package>=version, package==version, etc.
+                        if self.line_contains_package(original_line, pkg_name):
+                            # Update the line with new version
+                            updated_line = self.update_package_line(original_line, pkg_name, new_version)
+                            if updated_line != original_line:
+                                updated_count += 1
+                                self.stdout.write(f"   📦 {pkg_name}: {original_line} → {updated_line.strip()}")
+                            break
+                
+                updated_lines.append(updated_line)
+            
+            # Write updated requirements.txt
+            with open(requirements_path, 'w') as f:
+                f.writelines(updated_lines)
+            
+            if updated_count > 0:
+                self.stdout.write(self.style.SUCCESS(f"\n   ✅ Updated {updated_count} packages in requirements.txt"))
+                self.stdout.write(f"   💾 Original backed up as: {backup_path}")
+            else:
+                self.stdout.write(self.style.NOTICE("   ℹ️  No package lines found to update in requirements.txt"))
+                
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"   ❌ Error updating requirements.txt: {e}"))
+
+    def line_contains_package(self, line, package_name):
+        """Check if a requirements line contains the specified package"""
+        # Remove comments and whitespace
+        line = line.split('#')[0].strip()
+        if not line:
+            return False
+        
+        # Check if line starts with package name followed by version specifier
+        return (line.lower().startswith(package_name.lower()) and 
+                len(line) > len(package_name) and 
+                line[len(package_name)] in ['=', '<', '>', '!', '~', ' ', '\t'])
+
+    def update_package_line(self, line, package_name, new_version):
+        """Update a requirements line with new package version"""
+        # Split line into package part and comment part
+        parts = line.split('#', 1)
+        package_part = parts[0].strip()
+        comment_part = f" #{parts[1]}" if len(parts) > 1 else ""
+        
+        # Extract package name and update with new version
+        # Use >= to allow for future compatible versions
+        updated_package = f"{package_name}>={new_version}"
+        
+        return updated_package + comment_part + '\n'
 
     def check_security_vulnerabilities(self, dependencies):
         """Check for known security vulnerabilities using safety"""
