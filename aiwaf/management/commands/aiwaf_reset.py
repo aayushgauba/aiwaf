@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from aiwaf.storage import get_blacklist_store, get_exemption_store
+import sys
 
 class Command(BaseCommand):
     help = 'Reset AI-WAF by clearing all blacklist and exemption (whitelist) entries'
@@ -26,12 +27,29 @@ class Command(BaseCommand):
         exemptions_only = options['exemptions_only']
         confirm = options['confirm']
         
-        blacklist_store = get_blacklist_store()
-        exemption_store = get_exemption_store()
+        try:
+            blacklist_store = get_blacklist_store()
+            exemption_store = get_exemption_store()
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f'Error initializing stores: {e}'))
+            return
         
-        # Count current entries
-        blacklist_count = len(blacklist_store.get_all())
-        exemption_count = len(exemption_store.get_all())
+        # Count current entries safely
+        try:
+            blacklist_entries = blacklist_store.get_all()
+            blacklist_count = len(blacklist_entries)
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f'Warning: Could not count blacklist entries: {e}'))
+            blacklist_count = 0
+            blacklist_entries = []
+        
+        try:
+            exemption_entries = exemption_store.get_all()
+            exemption_count = len(exemption_entries)
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f'Warning: Could not count exemption entries: {e}'))
+            exemption_count = 0
+            exemption_entries = []
         
         if blacklist_only and exemptions_only:
             self.stdout.write(self.style.ERROR('Cannot use both --blacklist-only and --exemptions-only flags'))
@@ -55,29 +73,47 @@ class Command(BaseCommand):
         self.stdout.write(f"AI-WAF Reset: {action}")
         
         if not confirm:
-            response = input("Are you sure you want to proceed? [y/N]: ")
-            if response.lower() not in ['y', 'yes']:
-                self.stdout.write(self.style.WARNING('Operation cancelled'))
+            try:
+                response = input("Are you sure you want to proceed? [y/N]: ")
+                if response.lower() not in ['y', 'yes']:
+                    self.stdout.write(self.style.WARNING('Operation cancelled'))
+                    return
+            except (EOFError, KeyboardInterrupt):
+                self.stdout.write(self.style.WARNING('\nOperation cancelled'))
                 return
         
         # Perform the reset
-        deleted_counts = {'blacklist': 0, 'exemptions': 0}
+        deleted_counts = {'blacklist': 0, 'exemptions': 0, 'errors': []}
         
         if clear_blacklist:
             # Clear blacklist entries
-            blacklist_entries = blacklist_store.get_all()
-            for entry in blacklist_entries:
-                blacklist_store.remove_ip(entry['ip_address'])
-            deleted_counts['blacklist'] = len(blacklist_entries)
+            try:
+                for entry in blacklist_entries:
+                    try:
+                        blacklist_store.remove_ip(entry['ip_address'])
+                        deleted_counts['blacklist'] += 1
+                    except Exception as e:
+                        deleted_counts['errors'].append(f"Error removing blacklist IP {entry.get('ip_address', 'unknown')}: {e}")
+            except Exception as e:
+                deleted_counts['errors'].append(f"Error clearing blacklist: {e}")
         
         if clear_exemptions:
             # Clear exemption entries
-            exemption_entries = exemption_store.get_all()
-            for entry in exemption_entries:
-                exemption_store.remove_ip(entry['ip_address'])
-            deleted_counts['exemptions'] = len(exemption_entries)
+            try:
+                for entry in exemption_entries:
+                    try:
+                        exemption_store.remove_ip(entry['ip_address'])
+                        deleted_counts['exemptions'] += 1
+                    except Exception as e:
+                        deleted_counts['errors'].append(f"Error removing exemption IP {entry.get('ip_address', 'unknown')}: {e}")
+            except Exception as e:
+                deleted_counts['errors'].append(f"Error clearing exemptions: {e}")
         
         # Report results
+        if deleted_counts['errors']:
+            for error in deleted_counts['errors']:
+                self.stdout.write(self.style.WARNING(f"⚠️  {error}"))
+        
         if clear_blacklist and clear_exemptions:
             self.stdout.write(
                 self.style.SUCCESS(
@@ -92,4 +128,9 @@ class Command(BaseCommand):
         elif clear_exemptions:
             self.stdout.write(
                 self.style.SUCCESS(f"✅ Exemptions cleared: Deleted {deleted_counts['exemptions']} entries")
+            )
+        
+        if deleted_counts['errors']:
+            self.stdout.write(
+                self.style.WARNING(f"⚠️  Completed with {len(deleted_counts['errors'])} errors (see above)")
             )

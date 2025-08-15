@@ -132,6 +132,31 @@ class ModelBlacklistStore:
         except Exception:
             return []
 
+    @staticmethod
+    def get_all():
+        """Get all blacklist entries as dictionaries"""
+        _import_models()
+        if BlacklistEntry is None:
+            return []
+        try:
+            return list(BlacklistEntry.objects.values('ip_address', 'reason', 'created_at'))
+        except Exception:
+            return []
+
+    @staticmethod
+    def clear_all():
+        """Clear all blacklist entries"""
+        _import_models()
+        if BlacklistEntry is None:
+            return 0
+        try:
+            count = BlacklistEntry.objects.count()
+            BlacklistEntry.objects.all().delete()
+            return count
+        except Exception as e:
+            print(f"Error clearing all blacklist entries: {e}")
+            return 0
+
 class ModelExemptionStore:
     @staticmethod
     def is_exempted(ip):
@@ -191,6 +216,20 @@ class ModelExemptionStore:
             return list(IPExemption.objects.values('ip_address', 'reason', 'created_at'))
         except Exception:
             return []
+
+    @staticmethod
+    def clear_all():
+        """Clear all exemption entries"""
+        _import_models()
+        if IPExemption is None:
+            return 0
+        try:
+            count = IPExemption.objects.count()
+            IPExemption.objects.all().delete()
+            return count
+        except Exception as e:
+            print(f"Error clearing all exemption entries: {e}")
+            return 0
 
 class ModelKeywordStore:
     @staticmethod
