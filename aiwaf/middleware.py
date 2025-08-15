@@ -17,7 +17,7 @@ from django.urls import get_resolver
 from .trainer import STATIC_KW, STATUS_IDX, path_exists_in_django
 from .blacklist_manager import BlacklistManager
 from .models import IPExemption
-from .utils import is_exempt, get_ip, is_ip_exempted
+from .utils import is_exempt, get_ip, is_ip_exempted, is_exempt_path
 from .storage import get_keyword_store
 
 MODEL_PATH = getattr(
@@ -191,10 +191,12 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         key = f"aiwaf:{ip}"
         data = cache.get(key, [])
         path_len = len(request.path)
-        if not path_exists_in_django(request.path) and not is_exempt(request):
+        
+        # Use the same scoring logic as trainer.py
+        known_path = path_exists_in_django(request.path)
+        kw_hits = 0
+        if not known_path and not is_exempt_path(request.path):
             kw_hits = sum(1 for kw in STATIC_KW if kw in request.path.lower())
-        else:
-            kw_hits = 0
 
         resp_time = now - getattr(request, "_start_time", now)
         status_code = str(response.status_code)
@@ -206,11 +208,60 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         
         # Only use AI model if it's available
         if self.model is not None and self.model.predict(X)[0] == -1:
-            # BlacklistManager.block() now checks exemptions internally
-            BlacklistManager.block(ip, "AI anomaly")
-            # Check if actually blocked (exempted IPs won't be blocked)
-            if BlacklistManager.is_blocked(ip):
-                return JsonResponse({"error": "blocked"}, status=403)
+            # AI detected anomaly - but analyze patterns before blocking (like trainer.py)
+            
+            # Get recent behavior data for this IP to make intelligent blocking decision
+            recent_data = [d for d in data if now - d[0] <= 300]  # Last 5 minutes
+            
+            if recent_data:
+                # Calculate behavior metrics similar to trainer.py
+                recent_kw_hits = []
+                recent_404s = 0
+                recent_burst_counts = []
+                
+                for entry_time, entry_path, entry_status, entry_resp_time in recent_data:
+                    # Calculate keyword hits for this entry
+                    entry_known_path = path_exists_in_django(entry_path)
+                    entry_kw_hits = 0
+                    if not entry_known_path and not is_exempt_path(entry_path):
+                        entry_kw_hits = sum(1 for kw in STATIC_KW if kw in entry_path.lower())
+                    recent_kw_hits.append(entry_kw_hits)
+                    
+                    # Count 404s
+                    if entry_status == 404:
+                        recent_404s += 1
+                    
+                    # Calculate burst for this entry (requests within 10 seconds)
+                    entry_burst = sum(1 for (t, _, _, _) in recent_data if abs(entry_time - t) <= 10)
+                    recent_burst_counts.append(entry_burst)
+                
+                # Calculate averages and maximums
+                avg_kw_hits = sum(recent_kw_hits) / len(recent_kw_hits) if recent_kw_hits else 0
+                max_404s = recent_404s
+                avg_burst = sum(recent_burst_counts) / len(recent_burst_counts) if recent_burst_counts else 0
+                total_requests = len(recent_data)
+                
+                # Don't block if it looks like legitimate behavior (same thresholds as trainer.py):
+                if (
+                    avg_kw_hits < 2 and           # Not hitting many malicious keywords
+                    max_404s < 10 and            # Not excessive 404s
+                    avg_burst < 15 and           # Not excessive burst activity
+                    total_requests < 100         # Not excessive total requests
+                ):
+                    # Anomalous but looks legitimate - don't block
+                    pass
+                else:
+                    # Block if it shows clear signs of malicious behavior
+                    BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
+                    # Check if actually blocked (exempted IPs won't be blocked)
+                    if BlacklistManager.is_blocked(ip):
+                        return JsonResponse({"error": "blocked"}, status=403)
+            else:
+                # No recent data to analyze - be more conservative, only block on very suspicious current request
+                if kw_hits >= 2 or status_idx == STATUS_IDX.index("404"):
+                    BlacklistManager.block(ip, "AI anomaly + immediate suspicious behavior")
+                    if BlacklistManager.is_blocked(ip):
+                        return JsonResponse({"error": "blocked"}, status=403)
 
         data.append((now, request.path, response.status_code, resp_time))
         data = [d for d in data if now - d[0] < self.WINDOW]
