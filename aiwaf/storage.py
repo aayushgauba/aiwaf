@@ -196,6 +196,16 @@ class ModelExemptionStore:
             print(f"Error removing exemption for IP {ip}: {e}")
 
     @staticmethod
+    def remove_ip(ip):
+        """Remove IP from exemption list (alias for remove_exemption)"""
+        ModelExemptionStore.remove_exemption(ip)
+
+    @staticmethod
+    def add_ip(ip, reason="Manual exemption"):
+        """Add IP to exemption list (alias for add_exemption)"""
+        ModelExemptionStore.add_exemption(ip, reason)
+
+    @staticmethod
     def get_all_exempted_ips():
         """Get all exempted IPs"""
         _import_models()
