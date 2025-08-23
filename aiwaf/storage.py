@@ -285,6 +285,19 @@ class ModelKeywordStore:
             return []
 
     @staticmethod
+    def get_all_keywords():
+        """Get all keywords"""
+        _import_models()
+        if DynamicKeyword is None:
+            return []
+        try:
+            return list(
+                DynamicKeyword.objects.all().values_list('keyword', flat=True)
+            )
+        except Exception:
+            return []
+
+    @staticmethod
     def reset_keywords():
         """Reset all keyword counts"""
         _import_models()

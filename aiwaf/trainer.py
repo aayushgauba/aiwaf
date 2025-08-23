@@ -51,17 +51,59 @@ def path_exists_in_django(path: str) -> bool:
 
 
 def remove_exempt_keywords() -> None:
+    """Remove exempt keywords from dynamic keyword storage"""
     keyword_store = get_keyword_store()
     exempt_tokens = set()
     
+    # Extract tokens from exempt paths
     for path in getattr(settings, "AIWAF_EXEMPT_PATHS", []):
         for seg in re.split(r"\W+", path.strip("/").lower()):
             if len(seg) > 3:
                 exempt_tokens.add(seg)
     
+    # Add explicit exempt keywords from settings
+    explicit_exempt = getattr(settings, "AIWAF_EXEMPT_KEYWORDS", [])
+    exempt_tokens.update(explicit_exempt)
+    
+    # Add legitimate path keywords to prevent them from being learned as suspicious
+    allowed_path_keywords = getattr(settings, "AIWAF_ALLOWED_PATH_KEYWORDS", [])
+    exempt_tokens.update(allowed_path_keywords)
+    
     # Remove exempt tokens from keyword storage
     for token in exempt_tokens:
         keyword_store.remove_keyword(token)
+    
+    if exempt_tokens:
+        print(f"🧹 Removed {len(exempt_tokens)} exempt keywords from learning: {list(exempt_tokens)[:10]}")
+
+
+def get_legitimate_keywords() -> set:
+    """Get all legitimate keywords that shouldn't be learned as suspicious"""
+    legitimate = set()
+    
+    # Common legitimate path segments
+    default_legitimate = {
+        "profile", "user", "users", "account", "accounts", "settings", "dashboard", 
+        "home", "about", "contact", "help", "search", "list", "lists",
+        "view", "views", "edit", "create", "update", "delete", "detail", "details",
+        "api", "auth", "login", "logout", "register", "signup", "signin",
+        "reset", "confirm", "activate", "verify", "page", "pages",
+        "category", "categories", "tag", "tags", "post", "posts",
+        "article", "articles", "blog", "blogs", "news", "item", "items",
+        "admin", "administration", "manage", "manager", "control", "panel",
+        "config", "configuration", "option", "options", "preference", "preferences"
+    }
+    legitimate.update(default_legitimate)
+    
+    # Add from Django settings
+    allowed_path_keywords = getattr(settings, "AIWAF_ALLOWED_PATH_KEYWORDS", [])
+    legitimate.update(allowed_path_keywords)
+    
+    # Add exempt keywords
+    exempt_keywords = getattr(settings, "AIWAF_EXEMPT_KEYWORDS", [])
+    legitimate.update(exempt_keywords)
+    
+    return legitimate
 
 
 def _read_all_logs() -> list[str]:
@@ -137,14 +179,20 @@ def _parse(line: str) -> dict | None:
 
 
 def train() -> None:
+    """Enhanced training with improved keyword filtering and exemption handling"""
+    print("🚀 Starting AIWAF enhanced training...")
+    
+    # Remove exempt keywords first
     remove_exempt_keywords()
     
     # Remove any IPs in IPExemption from the blacklist using BlacklistManager
     exemption_store = get_exemption_store()
     
     exempted_ips = [entry['ip_address'] for entry in exemption_store.get_all()]
-    for ip in exempted_ips:
-        BlacklistManager.unblock(ip)
+    if exempted_ips:
+        print(f"🛡️  Found {len(exempted_ips)} exempted IPs - clearing from blacklist")
+        for ip in exempted_ips:
+            BlacklistManager.unblock(ip)
     
     raw_lines = _read_all_logs()
     if not raw_lines:
@@ -281,17 +329,50 @@ def train() -> None:
         print(f"   → Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs (others looked legitimate)")
 
     tokens = Counter()
+    legitimate_keywords = get_legitimate_keywords()
+    
+    print(f"🔍 Learning keywords from {len(parsed)} parsed requests...")
+    
     for r in parsed:
-        if (r["status"].startswith(("4", "5"))
-            and not path_exists_in_django(r["path"])):
+        # Only learn from suspicious requests (errors on non-existent paths)
+        if (r["status"].startswith(("4", "5")) and 
+            not path_exists_in_django(r["path"]) and 
+            not is_exempt_path(r["path"])):
+            
             for seg in re.split(r"\W+", r["path"].lower()):
-                if len(seg) > 3 and seg not in STATIC_KW:
+                if (len(seg) > 3 and 
+                    seg not in STATIC_KW and 
+                    seg not in legitimate_keywords):  # Don't learn legitimate keywords
                     tokens[seg] += 1
 
     keyword_store = get_keyword_store()
-    top_tokens = tokens.most_common(10)
+    top_tokens = tokens.most_common(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
     
+    # Additional filtering: only add keywords that appear suspicious enough
+    filtered_tokens = []
     for kw, cnt in top_tokens:
-        keyword_store.add_keyword(kw, cnt)
-
-    print(f"DynamicKeyword storage updated with top tokens: {[kw for kw, _ in top_tokens]}")
+        # Don't add keywords that might be legitimate
+        if (cnt >= 2 and  # Must appear at least twice
+            len(kw) >= 4 and  # Must be at least 4 characters
+            kw not in legitimate_keywords):  # Not in legitimate set
+            filtered_tokens.append((kw, cnt))
+            keyword_store.add_keyword(kw, cnt)
+    
+    if filtered_tokens:
+        print(f"📝 Added {len(filtered_tokens)} suspicious keywords: {[kw for kw, _ in filtered_tokens]}")
+    else:
+        print("✅ No new suspicious keywords learned (good sign!)")
+    
+    print(f"🎯 Dynamic keyword learning complete. Excluded {len(legitimate_keywords)} legitimate keywords.")
+    
+    # Training summary
+    print("\n" + "="*60)
+    print("🎉 AIWAF ENHANCED TRAINING COMPLETE")
+    print("="*60)
+    print(f"📊 Training Data: {len(parsed)} log entries processed")
+    print(f"🤖 AI Model: Trained with {len(feature_cols)} features")
+    print(f"🚫 Blocked IPs: {blocked_count if 'blocked_count' in locals() else 0} suspicious IPs blocked")
+    print(f"🔑 Keywords: {len(filtered_tokens)} new suspicious keywords learned")
+    print(f"🛡️  Exemptions: {len(exempted_ips)} IPs protected from blocking")
+    print(f"✅ Enhanced protection now active with context-aware filtering!")
+    print("="*60)

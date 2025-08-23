@@ -2,7 +2,13 @@
 # AI‑WAF
 
 > A self‑learning, Django‑friendly Web Application Firewall  
-> with rate‑limiting, anomaly detection, honeypots, UUID‑tamper protection, dynamic keyword extraction, file‑extension probing detection, exempt path awareness, and daily retraining.
+> with **enhanced context-aware protection**, rate‑limiting, anomaly detection, honeypots, UUID‑tamper protection, **smart keyword learning**, file‑extension probing detection, exempt path awareness, and daily retraining.
+
+**🆕 Latest Enhancements:**
+- ✅ **Smart Keyword Filtering** - Prevents blocking legitimate pages like `/profile/`
+- ✅ **Granular Reset Commands** - Clear specific data types (`--blacklist`, `--keywords`, `--exemptions`)
+- ✅ **Context-Aware Learning** - Only learns from suspicious requests, not legitimate site functionality
+- ✅ **Enhanced Configuration** - `AIWAF_ALLOWED_PATH_KEYWORDS` and `AIWAF_EXEMPT_KEYWORDS`
 
 ---
 
@@ -65,9 +71,14 @@ aiwaf/
   - Burst count  
   - Total 404s  
 
-- **Dynamic Keyword Extraction & Cleanup**  
-  - Every retrain adds top 10 keyword segments from 4xx/5xx paths  
-  - **If a path is added to `AIWAF_EXEMPT_PATHS`, its keywords are automatically removed from the database**
+- **Enhanced Dynamic Keyword Learning**  
+  - **Smart Context-Aware Learning**: Only learns keywords from suspicious requests on non-existent paths
+  - **Legitimate Path Protection**: Automatically excludes keywords from valid Django URLs (like `/profile/`, `/admin/`)
+  - **Configuration Options**: 
+    - `AIWAF_ALLOWED_PATH_KEYWORDS` - Explicitly allow certain keywords in legitimate paths
+    - `AIWAF_EXEMPT_KEYWORDS` - Keywords that should never trigger blocking
+  - **Automatic Cleanup**: Keywords from `AIWAF_EXEMPT_PATHS` are automatically removed from the database
+  - **False Positive Prevention**: Stops learning legitimate site functionality as "malicious"
 
 - **File‑Extension Probing Detection**  
   Tracks repeated 404s on common extensions (e.g. `.php`, `.asp`) and blocks IPs.
@@ -173,20 +184,44 @@ python manage.py add_ipexemption <ip-address> --reason "optional reason"
 
 ### Resetting AI-WAF
 
-Clear all blacklist and exemption entries:
+The `aiwaf_reset` command provides **granular control** for clearing different types of data:
 
 ```bash
-# Clear everything (with confirmation prompt)
+# Clear everything (default - backward compatible)
 python manage.py aiwaf_reset
 
-# Clear everything without confirmation
+# Clear everything without confirmation prompt
 python manage.py aiwaf_reset --confirm
 
-# Clear only blacklist entries
-python manage.py aiwaf_reset --blacklist-only
+# 🆕 GRANULAR CONTROL - Clear specific data types
+python manage.py aiwaf_reset --blacklist      # Clear only blocked IPs
+python manage.py aiwaf_reset --exemptions     # Clear only exempted IPs  
+python manage.py aiwaf_reset --keywords       # Clear only learned keywords
 
-# Clear only exemption entries  
-python manage.py aiwaf_reset --exemptions-only
+# 🔧 COMBINE OPTIONS - Mix and match as needed
+python manage.py aiwaf_reset --blacklist --keywords      # Keep exemptions
+python manage.py aiwaf_reset --exemptions --keywords     # Keep blacklist
+python manage.py aiwaf_reset --blacklist --exemptions    # Keep keywords
+
+# 🚀 COMMON USE CASES
+# Fix false positive keywords (like "profile" blocking legitimate pages)
+python manage.py aiwaf_reset --keywords --confirm
+python manage.py detect_and_train  # Retrain with enhanced filtering
+
+# Clear blocked IPs but preserve exemptions and learning
+python manage.py aiwaf_reset --blacklist --confirm
+
+# Legacy support (still works for backward compatibility)
+python manage.py aiwaf_reset --blacklist-only    # Legacy: blacklist only
+python manage.py aiwaf_reset --exemptions-only   # Legacy: exemptions only
+```
+
+**Enhanced Feedback:**
+```bash
+$ python manage.py aiwaf_reset --keywords
+🔧 AI-WAF Reset: Clear 15 learned keywords
+Are you sure you want to proceed? [y/N]: y
+✅ Reset complete: Deleted 15 learned keywords
 ```
 
 ### Checking Dependencies
@@ -459,6 +494,21 @@ AIWAF_EXEMPT_PATHS = [          # optional but highly recommended
     "/media/",
     "/health/",
 ]
+
+# 🆕 ENHANCED KEYWORD FILTERING OPTIONS
+AIWAF_ALLOWED_PATH_KEYWORDS = [  # Keywords allowed in legitimate paths
+    "profile", "user", "account", "settings", "dashboard",
+    "admin", "api", "auth", "search", "contact", "about",
+    # Add your site-specific legitimate keywords
+    "buddycraft", "sc2", "starcraft",  # Example: gaming site keywords
+]
+
+AIWAF_EXEMPT_KEYWORDS = [        # Keywords that never trigger blocking
+    "api", "webhook", "health", "static", "media",
+    "upload", "download", "backup", "profile"
+]
+
+AIWAF_DYNAMIC_TOP_N = 10        # Number of dynamic keywords to learn (default: 10)
 ```
 
 > **Note:** You no longer need to define `AIWAF_MALICIOUS_KEYWORDS` or `AIWAF_STATUS_CODES` — they evolve dynamically.
@@ -654,6 +704,65 @@ python manage.py detect_and_train
 4. Save `model.pkl`
 5. Extract top 10 dynamic keywords from 4xx/5xx
 6. Remove any keywords associated with newly exempt paths
+
+---
+
+## 🔧 Troubleshooting
+
+### Legitimate Pages Being Blocked
+
+**Problem**: Users can't access legitimate pages like `/en/profile/` due to keyword blocking.
+
+**Cause**: AIWAF learned legitimate keywords (like "profile") as suspicious from previous traffic.
+
+**Solution**:
+```bash
+# 1. Clear problematic learned keywords
+python manage.py aiwaf_reset --keywords --confirm
+
+# 2. Add legitimate keywords to settings
+# In settings.py:
+AIWAF_ALLOWED_PATH_KEYWORDS = [
+    "profile", "user", "account", "dashboard",
+    # Add your site-specific keywords
+]
+
+# 3. Retrain with enhanced filtering (won't learn legitimate keywords)
+python manage.py detect_and_train
+
+# 4. Test - legitimate pages should now work!
+```
+
+### Preventing Future False Positives
+
+Configure AIWAF to recognize your site's legitimate keywords:
+
+```python
+# settings.py
+AIWAF_ALLOWED_PATH_KEYWORDS = [
+    # Common legitimate keywords
+    "profile", "user", "account", "settings", "dashboard",
+    "admin", "search", "contact", "about", "help",
+    
+    # Your site-specific keywords
+    "buddycraft", "sc2", "starcraft",  # Gaming site example
+    "shop", "cart", "checkout",        # E-commerce example  
+    "blog", "article", "news",         # Content site example
+]
+```
+
+### Reset Command Options
+
+```bash
+# Clear everything (safest for troubleshooting)
+python manage.py aiwaf_reset --confirm
+
+# Clear only problematic keywords
+python manage.py aiwaf_reset --keywords --confirm
+
+# Clear blocked IPs but keep exemptions
+python manage.py aiwaf_reset --blacklist --confirm
+```
 
 ---
 

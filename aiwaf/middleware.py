@@ -3,6 +3,7 @@
 import time
 import re
 import os
+import warnings
 import numpy as np
 import joblib
 from django.db.models import UUIDField
@@ -82,6 +83,93 @@ class IPAndKeywordBlockMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         self.safe_prefixes = self._collect_safe_prefixes()
+        self.exempt_keywords = self._get_exempt_keywords()
+        self.legitimate_path_keywords = self._get_legitimate_path_keywords()
+
+    def _get_exempt_keywords(self):
+        """Get keywords that should be exempt from blocking"""
+        exempt_tokens = set()
+        
+        # Extract from exempt paths
+        for path in getattr(settings, "AIWAF_EXEMPT_PATHS", []):
+            for seg in re.split(r"\W+", path.strip("/").lower()):
+                if len(seg) > 3:
+                    exempt_tokens.add(seg)
+        
+        # Add explicit exempt keywords from settings
+        exempt_keywords = getattr(settings, "AIWAF_EXEMPT_KEYWORDS", [])
+        exempt_tokens.update(exempt_keywords)
+        
+        return exempt_tokens
+
+    def _get_legitimate_path_keywords(self):
+        """Get keywords that are legitimate in URL paths"""
+        # Extract from Django URL patterns
+        legitimate_keywords = set()
+        
+        # Add common legitimate path segments
+        default_legitimate = {
+            "profile", "user", "account", "settings", "dashboard", 
+            "home", "about", "contact", "help", "search", "list",
+            "view", "edit", "create", "update", "delete", "detail",
+            "api", "auth", "login", "logout", "register", "signup",
+            "reset", "confirm", "activate", "verify", "page",
+            "category", "tag", "post", "article", "blog", "news"
+        }
+        legitimate_keywords.update(default_legitimate)
+        
+        # Add from Django settings
+        allowed_path_keywords = getattr(settings, "AIWAF_ALLOWED_PATH_KEYWORDS", [])
+        legitimate_keywords.update(allowed_path_keywords)
+        
+        # Extract from actual Django URL patterns
+        resolver = get_resolver()
+        self._extract_path_keywords_from_urls(resolver.url_patterns, legitimate_keywords)
+        
+        return legitimate_keywords
+
+    def _extract_path_keywords_from_urls(self, url_patterns, keywords, prefix=""):
+        """Extract legitimate keywords from Django URL patterns"""
+        for pattern in url_patterns:
+            if hasattr(pattern, 'url_patterns'):  # include()
+                new_prefix = prefix + str(pattern.pattern).strip('^$/')
+                self._extract_path_keywords_from_urls(pattern.url_patterns, keywords, new_prefix)
+            else:
+                # Extract static path segments from URL pattern
+                pattern_str = str(pattern.pattern).strip('^$/')
+                full_path = (prefix + '/' + pattern_str).strip('/')
+                
+                # Extract meaningful segments (not regex patterns)
+                segments = re.findall(r'[a-zA-Z]{3,}', full_path)
+                for seg in segments:
+                    if seg.lower() not in {'http', 'https', 'www'}:
+                        keywords.add(seg.lower())
+
+    def _is_malicious_context(self, request, segment):
+        """Determine if a keyword appears in a malicious context"""
+        path = request.path.lower()
+        
+        # Check if this is a query parameter attack
+        query_string = request.META.get('QUERY_STRING', '').lower()
+        if segment in query_string and any(attack_pattern in query_string for attack_pattern in [
+            'union', 'select', 'drop', 'insert', 'script', 'alert', 'eval'
+        ]):
+            return True
+        
+        # Check if this looks like a file extension attack
+        if segment.startswith('.') and not path_exists_in_django(request.path):
+            return True
+        
+        # Check if this looks like a directory traversal
+        if '../' in path or '..\\' in path:
+            return True
+        
+        # Check if accessing non-existent paths with suspicious extensions
+        if (not path_exists_in_django(request.path) and 
+            any(ext in segment for ext in ['.php', '.asp', '.jsp', '.cgi'])):
+            return True
+        
+        return False
 
     def _collect_safe_prefixes(self):
         resolver = get_resolver()
@@ -102,35 +190,68 @@ class IPAndKeywordBlockMiddleware:
         return prefixes
 
     def __call__(self, request):
-        raw_path = request.path.lower()
+        # First exemption check - early exit for exempt requests
         if is_exempt(request):
             return self.get_response(request)
+            
+        raw_path = request.path.lower()
         ip = get_ip(request)
         path = raw_path.lstrip("/")
         
-        # BlacklistManager now handles exemption checking internally
+        # Additional IP-level exemption check
+        from .storage import get_exemption_store
+        exemption_store = get_exemption_store()
+        if exemption_store.is_exempted(ip):
+            return self.get_response(request)
+        
+        # BlacklistManager handles exemption checking internally
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
+        
+        # Check if path exists in Django - if yes, be more lenient
+        path_exists = path_exists_in_django(request.path)
         
         keyword_store = get_keyword_store()
         segments = [seg for seg in re.split(r"\W+", path) if len(seg) > 3]
         
+        # Only learn keywords from non-existent paths or suspicious contexts
         for seg in segments:
-            keyword_store.add_keyword(seg)
+            if not path_exists or self._is_malicious_context(request, seg):
+                keyword_store.add_keyword(seg)
             
         dynamic_top = keyword_store.get_top_keywords(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
         all_kw = set(STATIC_KW) | set(dynamic_top)
-        suspicious_kw = {
-            kw for kw in all_kw
-            if not any(path.startswith(prefix) for prefix in self.safe_prefixes if prefix)
-        }
+        
+        # Enhanced filtering logic
+        suspicious_kw = set()
+        for kw in all_kw:
+            # Skip if keyword is explicitly exempted
+            if kw in self.exempt_keywords:
+                continue
+            
+            # Skip if this is a legitimate path keyword and path exists in Django
+            if (kw in self.legitimate_path_keywords and 
+                path_exists and 
+                not self._is_malicious_context(request, kw)):
+                continue
+            
+            # Skip if path starts with safe prefix
+            if any(path.startswith(prefix) for prefix in self.safe_prefixes if prefix):
+                continue
+            
+            suspicious_kw.add(kw)
+        
+        # Check segments against suspicious keywords
         for seg in segments:
             if seg in suspicious_kw:
-                # BlacklistManager.block() now checks exemptions internally
-                BlacklistManager.block(ip, f"Keyword block: {seg}")
-                # Check again after blocking attempt (exempted IPs won't be blocked)
-                if BlacklistManager.is_blocked(ip):
-                    return JsonResponse({"error": "blocked"}, status=403)
+                # Additional context check before blocking
+                if self._is_malicious_context(request, seg) or not path_exists:
+                    # Double-check exemption before blocking
+                    if not exemption_store.is_exempted(ip):
+                        BlacklistManager.block(ip, f"Keyword block: {seg} (context: malicious)")
+                        # Check again after blocking attempt (exempted IPs won't be blocked)
+                        if BlacklistManager.is_blocked(ip):
+                            return JsonResponse({"error": "blocked"}, status=403)
         return self.get_response(request)
 
 
@@ -143,22 +264,32 @@ class RateLimitMiddleware:
         self.FLOOD = getattr(settings, "AIWAF_RATE_FLOOD", 40)    # hard limit
 
     def __call__(self, request):
+        # First exemption check - early exit for exempt requests
         if is_exempt(request):
             return self.get_response(request)
 
         ip = get_ip(request)
+        
+        # Additional IP-level exemption check
+        from .storage import get_exemption_store
+        exemption_store = get_exemption_store()
+        if exemption_store.is_exempted(ip):
+            return self.get_response(request)
+            
         key = f"ratelimit:{ip}"
         now = time.time()
         timestamps = cache.get(key, [])
         timestamps = [t for t in timestamps if now - t < self.WINDOW]
         timestamps.append(now)
         cache.set(key, timestamps, timeout=self.WINDOW)
+        
         if len(timestamps) > self.FLOOD:
-            # BlacklistManager.block() now checks exemptions internally
-            BlacklistManager.block(ip, "Flood pattern")
-            # Check if actually blocked (exempted IPs won't be blocked)
-            if BlacklistManager.is_blocked(ip):
-                return JsonResponse({"error": "blocked"}, status=403)
+            # Double-check exemption before blocking
+            if not exemption_store.is_exempted(ip):
+                BlacklistManager.block(ip, "Flood pattern")
+                # Check if actually blocked (exempted IPs won't be blocked)
+                if BlacklistManager.is_blocked(ip):
+                    return JsonResponse({"error": "blocked"}, status=403)
         if len(timestamps) > self.MAX:
             return JsonResponse({"error": "too_many_requests"}, status=429)
         return self.get_response(request)
@@ -174,19 +305,37 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         self.model = MODEL
 
     def process_request(self, request):
+        # First exemption check - early exit for exempt requests
         if is_exempt(request):
             return None
+            
         request._start_time = time.time()
         ip = get_ip(request)
-        # BlacklistManager now handles exemption checking internally
+        
+        # Additional IP-level exemption check
+        from .storage import get_exemption_store
+        exemption_store = get_exemption_store()
+        if exemption_store.is_exempted(ip):
+            return None
+            
+        # BlacklistManager handles exemption checking internally
         if BlacklistManager.is_blocked(ip):
             return JsonResponse({"error": "blocked"}, status=403)
         return None
 
     def process_response(self, request, response):
+        # First exemption check - early exit for exempt requests
         if is_exempt(request):
             return response
+            
         ip = get_ip(request)
+        
+        # Additional IP-level exemption check
+        from .storage import get_exemption_store
+        exemption_store = get_exemption_store()
+        if exemption_store.is_exempted(ip):
+            return response
+            
         now = time.time()
         key = f"aiwaf:{ip}"
         data = cache.get(key, [])
@@ -251,17 +400,20 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                     # Anomalous but looks legitimate - don't block
                     pass
                 else:
-                    # Block if it shows clear signs of malicious behavior
-                    BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
-                    # Check if actually blocked (exempted IPs won't be blocked)
-                    if BlacklistManager.is_blocked(ip):
-                        return JsonResponse({"error": "blocked"}, status=403)
+                    # Double-check exemption before blocking
+                    if not exemption_store.is_exempted(ip):
+                        BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
+                        # Check if actually blocked (exempted IPs won't be blocked)
+                        if BlacklistManager.is_blocked(ip):
+                            return JsonResponse({"error": "blocked"}, status=403)
             else:
                 # No recent data to analyze - be more conservative, only block on very suspicious current request
                 if kw_hits >= 2 or status_idx == STATUS_IDX.index("404"):
-                    BlacklistManager.block(ip, "AI anomaly + immediate suspicious behavior")
-                    if BlacklistManager.is_blocked(ip):
-                        return JsonResponse({"error": "blocked"}, status=403)
+                    # Double-check exemption before blocking
+                    if not exemption_store.is_exempted(ip):
+                        BlacklistManager.block(ip, "AI anomaly + immediate suspicious behavior")
+                        if BlacklistManager.is_blocked(ip):
+                            return JsonResponse({"error": "blocked"}, status=403)
 
         data.append((now, request.path, response.status_code, resp_time))
         data = [d for d in data if now - d[0] < self.WINDOW]
@@ -283,7 +435,12 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             return None
             
         ip = get_ip(request)
-        # BlacklistManager now handles exemption checking internally
+        
+        # Additional IP-level exemption check
+        from .storage import get_exemption_store
+        exemption_store = get_exemption_store()
+        if exemption_store.is_exempted(ip):
+            return None
             
         if request.method == "GET":
             # Store timestamp for this IP's GET request  
@@ -300,11 +457,12 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 if not any(request.path.lower().startswith(login_path) for login_path in [
                     "/admin/login/", "/login/", "/accounts/login/", "/auth/login/", "/signin/"
                 ]):
-                    # BlacklistManager.block() now checks exemptions internally
-                    BlacklistManager.block(ip, "Direct POST without GET")
-                    # Check if actually blocked (exempted IPs won't be blocked)
-                    if BlacklistManager.is_blocked(ip):
-                        return JsonResponse({"error": "blocked"}, status=403)
+                    # Double-check exemption before blocking
+                    if not exemption_store.is_exempted(ip):
+                        BlacklistManager.block(ip, "Direct POST without GET")
+                        # Check if actually blocked (exempted IPs won't be blocked)
+                        if BlacklistManager.is_blocked(ip):
+                            return JsonResponse({"error": "blocked"}, status=403)
             else:
                 # Check timing - be more lenient for login paths
                 time_diff = time.time() - get_time
@@ -317,11 +475,12 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                     min_time = 0.1  # Very short threshold for login forms
                 
                 if time_diff < min_time:
-                    # BlacklistManager.block() now checks exemptions internally
-                    BlacklistManager.block(ip, f"Form submitted too quickly ({time_diff:.2f}s)")
-                    # Check if actually blocked (exempted IPs won't be blocked)
-                    if BlacklistManager.is_blocked(ip):
-                        return JsonResponse({"error": "blocked"}, status=403)
+                    # Double-check exemption before blocking
+                    if not exemption_store.is_exempted(ip):
+                        BlacklistManager.block(ip, f"Form submitted too quickly ({time_diff:.2f}s)")
+                        # Check if actually blocked (exempted IPs won't be blocked)
+                        if BlacklistManager.is_blocked(ip):
+                            return JsonResponse({"error": "blocked"}, status=403)
         
         return None
 
@@ -330,11 +489,19 @@ class UUIDTamperMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
         if is_exempt(request):
             return None
+            
         uid = view_kwargs.get("uuid")
         if not uid:
             return None
 
         ip = get_ip(request)
+        
+        # Additional IP-level exemption check
+        from .storage import get_exemption_store
+        exemption_store = get_exemption_store()
+        if exemption_store.is_exempted(ip):
+            return None
+            
         app_label = view_func.__module__.split(".")[0]
         app_cfg   = apps.get_app_config(app_label)
         for Model in app_cfg.get_models():
@@ -345,8 +512,9 @@ class UUIDTamperMiddleware(MiddlewareMixin):
                 except (ValueError, TypeError):
                     continue
 
-        # BlacklistManager.block() now checks exemptions internally
-        BlacklistManager.block(ip, "UUID tampering")
-        # Check if actually blocked (exempted IPs won't be blocked)
-        if BlacklistManager.is_blocked(ip):
-            return JsonResponse({"error": "blocked"}, status=403)
+        # Double-check exemption before blocking
+        if not exemption_store.is_exempted(ip):
+            BlacklistManager.block(ip, "UUID tampering")
+            # Check if actually blocked (exempted IPs won't be blocked)
+            if BlacklistManager.is_blocked(ip):
+                return JsonResponse({"error": "blocked"}, status=403)
