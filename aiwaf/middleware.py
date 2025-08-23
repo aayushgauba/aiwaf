@@ -103,47 +103,131 @@ class IPAndKeywordBlockMiddleware:
         return exempt_tokens
 
     def _get_legitimate_path_keywords(self):
-        """Get keywords that are legitimate in URL paths"""
-        # Extract from Django URL patterns
-        legitimate_keywords = set()
+        """Get keywords that are legitimate in URL paths - uses same logic as trainer"""
+        # Import the enhanced function from trainer to ensure consistency
+        try:
+            from .trainer import get_legitimate_keywords
+            return get_legitimate_keywords()
+        except ImportError:
+            # Fallback to local implementation if trainer import fails
+            return self._get_legitimate_keywords_fallback()
+    
+    def _get_legitimate_keywords_fallback(self):
+        """Fallback implementation matching trainer.py logic"""
+        legitimate = set()
         
-        # Add common legitimate path segments
+        # Common legitimate path segments - matches trainer.py
         default_legitimate = {
-            "profile", "user", "account", "settings", "dashboard", 
-            "home", "about", "contact", "help", "search", "list",
-            "view", "edit", "create", "update", "delete", "detail",
-            "api", "auth", "login", "logout", "register", "signup",
-            "reset", "confirm", "activate", "verify", "page",
-            "category", "tag", "post", "article", "blog", "news"
+            "profile", "user", "users", "account", "accounts", "settings", "dashboard", 
+            "home", "about", "contact", "help", "search", "list", "lists",
+            "view", "views", "edit", "create", "update", "delete", "detail", "details",
+            "api", "auth", "login", "logout", "register", "signup", "signin",
+            "reset", "confirm", "activate", "verify", "page", "pages",
+            "category", "categories", "tag", "tags", "post", "posts",
+            "article", "articles", "blog", "blogs", "news", "item", "items",
+            "admin", "administration", "manage", "manager", "control", "panel",
+            "config", "configuration", "option", "options", "preference", "preferences"
         }
-        legitimate_keywords.update(default_legitimate)
+        legitimate.update(default_legitimate)
+        
+        # Extract keywords from Django URL patterns and app names - matches trainer.py
+        legitimate.update(self._extract_django_route_keywords())
         
         # Add from Django settings
         allowed_path_keywords = getattr(settings, "AIWAF_ALLOWED_PATH_KEYWORDS", [])
-        legitimate_keywords.update(allowed_path_keywords)
+        legitimate.update(allowed_path_keywords)
         
-        # Extract from actual Django URL patterns
-        resolver = get_resolver()
-        self._extract_path_keywords_from_urls(resolver.url_patterns, legitimate_keywords)
+        # Add exempt keywords
+        exempt_keywords = getattr(settings, "AIWAF_EXEMPT_KEYWORDS", [])
+        legitimate.update(exempt_keywords)
         
-        return legitimate_keywords
+        return legitimate
 
-    def _extract_path_keywords_from_urls(self, url_patterns, keywords, prefix=""):
-        """Extract legitimate keywords from Django URL patterns"""
-        for pattern in url_patterns:
-            if hasattr(pattern, 'url_patterns'):  # include()
-                new_prefix = prefix + str(pattern.pattern).strip('^$/')
-                self._extract_path_keywords_from_urls(pattern.url_patterns, keywords, new_prefix)
-            else:
-                # Extract static path segments from URL pattern
-                pattern_str = str(pattern.pattern).strip('^$/')
-                full_path = (prefix + '/' + pattern_str).strip('/')
+    def _extract_django_route_keywords(self):
+        """Extract legitimate keywords from Django URL patterns, app names, and model names - matches trainer.py"""
+        keywords = set()
+        
+        try:
+            from django.urls.resolvers import URLResolver, URLPattern
+            
+            # Extract from app names and labels
+            for app_config in apps.get_app_configs():
+                # Add app name and label
+                if app_config.name:
+                    for segment in re.split(r'[._-]', app_config.name.lower()):
+                        if len(segment) > 2:
+                            keywords.add(segment)
                 
-                # Extract meaningful segments (not regex patterns)
-                segments = re.findall(r'[a-zA-Z]{3,}', full_path)
-                for seg in segments:
-                    if seg.lower() not in {'http', 'https', 'www'}:
-                        keywords.add(seg.lower())
+                if app_config.label and app_config.label != app_config.name:
+                    for segment in re.split(r'[._-]', app_config.label.lower()):
+                        if len(segment) > 2:
+                            keywords.add(segment)
+                
+                # Extract from model names in the app
+                try:
+                    for model in app_config.get_models():
+                        model_name = model._meta.model_name.lower()
+                        if len(model_name) > 2:
+                            keywords.add(model_name)
+                        # Add plural form
+                        if not model_name.endswith('s'):
+                            keywords.add(f"{model_name}s")
+                except Exception:
+                    continue
+            
+            # Extract from URL patterns
+            def extract_from_pattern(pattern, prefix=""):
+                try:
+                    if isinstance(pattern, URLResolver):
+                        # Handle include() patterns
+                        namespace = getattr(pattern, 'namespace', None)
+                        if namespace:
+                            for segment in re.split(r'[._-]', namespace.lower()):
+                                if len(segment) > 2:
+                                    keywords.add(segment)
+                        
+                        # Extract from the pattern itself
+                        pattern_str = str(pattern.pattern)
+                        for segment in re.findall(r'([a-zA-Z]\w{2,})', pattern_str):
+                            keywords.add(segment.lower())
+                        
+                        # Recurse into nested patterns
+                        for nested_pattern in pattern.url_patterns:
+                            extract_from_pattern(nested_pattern, prefix)
+                    
+                    elif isinstance(pattern, URLPattern):
+                        # Extract from URL pattern
+                        pattern_str = str(pattern.pattern)
+                        for segment in re.findall(r'([a-zA-Z]\w{2,})', pattern_str):
+                            keywords.add(segment.lower())
+                        
+                        # Extract from view name if available
+                        if hasattr(pattern.callback, '__name__'):
+                            view_name = pattern.callback.__name__.lower()
+                            for segment in re.split(r'[._-]', view_name):
+                                if len(segment) > 2 and segment != 'view':
+                                    keywords.add(segment)
+                
+                except Exception:
+                    pass
+            
+            # Process all URL patterns
+            root_resolver = get_resolver()
+            for pattern in root_resolver.url_patterns:
+                extract_from_pattern(pattern)
+                
+        except Exception as e:
+            # Silently continue if extraction fails
+            pass
+        
+        # Filter out very common/generic words that might be suspicious
+        filtered_keywords = set()
+        for keyword in keywords:
+            if (len(keyword) >= 3 and 
+                keyword not in ['www', 'com', 'org', 'net', 'int', 'str', 'obj', 'get', 'set', 'put', 'del']):
+                filtered_keywords.add(keyword)
+        
+        return filtered_keywords
 
     def _is_malicious_context(self, request, segment):
         """Determine if a keyword appears in a malicious context"""
@@ -243,12 +327,29 @@ class IPAndKeywordBlockMiddleware:
         
         # Check segments against suspicious keywords
         for seg in segments:
+            is_suspicious = False
+            block_reason = ""
+            
+            # Check if segment is in learned suspicious keywords
             if seg in suspicious_kw:
+                is_suspicious = True
+                block_reason = f"Learned keyword: {seg}"
+            
+            # Also check if segment appears to be inherently malicious
+            elif (not path_exists and 
+                  seg not in self.legitimate_path_keywords and 
+                  (self._is_malicious_context(request, seg) or 
+                   any(malicious_pattern in seg for malicious_pattern in 
+                       ['hack', 'exploit', 'attack', 'malicious', 'evil', 'backdoor', 'inject', 'xss']))):
+                is_suspicious = True
+                block_reason = f"Inherently suspicious: {seg}"
+            
+            if is_suspicious:
                 # Additional context check before blocking
                 if self._is_malicious_context(request, seg) or not path_exists:
                     # Double-check exemption before blocking
                     if not exemption_store.is_exempted(ip):
-                        BlacklistManager.block(ip, f"Keyword block: {seg} (context: malicious)")
+                        BlacklistManager.block(ip, f"Keyword block: {block_reason}")
                         # Check again after blocking attempt (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
                             return JsonResponse({"error": "blocked"}, status=403)

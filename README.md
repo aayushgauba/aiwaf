@@ -71,14 +71,19 @@ aiwaf/
   - Burst count  
   - Total 404s  
 
-- **Enhanced Dynamic Keyword Learning**  
+- **Enhanced Dynamic Keyword Learning with Django Route Protection**  
   - **Smart Context-Aware Learning**: Only learns keywords from suspicious requests on non-existent paths
-  - **Legitimate Path Protection**: Automatically excludes keywords from valid Django URLs (like `/profile/`, `/admin/`)
+  - **Automatic Django Route Extraction**: Automatically excludes keywords from:
+    - Valid Django URL patterns (`/profile/`, `/admin/`, `/api/`, etc.)
+    - Django app names and model names (users, posts, categories)
+    - View function names and URL namespaces
+  - **Unified Logic**: Both trainer and middleware use identical legitimate keyword detection
   - **Configuration Options**: 
     - `AIWAF_ALLOWED_PATH_KEYWORDS` - Explicitly allow certain keywords in legitimate paths
     - `AIWAF_EXEMPT_KEYWORDS` - Keywords that should never trigger blocking
   - **Automatic Cleanup**: Keywords from `AIWAF_EXEMPT_PATHS` are automatically removed from the database
   - **False Positive Prevention**: Stops learning legitimate site functionality as "malicious"
+  - **Inherent Malicious Detection**: Middleware also blocks obviously malicious keywords (`hack`, `exploit`, `attack`) even if not yet learned
 
 - **File‑Extension Probing Detection**  
   Tracks repeated 404s on common extensions (e.g. `.php`, `.asp`) and blocks IPs.

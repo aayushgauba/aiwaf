@@ -95,6 +95,9 @@ def get_legitimate_keywords() -> set:
     }
     legitimate.update(default_legitimate)
     
+    # Extract keywords from Django URL patterns and app names
+    legitimate.update(_extract_django_route_keywords())
+    
     # Add from Django settings
     allowed_path_keywords = getattr(settings, "AIWAF_ALLOWED_PATH_KEYWORDS", [])
     legitimate.update(allowed_path_keywords)
@@ -104,6 +107,97 @@ def get_legitimate_keywords() -> set:
     legitimate.update(exempt_keywords)
     
     return legitimate
+
+
+def _extract_django_route_keywords() -> set:
+    """Extract legitimate keywords from Django URL patterns, app names, and model names"""
+    keywords = set()
+    
+    try:
+        from django.urls import get_resolver
+        from django.urls.resolvers import URLResolver, URLPattern
+        from django.apps import apps
+        
+        # Extract from app names and labels
+        for app_config in apps.get_app_configs():
+            # Add app name and label
+            if app_config.name:
+                for segment in re.split(r'[._-]', app_config.name.lower()):
+                    if len(segment) > 2:
+                        keywords.add(segment)
+            
+            if app_config.label and app_config.label != app_config.name:
+                for segment in re.split(r'[._-]', app_config.label.lower()):
+                    if len(segment) > 2:
+                        keywords.add(segment)
+            
+            # Extract from model names in the app
+            try:
+                for model in app_config.get_models():
+                    model_name = model._meta.model_name.lower()
+                    if len(model_name) > 2:
+                        keywords.add(model_name)
+                    # Add plural form
+                    if not model_name.endswith('s'):
+                        keywords.add(f"{model_name}s")
+            except Exception:
+                continue
+        
+        # Extract from URL patterns
+        def extract_from_pattern(pattern, prefix=""):
+            try:
+                if isinstance(pattern, URLResolver):
+                    # Handle include() patterns
+                    namespace = getattr(pattern, 'namespace', None)
+                    if namespace:
+                        for segment in re.split(r'[._-]', namespace.lower()):
+                            if len(segment) > 2:
+                                keywords.add(segment)
+                    
+                    # Extract from the pattern itself
+                    pattern_str = str(pattern.pattern)
+                    for segment in re.findall(r'([a-zA-Z]\w{2,})', pattern_str):
+                        keywords.add(segment.lower())
+                    
+                    # Recurse into nested patterns
+                    for nested_pattern in pattern.url_patterns:
+                        extract_from_pattern(nested_pattern, prefix)
+                
+                elif isinstance(pattern, URLPattern):
+                    # Extract from URL pattern
+                    pattern_str = str(pattern.pattern)
+                    for segment in re.findall(r'([a-zA-Z]\w{2,})', pattern_str):
+                        keywords.add(segment.lower())
+                    
+                    # Extract from view name if available
+                    if hasattr(pattern.callback, '__name__'):
+                        view_name = pattern.callback.__name__.lower()
+                        for segment in re.split(r'[._-]', view_name):
+                            if len(segment) > 2 and segment != 'view':
+                                keywords.add(segment)
+            
+            except Exception:
+                pass
+        
+        # Process all URL patterns
+        root_resolver = get_resolver()
+        for pattern in root_resolver.url_patterns:
+            extract_from_pattern(pattern)
+            
+    except Exception as e:
+        print(f"Warning: Could not extract Django route keywords: {e}")
+    
+    # Filter out very common/generic words that might be suspicious
+    filtered_keywords = set()
+    for keyword in keywords:
+        if (len(keyword) >= 3 and 
+            keyword not in ['www', 'com', 'org', 'net', 'int', 'str', 'obj', 'get', 'set', 'put', 'del']):
+            filtered_keywords.add(keyword)
+    
+    if filtered_keywords:
+        print(f"🔗 Extracted {len(filtered_keywords)} legitimate keywords from Django routes and apps")
+    
+    return filtered_keywords
 
 
 def _read_all_logs() -> list[str]:
