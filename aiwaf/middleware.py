@@ -298,11 +298,15 @@ class IPAndKeywordBlockMiddleware:
         keyword_store = get_keyword_store()
         segments = [seg for seg in re.split(r"\W+", path) if len(seg) > 3]
         
-        # Only learn keywords from non-existent paths or suspicious contexts
-        for seg in segments:
-            if not path_exists or self._is_malicious_context(request, seg):
-                keyword_store.add_keyword(seg)
-            
+        # Smart learning: only learn from suspicious contexts, never from valid paths
+        if not path_exists:  # Only learn from non-existent paths
+            for seg in segments:
+                # Only learn if it's not a legitimate keyword AND in a suspicious context
+                if (seg not in self.legitimate_path_keywords and 
+                    seg not in self.exempt_keywords and
+                    self._is_malicious_context(request, seg)):
+                    keyword_store.add_keyword(seg)
+        
         dynamic_top = keyword_store.get_top_keywords(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
         all_kw = set(STATIC_KW) | set(dynamic_top)
         
@@ -345,7 +349,29 @@ class IPAndKeywordBlockMiddleware:
                 block_reason = f"Inherently suspicious: {seg}"
             
             if is_suspicious:
-                # Additional context check before blocking
+                # Additional context check before blocking - be more conservative with valid paths
+                if path_exists:
+                    # For valid paths, only block if there are VERY strong malicious indicators
+                    very_strong_indicators = [
+                        # Multiple attack patterns in same request
+                        sum([
+                            '../' in request.path, '..\\' in request.path,
+                            any(param in request.GET for param in ['cmd', 'exec', 'system']),
+                            request.path.count('%') > 5,  # Heavy URL encoding
+                            len([s for s in segments if s in self.malicious_keywords]) > 2
+                        ]) >= 2,
+                        
+                        # Obvious attack attempts on valid paths
+                        any(attack in request.path.lower() for attack in [
+                            'union+select', 'drop+table', '<script', 'javascript:',
+                            'onload=', 'onerror=', '${', '{{', 'eval('
+                        ])
+                    ]
+                    
+                    if not any(very_strong_indicators):
+                        continue  # Skip blocking for valid paths without very strong indicators
+                
+                # For non-existent paths or paths with very strong indicators, proceed with blocking
                 if self._is_malicious_context(request, seg) or not path_exists:
                     # Double-check exemption before blocking
                     if not exemption_store.is_exempted(ip):
@@ -404,6 +430,38 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         super().__init__(get_response)
         # Use the safely loaded global MODEL instead of loading again
         self.model = MODEL
+
+    def _is_malicious_context(self, request, keyword):
+        """
+        Determine if a keyword appears in a malicious context.
+        Only learn keywords when we have strong indicators of malicious intent.
+        """
+        # Don't learn from valid Django paths
+        if path_exists_in_django(request.path):
+            return False
+            
+        # Strong malicious indicators
+        malicious_indicators = [
+            # Multiple consecutive suspicious segments
+            len([seg for seg in re.split(r"\W+", request.path) if seg in self.malicious_keywords]) > 1,
+            
+            # Common attack patterns
+            any(pattern in request.path.lower() for pattern in [
+                '../', '..\\', '.env', 'wp-admin', 'phpmyadmin', 'config',
+                'backup', 'database', 'mysql', 'passwd', 'shadow'
+            ]),
+            
+            # Suspicious query parameters
+            any(param in request.GET for param in ['cmd', 'exec', 'system', 'shell']),
+            
+            # Multiple directory traversal attempts
+            request.path.count('../') > 2 or request.path.count('..\\') > 2,
+            
+            # Encoded attack patterns
+            any(encoded in request.path for encoded in ['%2e%2e', '%252e', '%c0%ae']),
+        ]
+        
+        return any(malicious_indicators)
 
     def process_request(self, request):
         # First exemption check - early exit for exempt requests

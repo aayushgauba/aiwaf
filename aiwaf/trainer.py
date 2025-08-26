@@ -96,7 +96,7 @@ def get_legitimate_keywords() -> set:
     """Get all legitimate keywords that shouldn't be learned as suspicious"""
     legitimate = set()
     
-    # Common legitimate path segments
+    # Common legitimate path segments - expanded set
     default_legitimate = {
         "profile", "user", "users", "account", "accounts", "settings", "dashboard", 
         "home", "about", "contact", "help", "search", "list", "lists",
@@ -106,7 +106,32 @@ def get_legitimate_keywords() -> set:
         "category", "categories", "tag", "tags", "post", "posts",
         "article", "articles", "blog", "blogs", "news", "item", "items",
         "admin", "administration", "manage", "manager", "control", "panel",
-        "config", "configuration", "option", "options", "preference", "preferences"
+        "config", "configuration", "option", "options", "preference", "preferences",
+        
+        # Django built-in app keywords
+        "contenttypes", "contenttype", "sessions", "session", "messages", "message",
+        "staticfiles", "static", "sites", "site", "flatpages", "flatpage",
+        "redirects", "redirect", "permissions", "permission", "groups", "group",
+        
+        # Common third-party package keywords
+        "token", "tokens", "oauth", "social", "rest", "framework", "cors",
+        "debug", "toolbar", "extensions", "allauth", "crispy", "forms",
+        "channels", "celery", "redis", "cache", "email", "mail",
+        
+        # Common API/web development terms
+        "endpoint", "endpoints", "resource", "resources", "data", "export",
+        "import", "upload", "download", "file", "files", "media", "images",
+        "documents", "reports", "analytics", "stats", "statistics",
+        
+        # Common business/application terms
+        "customer", "customers", "client", "clients", "company", "companies",
+        "department", "departments", "employee", "employees", "team", "teams",
+        "project", "projects", "task", "tasks", "event", "events",
+        "notification", "notifications", "alert", "alerts",
+        
+        # Language/localization
+        "language", "languages", "locale", "locales", "translation", "translations",
+        "en", "fr", "de", "es", "it", "pt", "ru", "ja", "zh", "ko"
     }
     legitimate.update(default_legitimate)
     
@@ -135,30 +160,41 @@ def _extract_django_route_keywords() -> set:
         
         # Extract from app names and labels
         for app_config in apps.get_app_configs():
-            # Add app name and label
+            # Add app name and label - improved parsing
             if app_config.name:
-                for segment in re.split(r'[._-]', app_config.name.lower()):
-                    if len(segment) > 2:
-                        keywords.add(segment)
+                app_parts = app_config.name.lower().replace('-', '_').split('.')
+                for part in app_parts:
+                    for segment in re.split(r'[._-]', part):
+                        if len(segment) > 2:
+                            keywords.add(segment)
             
             if app_config.label and app_config.label != app_config.name:
                 for segment in re.split(r'[._-]', app_config.label.lower()):
                     if len(segment) > 2:
                         keywords.add(segment)
             
-            # Extract from model names in the app
+            # Extract from model names in the app - improved handling
             try:
                 for model in app_config.get_models():
                     model_name = model._meta.model_name.lower()
                     if len(model_name) > 2:
                         keywords.add(model_name)
-                    # Add plural form
-                    if not model_name.endswith('s'):
-                        keywords.add(f"{model_name}s")
+                        # Add plural form
+                        if not model_name.endswith('s'):
+                            keywords.add(f"{model_name}s")
+                    
+                    # Also add verbose names if different
+                    verbose_name = str(model._meta.verbose_name).lower()
+                    verbose_name_plural = str(model._meta.verbose_name_plural).lower()
+                    
+                    for name in [verbose_name, verbose_name_plural]:
+                        for segment in re.split(r'[^a-zA-Z]+', name):
+                            if len(segment) > 2 and segment != model_name:
+                                keywords.add(segment)
             except Exception:
                 continue
         
-        # Extract from URL patterns
+        # Extract from URL patterns - improved extraction
         def extract_from_pattern(pattern, prefix=""):
             try:
                 if isinstance(pattern, URLResolver):
@@ -169,26 +205,41 @@ def _extract_django_route_keywords() -> set:
                             if len(segment) > 2:
                                 keywords.add(segment)
                     
-                    # Extract from the pattern itself
+                    # Extract from the pattern itself - more comprehensive
                     pattern_str = str(pattern.pattern)
-                    for segment in re.findall(r'([a-zA-Z]\w{2,})', pattern_str):
-                        keywords.add(segment.lower())
+                    # Get literal path segments (not regex parts)
+                    literal_parts = re.findall(r'([a-zA-Z][a-zA-Z0-9_-]*)', pattern_str)
+                    for part in literal_parts:
+                        if len(part) > 2:
+                            keywords.add(part.lower())
                     
                     # Recurse into nested patterns
-                    for nested_pattern in pattern.url_patterns:
-                        extract_from_pattern(nested_pattern, prefix)
+                    try:
+                        for nested_pattern in pattern.url_patterns:
+                            extract_from_pattern(nested_pattern, prefix)
+                    except:
+                        pass
                 
                 elif isinstance(pattern, URLPattern):
-                    # Extract from URL pattern
+                    # Extract from URL pattern - more comprehensive
                     pattern_str = str(pattern.pattern)
-                    for segment in re.findall(r'([a-zA-Z]\w{2,})', pattern_str):
-                        keywords.add(segment.lower())
+                    literal_parts = re.findall(r'([a-zA-Z][a-zA-Z0-9_-]*)', pattern_str)
+                    for part in literal_parts:
+                        if len(part) > 2:
+                            keywords.add(part.lower())
                     
                     # Extract from view name if available
                     if hasattr(pattern.callback, '__name__'):
                         view_name = pattern.callback.__name__.lower()
                         for segment in re.split(r'[._-]', view_name):
-                            if len(segment) > 2 and segment != 'view':
+                            if len(segment) > 2 and segment not in ['view', 'class', 'function']:
+                                keywords.add(segment)
+                    
+                    # Extract from view class name if it's a class-based view
+                    if hasattr(pattern.callback, 'view_class'):
+                        class_name = pattern.callback.view_class.__name__.lower()
+                        for segment in re.split(r'[._-]', class_name):
+                            if len(segment) > 2 and segment not in ['view', 'class']:
                                 keywords.add(segment)
             
             except Exception:
@@ -203,10 +254,20 @@ def _extract_django_route_keywords() -> set:
         print(f"Warning: Could not extract Django route keywords: {e}")
     
     # Filter out very common/generic words that might be suspicious
+    # Expanded filter list
     filtered_keywords = set()
+    exclude_words = {
+        'www', 'com', 'org', 'net', 'int', 'str', 'obj', 'get', 'set', 'put', 'del',
+        'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her',
+        'was', 'one', 'our', 'out', 'day', 'had', 'has', 'his', 'how', 'man', 'new',
+        'now', 'old', 'see', 'two', 'who', 'boy', 'did', 'its', 'let', 'put', 'say',
+        'she', 'too', 'use', 'var', 'way', 'may', 'end', 'why', 'any', 'app', 'run'
+    }
+    
     for keyword in keywords:
         if (len(keyword) >= 3 and 
-            keyword not in ['www', 'com', 'org', 'net', 'int', 'str', 'obj', 'get', 'set', 'put', 'del']):
+            keyword not in exclude_words and
+            not keyword.isdigit()):
             filtered_keywords.add(keyword)
     
     if filtered_keywords:
@@ -285,6 +346,50 @@ def _parse(line: str) -> dict | None:
         "status":        status,
         "response_time": float(rt),
     }
+
+
+def _is_malicious_context_trainer(path: str, keyword: str, status: str = "404") -> bool:
+    """
+    Determine if a keyword from log analysis appears in a malicious context.
+    This is the trainer version of the middleware's _is_malicious_context method.
+    """
+    # Don't learn from valid Django paths
+    if path_exists_in_django(path):
+        return False
+    
+    # Strong malicious indicators for log analysis
+    malicious_indicators = [
+        # Multiple suspicious segments in path
+        len([seg for seg in re.split(r"\W+", path) if seg in STATIC_KW]) > 1,
+        
+        # Common attack patterns
+        any(pattern in path.lower() for pattern in [
+            '../', '..\\', '.env', 'wp-admin', 'phpmyadmin', 'config',
+            'backup', 'database', 'mysql', 'passwd', 'shadow', 'xmlrpc',
+            'shell', 'cmd', 'exec', 'eval', 'system'
+        ]),
+        
+        # Path indicates obvious attack attempt
+        any(attack in path.lower() for attack in [
+            'union+select', 'drop+table', '<script', 'javascript:',
+            '${', '{{', 'onload=', 'onerror=', 'file://', 'http://'
+        ]),
+        
+        # Multiple directory traversal attempts
+        path.count('../') > 1 or path.count('..\\') > 1,
+        
+        # Encoded attack patterns
+        any(encoded in path for encoded in ['%2e%2e', '%252e', '%c0%ae', '%3c%73%63%72%69%70%74']),
+        
+        # 404 status with suspicious characteristics
+        status == "404" and (
+            len(path) > 50 or  # Very long paths are often attacks
+            path.count('/') > 10 or  # Too many directory levels
+            any(c in path for c in ['<', '>', '{', '}', '$', '`'])  # Special characters
+        ),
+    ]
+    
+    return any(malicious_indicators)
 
 
 def train() -> None:
@@ -451,28 +556,43 @@ def train() -> None:
             for seg in re.split(r"\W+", r["path"].lower()):
                 if (len(seg) > 3 and 
                     seg not in STATIC_KW and 
-                    seg not in legitimate_keywords):  # Don't learn legitimate keywords
+                    seg not in legitimate_keywords and  # Don't learn legitimate keywords
+                    _is_malicious_context_trainer(r["path"], seg, r["status"])):  # Smart context check
                     tokens[seg] += 1
 
     keyword_store = get_keyword_store()
     top_tokens = tokens.most_common(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
     
-    # Additional filtering: only add keywords that appear suspicious enough
+    # Additional filtering: only add keywords that appear suspicious enough AND in malicious context
     filtered_tokens = []
+    learned_from_paths = []  # Track which paths we learned from
+    
     for kw, cnt in top_tokens:
-        # Don't add keywords that might be legitimate
+        # Find example paths where this keyword appeared
+        example_paths = [r["path"] for r in parsed 
+                        if kw in r["path"].lower() and 
+                        r["status"].startswith(("4", "5")) and
+                        not path_exists_in_django(r["path"])]
+        
+        # Only add if keyword appears in malicious contexts
         if (cnt >= 2 and  # Must appear at least twice
             len(kw) >= 4 and  # Must be at least 4 characters
-            kw not in legitimate_keywords):  # Not in legitimate set
+            kw not in legitimate_keywords and  # Not in legitimate set
+            example_paths and  # Has example paths
+            any(_is_malicious_context_trainer(path, kw) for path in example_paths[:3])):  # Check first 3 paths
+            
             filtered_tokens.append((kw, cnt))
             keyword_store.add_keyword(kw, cnt)
+            learned_from_paths.extend(example_paths[:2])  # Track first 2 example paths
     
     if filtered_tokens:
         print(f"📝 Added {len(filtered_tokens)} suspicious keywords: {[kw for kw, _ in filtered_tokens]}")
+        print(f"🎯 Example malicious paths learned from: {learned_from_paths[:5]}")  # Show first 5
     else:
         print("✅ No new suspicious keywords learned (good sign!)")
     
-    print(f"🎯 Dynamic keyword learning complete. Excluded {len(legitimate_keywords)} legitimate keywords.")
+    print(f"🎯 Smart keyword learning complete. Excluded {len(legitimate_keywords)} legitimate keywords.")
+    print(f"🔒 Used malicious context analysis to filter out false positives.")
     
     # Training summary
     print("\n" + "="*60)
