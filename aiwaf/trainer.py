@@ -34,19 +34,34 @@ def path_exists_in_django(path: str) -> bool:
     from django.urls import get_resolver
     from django.urls.resolvers import URLResolver
 
-    candidate = path.split("?")[0].lstrip("/")
+    candidate = path.split("?")[0].strip("/")  # Remove query params and normalize slashes
+    
+    # Try exact resolution first - this is the most reliable method
     try:
         get_resolver().resolve(f"/{candidate}")
         return True
     except:
         pass
+    
+    # Also try with trailing slash if it doesn't have one
+    if not candidate.endswith("/"):
+        try:
+            get_resolver().resolve(f"/{candidate}/")
+            return True
+        except:
+            pass
+    
+    # Try without trailing slash if it has one
+    if candidate.endswith("/"):
+        try:
+            get_resolver().resolve(f"/{candidate.rstrip('/')}")
+            return True
+        except:
+            pass
 
-    root = get_resolver()
-    for p in root.url_patterns:
-        if isinstance(p, URLResolver):
-            prefix = p.pattern.describe().strip("^/")
-            if prefix and candidate.startswith(prefix):
-                return True
+    # If direct resolution fails, be conservative
+    # Only do basic prefix matching for known include patterns
+    # but don't assume sub-paths exist just because the prefix exists
     return False
 
 
