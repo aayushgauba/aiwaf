@@ -179,17 +179,26 @@ class IPAndKeywordBlockMiddleware:
             def extract_from_pattern(pattern, prefix=""):
                 try:
                     if isinstance(pattern, URLResolver):
-                        # Handle include() patterns
+                        # Handle include() patterns - be permissive for URL prefixes that route to apps
                         namespace = getattr(pattern, 'namespace', None)
                         if namespace:
                             for segment in re.split(r'[._-]', namespace.lower()):
                                 if len(segment) > 2:
                                     keywords.add(segment)
                         
-                        # Extract from the pattern itself
+                        # Extract from the pattern itself - improved logic for include() patterns
                         pattern_str = str(pattern.pattern)
-                        for segment in re.findall(r'([a-zA-Z]\w{2,})', pattern_str):
-                            keywords.add(segment.lower())
+                        # Get literal path segments (not regex parts)
+                        literal_parts = re.findall(r'([a-zA-Z][a-zA-Z0-9_-]*)', pattern_str)
+                        
+                        # For include() patterns, be more permissive since they're routing to existing apps
+                        # The key insight: if someone includes an app's URLs, the prefix is legitimate by design
+                        for part in literal_parts:
+                            if len(part) > 2:
+                                part_lower = part.lower()
+                                # For URLResolver (include patterns), be more permissive
+                                # These are URL prefixes that route to actual app functionality
+                                keywords.add(part_lower)
                         
                         # Recurse into nested patterns
                         for nested_pattern in pattern.url_patterns:

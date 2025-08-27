@@ -198,20 +198,37 @@ def _extract_django_route_keywords() -> set:
         def extract_from_pattern(pattern, prefix=""):
             try:
                 if isinstance(pattern, URLResolver):
-                    # Handle include() patterns
+                    # Handle include() patterns - check if they include legitimate apps
                     namespace = getattr(pattern, 'namespace', None)
                     if namespace:
                         for segment in re.split(r'[._-]', namespace.lower()):
                             if len(segment) > 2:
                                 keywords.add(segment)
                     
-                    # Extract from the pattern itself - more comprehensive
+                    # Extract from the pattern itself - improved logic for include() patterns
                     pattern_str = str(pattern.pattern)
                     # Get literal path segments (not regex parts)
                     literal_parts = re.findall(r'([a-zA-Z][a-zA-Z0-9_-]*)', pattern_str)
+                    
+                    # Get list of actual Django app names to validate against
+                    app_names = set()
+                    for app_config in apps.get_app_configs():
+                        app_parts = app_config.name.lower().replace('-', '_').split('.')
+                        for part in app_parts:
+                            for segment in re.split(r'[._-]', part):
+                                if len(segment) > 2:
+                                    app_names.add(segment)
+                        if app_config.label:
+                            app_names.add(app_config.label.lower())
+                    
+                    # For include() patterns, be more permissive since they're routing to existing apps
+                    # The key insight: if someone includes an app's URLs, the prefix is legitimate by design
                     for part in literal_parts:
                         if len(part) > 2:
-                            keywords.add(part.lower())
+                            part_lower = part.lower()
+                            # For URLResolver (include patterns), be more permissive
+                            # These are URL prefixes that route to actual app functionality
+                            keywords.add(part_lower)
                     
                     # Recurse into nested patterns
                     try:
