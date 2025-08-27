@@ -85,6 +85,7 @@ class IPAndKeywordBlockMiddleware:
         self.safe_prefixes = self._collect_safe_prefixes()
         self.exempt_keywords = self._get_exempt_keywords()
         self.legitimate_path_keywords = self._get_legitimate_path_keywords()
+        self.malicious_keywords = set(STATIC_KW)  # Initialize malicious keywords
 
     def _get_exempt_keywords(self):
         """Get keywords that should be exempt from blocking"""
@@ -439,6 +440,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         super().__init__(get_response)
         # Use the safely loaded global MODEL instead of loading again
         self.model = MODEL
+        self.malicious_keywords = set(STATIC_KW)  # Initialize malicious keywords
 
     def _is_malicious_context(self, request, keyword):
         """
