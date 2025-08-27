@@ -587,10 +587,24 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         data = [d for d in data if now - d[0] < self.WINDOW]
         cache.set(key, data, timeout=self.WINDOW)
         
-        keyword_store = get_keyword_store()
-        for seg in re.split(r"\W+", request.path.lower()):
-            if len(seg) > 3:
-                keyword_store.add_keyword(seg)
+        data.append((now, request.path, response.status_code, resp_time))
+        data = [d for d in data if now - d[0] < self.WINDOW]
+        cache.set(key, data, timeout=self.WINDOW)
+        
+        # Only learn keywords from error responses and non-existent paths
+        # This prevents learning legitimate keywords from successful requests
+        if (response.status_code >= 400 and not known_path and not is_exempt_path(request.path)):
+            keyword_store = get_keyword_store()
+            # Get legitimate keywords to avoid learning them
+            from .trainer import get_legitimate_keywords
+            legitimate_keywords = get_legitimate_keywords()
+            
+            for seg in re.split(r"\W+", request.path.lower()):
+                if (len(seg) > 3 and 
+                    seg not in STATIC_KW and  # Don't re-learn static keywords
+                    seg not in legitimate_keywords and  # Don't learn legitimate keywords
+                    self._is_malicious_context(request, seg)):  # Only learn in malicious context
+                    keyword_store.add_keyword(seg)
 
         return response
 
