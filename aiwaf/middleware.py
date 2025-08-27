@@ -587,13 +587,9 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         data = [d for d in data if now - d[0] < self.WINDOW]
         cache.set(key, data, timeout=self.WINDOW)
         
-        data.append((now, request.path, response.status_code, resp_time))
-        data = [d for d in data if now - d[0] < self.WINDOW]
-        cache.set(key, data, timeout=self.WINDOW)
-        
-        # Only learn keywords from error responses and non-existent paths
-        # This prevents learning legitimate keywords from successful requests
-        if (response.status_code >= 400 and not known_path and not is_exempt_path(request.path)):
+        # Only learn keywords from 404 responses (not found) on non-existent paths
+        # This prevents learning from 403 (blocked IPs accessing legitimate paths) or other error codes
+        if (response.status_code == 404 and not known_path and not is_exempt_path(request.path)):
             keyword_store = get_keyword_store()
             # Get legitimate keywords to avoid learning them
             from .trainer import get_legitimate_keywords
