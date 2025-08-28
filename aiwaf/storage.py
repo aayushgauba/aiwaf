@@ -2,9 +2,16 @@ import numpy as np
 import pandas as pd
 from django.conf import settings
 from django.utils import timezone
+import os
+import json
+from collections import defaultdict
 
 # Defer model imports to avoid AppRegistryNotReady during Django app loading
 FeatureSample = BlacklistEntry = IPExemption = DynamicKeyword = None
+
+# Fallback storage for when Django models are unavailable
+_fallback_keywords = defaultdict(int)
+_fallback_storage_path = os.path.join(os.path.dirname(__file__), 'fallback_keywords.json')
 
 def _import_models():
     """Import Django models only when needed and apps are ready."""
@@ -15,9 +22,24 @@ def _import_models():
     
     try:
         from django.apps import apps
-        if apps.ready and apps.is_installed('aiwaf'):
-            from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
-    except (ImportError, RuntimeError, Exception):
+        if apps.ready:
+            # Try multiple ways to import models
+            try:
+                # First try: direct import (most reliable)
+                from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
+            except ImportError:
+                # Second try: check if aiwaf app is installed under different name
+                for app_config in apps.get_app_configs():
+                    if 'aiwaf' in app_config.name.lower() or 'aiwaf' in app_config.label.lower():
+                        try:
+                            from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
+                            break
+                        except ImportError:
+                            continue
+    except (ImportError, RuntimeError, Exception) as e:
+        # Log the error for debugging but don't fail silently
+        import sys
+        print(f"Warning: Could not import AIWAF models: {e}", file=sys.stderr)
         # Keep models as None if can't import
         pass
 
@@ -243,10 +265,39 @@ class ModelExemptionStore:
 
 class ModelKeywordStore:
     @staticmethod
+    def _load_fallback_keywords():
+        """Load keywords from fallback JSON file"""
+        global _fallback_keywords
+        try:
+            if os.path.exists(_fallback_storage_path):
+                with open(_fallback_storage_path, 'r') as f:
+                    data = json.load(f)
+                    _fallback_keywords = defaultdict(int, data)
+        except Exception as e:
+            import sys
+            print(f"Warning: Could not load fallback keywords: {e}", file=sys.stderr)
+    
+    @staticmethod
+    def _save_fallback_keywords():
+        """Save keywords to fallback JSON file"""
+        try:
+            with open(_fallback_storage_path, 'w') as f:
+                json.dump(dict(_fallback_keywords), f, indent=2)
+        except Exception as e:
+            import sys
+            print(f"Warning: Could not save fallback keywords: {e}", file=sys.stderr)
+    
+    @staticmethod
     def add_keyword(keyword, count=1):
         """Add a keyword to the dynamic keyword list"""
         _import_models()
         if DynamicKeyword is None:
+            # Use fallback storage
+            ModelKeywordStore._load_fallback_keywords()
+            _fallback_keywords[keyword] += count
+            ModelKeywordStore._save_fallback_keywords()
+            import sys
+            print(f"Warning: Using fallback storage for keyword '{keyword}' - Django models not available.", file=sys.stderr)
             return
         try:
             obj, created = DynamicKeyword.objects.get_or_create(keyword=keyword)
@@ -257,7 +308,12 @@ class ModelKeywordStore:
                 obj.count = count
                 obj.save()
         except Exception as e:
-            print(f"Error adding keyword {keyword}: {e}")
+            # Fallback to file storage on database error
+            ModelKeywordStore._load_fallback_keywords()
+            _fallback_keywords[keyword] += count
+            ModelKeywordStore._save_fallback_keywords()
+            import sys
+            print(f"Database error adding keyword {keyword}, using fallback storage: {e}", file=sys.stderr)
 
     @staticmethod
     def remove_keyword(keyword):
@@ -275,14 +331,22 @@ class ModelKeywordStore:
         """Get top N keywords by count"""
         _import_models()
         if DynamicKeyword is None:
-            return []
+            # Use fallback storage
+            ModelKeywordStore._load_fallback_keywords()
+            sorted_keywords = sorted(_fallback_keywords.items(), key=lambda x: x[1], reverse=True)
+            return [keyword for keyword, count in sorted_keywords[:n]]
         try:
             return list(
                 DynamicKeyword.objects.order_by('-count')[:n]
                 .values_list('keyword', flat=True)
             )
-        except Exception:
-            return []
+        except Exception as e:
+            # Fallback to file storage on database error
+            ModelKeywordStore._load_fallback_keywords()
+            sorted_keywords = sorted(_fallback_keywords.items(), key=lambda x: x[1], reverse=True)
+            import sys
+            print(f"Database error getting top keywords, using fallback storage: {e}", file=sys.stderr)
+            return [keyword for keyword, count in sorted_keywords[:n]]
 
     @staticmethod
     def get_all_keywords():
