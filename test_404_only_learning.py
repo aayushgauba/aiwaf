@@ -5,7 +5,7 @@ Test to demonstrate why learning should only happen from 404s, not other error c
 
 def test_learning_from_different_status_codes():
     """Test the logic for learning from different HTTP status codes"""
-    print("🧪 Testing Learning from Different Status Codes")
+    print(" Testing Learning from Different Status Codes")
     print("=" * 60)
     
     # Simulate different scenarios with their status codes and learning implications
@@ -104,9 +104,9 @@ def test_learning_from_different_status_codes():
     blocked_ip_403s = [s for s in test_scenarios if s["status"] == 403 and s["ip_blocked"]]
     genuine_404s = [s for s in test_scenarios if s["status"] == 404 and not s["path_exists"]]
     
-    print(f"   ✅ {len(blocked_ip_403s)} scenarios where 403s from blocked IPs won't pollute learning")
-    print(f"   ✅ {len(genuine_404s)} scenarios where genuine 404s will still trigger learning")
-    print(f"   ✅ No learning from server errors (500s) that might be legitimate code issues")
+    print(f"    {len(blocked_ip_403s)} scenarios where 403s from blocked IPs won't pollute learning")
+    print(f"    {len(genuine_404s)} scenarios where genuine 404s will still trigger learning")
+    print(f"    No learning from server errors (500s) that might be legitimate code issues")
     
     print(f"\n4. Specific problematic case prevented:")
     print(f"   Scenario: Blocked IP tries to access '/admin/dashboard/' (legitimate path)")
@@ -115,7 +115,7 @@ def test_learning_from_different_status_codes():
 
 def test_middleware_learning_consistency():
     """Test that both middlewares have consistent learning logic"""
-    print(f"\n🧪 Testing Middleware Learning Consistency")
+    print(f"\n Testing Middleware Learning Consistency")
     print("=" * 60)
     
     print(f"\n1. IPAndKeywordBlockMiddleware (request processing):")
@@ -142,7 +142,7 @@ def test_middleware_learning_consistency():
     print(f"   - Server error + suspicious path → No learning (both middlewares)")
 
 if __name__ == "__main__":
-    print("🔧 AIWAF Learning Logic: Why Only 404s Matter")
+    print(" AIWAF Learning Logic: Why Only 404s Matter")
     print("   Issue: Learning from all 4xx errors includes 403s from blocked IPs")
     print("   Fix: Only learn from 404s - genuine 'not found' responses")
     print()
@@ -151,11 +151,11 @@ if __name__ == "__main__":
         test_learning_from_different_status_codes()
         test_middleware_learning_consistency()
         
-        print(f"\n🎉 Status Code Learning Analysis Complete!")
+        print(f"\n Status Code Learning Analysis Complete!")
         print(f"   Key insight: 403s can come from blocked IPs accessing legitimate paths,")
         print(f"   so learning should only happen from genuine 404 'not found' responses.")
         
     except Exception as e:
-        print(f"❌ Test failed with error: {e}")
+        print(f" Test failed with error: {e}")
         import traceback
         traceback.print_exc()

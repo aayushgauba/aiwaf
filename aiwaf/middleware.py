@@ -32,6 +32,12 @@ def load_model_safely():
     import warnings
     import sklearn
     
+    # Check if AI is disabled globally
+    ai_disabled = getattr(settings, "AIWAF_DISABLE_AI", False)
+    if ai_disabled:
+        print("AI functionality disabled via AIWAF_DISABLE_AI setting")
+        return None
+    
     try:
         # Suppress sklearn version warnings temporarily
         with warnings.catch_warnings():
@@ -46,13 +52,13 @@ def load_model_safely():
                 current_version = sklearn.__version__
                 
                 if stored_version != current_version:
-                    print(f"ℹ️  Model was trained with sklearn v{stored_version}, current v{current_version}")
+                    print(f"Model was trained with sklearn v{stored_version}, current v{current_version}")
                     print("   Run 'python manage.py detect_and_train' to update model if needed.")
                 
                 return model
             else:
                 # Old format - direct model object
-                print("ℹ️  Using legacy model format. Consider retraining for better compatibility.")
+                print("Using legacy model format. Consider retraining for better compatibility.")
                 return model_data
                 
     except Exception as e:

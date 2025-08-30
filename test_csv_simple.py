@@ -9,16 +9,16 @@ import csv
 from datetime import datetime
 
 def test_csv_operations():
-    print("🧪 Testing AI-WAF CSV Operations")
+    print("Testing AI-WAF CSV Operations")
     print("=" * 40)
     
     # Test directory creation
     test_dir = "test_aiwaf_data"
     if not os.path.exists(test_dir):
         os.makedirs(test_dir)
-        print(f"✅ Created test directory: {test_dir}")
+        print(f"Created test directory: {test_dir}")
     else:
-        print(f"✅ Test directory exists: {test_dir}")
+        print(f"Test directory exists: {test_dir}")
     
     # Test CSV file creation and writing
     exemption_file = os.path.join(test_dir, "exemptions.csv")
@@ -32,7 +32,7 @@ def test_csv_operations():
             writer.writerow(["ip_address", "reason", "created_at"])
         writer.writerow([test_ip, "Test exemption", datetime.now().isoformat()])
     
-    print(f"✅ Added {test_ip} to exemption file")
+    print(f"Added {test_ip} to exemption file")
     
     # Test reading
     with open(exemption_file, "r", newline="", encoding="utf-8") as f:
@@ -41,21 +41,21 @@ def test_csv_operations():
         for row in reader:
             if row["ip_address"] == test_ip:
                 found = True
-                print(f"✅ Found exemption: {row}")
+                print(f"Found exemption: {row}")
                 break
         
         if not found:
-            print(f"❌ Could not find {test_ip} in exemption file")
+            print(f"Could not find {test_ip} in exemption file")
     
     # Test file contents
     with open(exemption_file, "r", encoding="utf-8") as f:
         content = f.read()
-        print(f"\n📄 File contents:\n{content}")
+        print(f"\nFile contents:\n{content}")
     
     # Cleanup
     import shutil
     shutil.rmtree(test_dir)
-    print(f"🧹 Cleaned up test directory")
+    print(f"Cleaned up test directory")
 
 if __name__ == "__main__":
     test_csv_operations()

@@ -3,13 +3,10 @@ import glob
 import gzip
 import re
 import joblib
-
 from datetime import datetime
 from collections import defaultdict, Counter
-
 import pandas as pd
 from sklearn.ensemble import IsolationForest
-
 from django.conf import settings
 from django.apps import apps
 from django.db.models import F
@@ -409,9 +406,16 @@ def _is_malicious_context_trainer(path: str, keyword: str, status: str = "404") 
     return any(malicious_indicators)
 
 
-def train() -> None:
-    """Enhanced training with improved keyword filtering and exemption handling"""
-    print("🚀 Starting AIWAF enhanced training...")
+def train(disable_ai=False) -> None:
+    """Enhanced training with improved keyword filtering and exemption handling
+    
+    Args:
+        disable_ai (bool): If True, skip AI model training and only do keyword learning
+    """
+    print("Starting AIWAF enhanced training...")
+    
+    if disable_ai:
+        print("AI model training disabled - keyword learning only")
     
     # Remove exempt keywords first
     remove_exempt_keywords()
@@ -421,7 +425,7 @@ def train() -> None:
     
     exempted_ips = [entry['ip_address'] for entry in exemption_store.get_all()]
     if exempted_ips:
-        print(f"🛡️  Found {len(exempted_ips)} exempted IPs - clearing from blacklist")
+        print(f"Found {len(exempted_ips)} exempted IPs - clearing from blacklist")
         for ip in exempted_ips:
             BlacklistManager.unblock(ip)
     
@@ -484,85 +488,100 @@ def train() -> None:
         })
 
     if not feature_dicts:
-        print("⚠️ Nothing to train on – no valid log entries.")
+        print(" Nothing to train on – no valid log entries.")
         return
 
-    df = pd.DataFrame(feature_dicts)
-    feature_cols = [c for c in df.columns if c != "ip"]
-    X = df[feature_cols].astype(float).values
-    model = IsolationForest(
-        contamination=getattr(settings, "AIWAF_AI_CONTAMINATION", 0.05), 
-        random_state=42
-    )
-    
-    # Suppress sklearn warnings during training
-    import warnings
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
-        model.fit(X)
+    # AI Model Training (optional)
+    blocked_count = 0
+    if not disable_ai:
+        print(" Training AI anomaly detection model...")
+        
+        try:
+            df = pd.DataFrame(feature_dicts)
+            feature_cols = [c for c in df.columns if c != "ip"]
+            X = df[feature_cols].astype(float).values
+            model = IsolationForest(
+                contamination=getattr(settings, "AIWAF_AI_CONTAMINATION", 0.05), 
+                random_state=42
+            )
+            
+            # Suppress sklearn warnings during training
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+                model.fit(X)
 
-    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-    
-    # Save model with version metadata
-    import sklearn
-    from django.utils import timezone as django_timezone
-    model_data = {
-        'model': model,
-        'sklearn_version': sklearn.__version__,
-        'created_at': str(django_timezone.now()),
-        'feature_count': len(feature_cols),
-        'samples_count': len(X)
-    }
-    joblib.dump(model_data, MODEL_PATH)
-    print(f"✅ Model trained on {len(X)} samples → {MODEL_PATH}")
-    print(f"📦 Created with scikit-learn v{sklearn.__version__}")
-    
-    # Check for anomalies and intelligently decide which IPs to block
-    preds = model.predict(X)
-    anomalous_ips = set(df.loc[preds == -1, "ip"])
-    
-    if anomalous_ips:
-        print(f"⚠️  Detected {len(anomalous_ips)} potentially anomalous IPs during training")
+            os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+            
+            # Save model with version metadata
+            import sklearn
+            from django.utils import timezone as django_timezone
+            model_data = {
+                'model': model,
+                'sklearn_version': sklearn.__version__,
+                'created_at': str(django_timezone.now()),
+                'feature_count': len(feature_cols),
+                'samples_count': len(X)
+            }
+            joblib.dump(model_data, MODEL_PATH)
+            print(f"Model trained on {len(X)} samples → {MODEL_PATH}")
+            print(f"Created with scikit-learn v{sklearn.__version__}")
+            
+            # Check for anomalies and intelligently decide which IPs to block
+            preds = model.predict(X)
+            anomalous_ips = set(df.loc[preds == -1, "ip"])
+            
+            if anomalous_ips:
+                print(f"Detected {len(anomalous_ips)} potentially anomalous IPs during training")
+                
+                exemption_store = get_exemption_store()
+                blacklist_store = get_blacklist_store()
+                
+                for ip in anomalous_ips:
+                    # Skip if IP is exempted
+                    if exemption_store.is_exempted(ip):
+                        continue
+                    
+                    # Get this IP's behavior from the data
+                    ip_data = df[df["ip"] == ip]
+                    
+                    # Criteria to determine if this is likely a legitimate user vs threat:
+                    avg_kw_hits = ip_data["kw_hits"].mean()
+                    max_404s = ip_data["total_404"].max()
+                    avg_burst = ip_data["burst_count"].mean()
+                    total_requests = len(ip_data)
+                    
+                    # Don't block if it looks like legitimate behavior:
+                    if (
+                        avg_kw_hits < 2 and           # Not hitting many malicious keywords
+                        max_404s < 10 and            # Not excessive 404s
+                        avg_burst < 15 and           # Not excessive burst activity
+                        total_requests < 100         # Not excessive total requests
+                    ):
+                        print(f"   - {ip}: Anomalous but looks legitimate (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f}) - NOT blocking")
+                        continue
+                    
+                    # Block if it shows clear signs of malicious behavior
+                    BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
+                    blocked_count += 1
+                    print(f"   - {ip}: Blocked for suspicious behavior (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
+                
+                print(f"   → Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs (others looked legitimate)")
         
-        exemption_store = get_exemption_store()
-        blacklist_store = get_blacklist_store()
-        blocked_count = 0
-        
-        for ip in anomalous_ips:
-            # Skip if IP is exempted
-            if exemption_store.is_exempted(ip):
-                continue
-            
-            # Get this IP's behavior from the data
-            ip_data = df[df["ip"] == ip]
-            
-            # Criteria to determine if this is likely a legitimate user vs threat:
-            avg_kw_hits = ip_data["kw_hits"].mean()
-            max_404s = ip_data["total_404"].max()
-            avg_burst = ip_data["burst_count"].mean()
-            total_requests = len(ip_data)
-            
-            # Don't block if it looks like legitimate behavior:
-            if (
-                avg_kw_hits < 2 and           # Not hitting many malicious keywords
-                max_404s < 10 and            # Not excessive 404s
-                avg_burst < 15 and           # Not excessive burst activity
-                total_requests < 100         # Not excessive total requests
-            ):
-                print(f"   - {ip}: Anomalous but looks legitimate (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f}) - NOT blocking")
-                continue
-            
-            # Block if it shows clear signs of malicious behavior
-            BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
-            blocked_count += 1
-            print(f"   - {ip}: Blocked for suspicious behavior (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
-        
-        print(f"   → Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs (others looked legitimate)")
+        except ImportError as e:
+            print(f"AI model training failed - missing dependencies: {e}")
+            print("   Continuing with keyword learning only...")
+        except Exception as e:
+            print(f"AI model training failed: {e}")
+            print("   Continuing with keyword learning only...")
+    else:
+        print("AI model training skipped (disabled)")
+        df = pd.DataFrame(feature_dicts)  # Still need df for some operations
 
     tokens = Counter()
     legitimate_keywords = get_legitimate_keywords()
     
-    print(f"🔍 Learning keywords from {len(parsed)} parsed requests...")
+    print(f"Learning keywords from {len(parsed)} parsed requests...")
     
     for r in parsed:
         # Only learn from suspicious requests (errors on non-existent paths)
@@ -603,22 +622,35 @@ def train() -> None:
             learned_from_paths.extend(example_paths[:2])  # Track first 2 example paths
     
     if filtered_tokens:
-        print(f"📝 Added {len(filtered_tokens)} suspicious keywords: {[kw for kw, _ in filtered_tokens]}")
-        print(f"🎯 Example malicious paths learned from: {learned_from_paths[:5]}")  # Show first 5
+        print(f"Added {len(filtered_tokens)} suspicious keywords: {[kw for kw, _ in filtered_tokens]}")
+        print(f"Example malicious paths learned from: {learned_from_paths[:5]}")  # Show first 5
     else:
-        print("✅ No new suspicious keywords learned (good sign!)")
+        print("No new suspicious keywords learned (good sign!)")
     
-    print(f"🎯 Smart keyword learning complete. Excluded {len(legitimate_keywords)} legitimate keywords.")
-    print(f"🔒 Used malicious context analysis to filter out false positives.")
+    print(f"Smart keyword learning complete. Excluded {len(legitimate_keywords)} legitimate keywords.")
+    print(f"Used malicious context analysis to filter out false positives.")
     
     # Training summary
     print("\n" + "="*60)
-    print("🎉 AIWAF ENHANCED TRAINING COMPLETE")
+    if disable_ai:
+        print("AIWAF KEYWORD-ONLY TRAINING COMPLETE")
+    else:
+        print("AIWAF ENHANCED TRAINING COMPLETE")
     print("="*60)
-    print(f"📊 Training Data: {len(parsed)} log entries processed")
-    print(f"🤖 AI Model: Trained with {len(feature_cols)} features")
-    print(f"🚫 Blocked IPs: {blocked_count if 'blocked_count' in locals() else 0} suspicious IPs blocked")
-    print(f"🔑 Keywords: {len(filtered_tokens)} new suspicious keywords learned")
-    print(f"🛡️  Exemptions: {len(exempted_ips)} IPs protected from blocking")
-    print(f"✅ Enhanced protection now active with context-aware filtering!")
+    print(f"Training Data: {len(parsed)} log entries processed")
+    
+    if not disable_ai:
+        print(f"AI Model: Trained with {len(feature_cols) if 'feature_cols' in locals() else 'N/A'} features")
+        print(f"Blocked IPs: {blocked_count} suspicious IPs blocked")
+    else:
+        print(f"AI Model: Disabled (keyword learning only)")
+        print(f"Blocked IPs: 0 (AI blocking disabled)")
+        
+    print(f"Keywords: {len(filtered_tokens)} new suspicious keywords learned")
+    print(f"Exemptions: {len(exempted_ips)} IPs protected from blocking")
+    
+    if disable_ai:
+        print(f"Keyword-based protection now active with context-aware filtering!")
+    else:
+        print(f"Enhanced protection now active with context-aware filtering!")
     print("="*60)

@@ -36,7 +36,7 @@ def extract_app_names(mock_apps):
 
 def test_url_pattern_extraction():
     """Test the improved URL pattern extraction logic"""
-    print("🧪 Testing URL Pattern Extraction Edge Case Fix")
+    print("Testing URL Pattern Extraction Edge Case Fix")
     print("=" * 60)
     
     # Get legitimate app names
@@ -78,15 +78,15 @@ def test_url_pattern_extraction():
         print(f"{pattern:<12} | {pattern_type:<8} | {('YES' if new_logic_extracts else 'NO'):<10} | {('YES' if is_django_app else 'NO'):<13} | {reasoning}")
     
     print(f"\n3. Key insight:")
-    print(f"   ✅ Include patterns (path('school/', include('pages.urls'))) are now handled correctly")
-    print(f"   ✅ 'school' is legitimate when used with include() because it routes to legitimate app functionality")
-    print(f"   ✅ Direct patterns are still validated against app names and common keywords")
+    print(f"Include patterns (path('school/', include('pages.urls'))) are now handled correctly")
+    print(f"'school' is legitimate when used with include() because it routes to legitimate app functionality")
+    print(f"Direct patterns are still validated against app names and common keywords")
     
     return []  # No problematic patterns with new logic
 
 def test_malicious_request_scenarios():
     """Test how the fix affects malicious request detection"""
-    print(f"\n🧪 Testing Malicious Request Scenarios")
+    print(f"\nTesting Malicious Request Scenarios")
     print("=" * 60)
     
     app_names = extract_app_names(mock_django_apps)
@@ -121,14 +121,14 @@ def test_malicious_request_scenarios():
             
             print(f"{request:<25} | {pattern_type:<8} | {('YES' if is_legitimate else 'NO'):<12} | {reasoning}")
     
-    print(f"\n   Analysis with corrected understanding:")
+    print(f"\nAnalysis with corrected understanding:")
     print(f"   - Include patterns (school/, library/, cafeteria/) are legitimate by design")
     print(f"   - They route to legitimate app functionality, so the prefix should be allowed")
     print(f"   - The real security comes from validating the actual file requests (config.php, etc.)")
     print(f"   - Direct patterns still need validation against app names or common keywords")
 
 if __name__ == "__main__":
-    print("🔧 AIWAF Edge Case Fix Demonstration")
+    print("AIWAF Edge Case Fix Demonstration")
     print("   Issue: How to handle path('school/', include('pages.urls')) correctly")
     print("   Solution: Include patterns are legitimate (they route to app functionality)")
     print()
@@ -137,12 +137,12 @@ if __name__ == "__main__":
         problematic_patterns = test_url_pattern_extraction()
         test_malicious_request_scenarios()
         
-        print(f"\n🎉 Edge Case Analysis Complete!")
+        print(f"\nEdge Case Analysis Complete!")
         print(f"   Key insight: Include patterns like path('school/', include('pages.urls'))")
         print(f"   should be considered legitimate because they route to legitimate app functionality.")
         print(f"   The security focus should be on the actual file requests, not the URL prefixes.")
         
     except Exception as e:
-        print(f"❌ Test failed with error: {e}")
+        print(f"Test failed with error: {e}")
         import traceback
         traceback.print_exc()

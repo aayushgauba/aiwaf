@@ -2,7 +2,7 @@
 
 def test_conservative_path_validation():
     """Test the conservative path validation approach"""
-    print("🧪 Testing Conservative Path Validation Approach")
+    print("Testing Conservative Path Validation Approach")
     print("=" * 60)
     
     def conservative_path_exists_in_django(path: str) -> bool:
@@ -76,7 +76,7 @@ def test_conservative_path_validation():
     
     for path, expected, description in test_scenarios:
         result = conservative_path_exists_in_django(path)
-        status = "✅" if result == expected else "❌"
+        status = "" if result == expected else ""
         action = "EXISTS" if result else "NOT_EXISTS"
         
         print(f"     {status} {path:<20} -> {action:<10} - {description}")
@@ -105,9 +105,9 @@ def test_conservative_path_validation():
         print(f"       {path} -> learn: {keywords_from_path}")
     
     print(f"\n   Summary:")
-    print(f"     ✅ Total unique malicious keywords to learn: {len(all_keywords_to_learn)}")
-    print(f"     ✅ Keywords: {sorted(all_keywords_to_learn)}")
-    print(f"     ✅ Legitimate keywords protected: {sorted(legitimate_keywords)}")
+    print(f"Total unique malicious keywords to learn: {len(all_keywords_to_learn)}")
+    print(f"Keywords: {sorted(all_keywords_to_learn)}")
+    print(f"Legitimate keywords protected: {sorted(legitimate_keywords)}")
     
     # Verify the specific issue you mentioned is fixed
     print(f"\n   Your Specific Issue Verification:")
@@ -120,14 +120,14 @@ def test_conservative_path_validation():
     for path, expectation in original_issue_paths:
         exists = conservative_path_exists_in_django(path)
         will_learn = not exists
-        status = "✅ FIXED" if (path == "/a/hack.php" and will_learn) or (path.startswith("/a") and path != "/a/hack.php" and exists) else "❌"
+        status = "FIXED" if (path == "/a/hack.php" and will_learn) or (path.startswith("/a") and path != "/a/hack.php" and exists) else "❌"
         print(f"     {status} {path} -> exists: {exists}, will learn keywords: {will_learn} ({expectation})")
     
     print("\n" + "=" * 60)
-    print("🎯 Conservative approach correctly identifies when paths don't exist")
-    print("✅ Malicious sub-paths will trigger keyword learning")
-    print("✅ Legitimate paths remain protected")
-    print("✅ Your trailing slash issue is resolved")
+    print("Conservative approach correctly identifies when paths don't exist")
+    print("Malicious sub-paths will trigger keyword learning")
+    print("Legitimate paths remain protected")
+    print("Your trailing slash issue is resolved")
 
 if __name__ == "__main__":
     test_conservative_path_validation()

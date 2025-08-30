@@ -2,7 +2,7 @@
 
 def test_improved_path_validation():
     """Test the improved path validation logic"""
-    print("🧪 Testing Improved Path Validation Logic")
+    print("Testing Improved Path Validation Logic")
     print("=" * 60)
     
     def improved_path_exists_in_django(path: str) -> bool:
@@ -80,7 +80,7 @@ def test_improved_path_validation():
     
     for path, expected, description in test_cases:
         result = improved_path_exists_in_django(path)
-        status = "✅" if result == expected else "❌"
+        status = "Complete" if result == expected else "Incomplete"
         action = "EXISTS" if result else "NOT_EXISTS"
         learn_keywords = "WILL LEARN" if not result else "WON'T LEARN"
         
@@ -136,15 +136,15 @@ def test_improved_path_validation():
         print()
     
     print("   " + "=" * 56)
-    print("   ✅ Improved logic correctly identifies non-existent sub-paths")
-    print("   ✅ Malicious keywords will be learned from failed attacks")
-    print("   ✅ Legitimate route keywords remain protected")
+    print("Improved logic correctly identifies non-existent sub-paths")
+    print("Malicious keywords will be learned from failed attacks")
+    print("Legitimate route keywords remain protected")
     
     return correct_results == total_tests
 
 if __name__ == "__main__":
     success = test_improved_path_validation()
     if success:
-        print("\n🎉 All tests passed! Path validation logic is robust.")
+        print("\nAll tests passed! Path validation logic is robust.")
     else:
-        print("\n⚠️  Some tests failed. Logic may need further refinement.")
+        print("\nSome tests failed. Logic may need further refinement.")

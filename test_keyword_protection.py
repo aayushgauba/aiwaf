@@ -88,7 +88,7 @@ def test_keyword_filtering():
     for keyword, path_exists, malicious_context, expected_blocked, description in test_cases:
         should_block, reason = middleware.should_block_keyword(keyword, path_exists, malicious_context)
         
-        status = "✅ PASS" if should_block == expected_blocked else "❌ FAIL"
+        status = "PASS" if should_block == expected_blocked else "FAIL"
         if should_block != expected_blocked:
             all_passed = False
         
@@ -98,14 +98,14 @@ def test_keyword_filtering():
         print()
     
     print("=" * 60)
-    print(f"🎯 Overall Result: {'✅ ALL TESTS PASSED' if all_passed else '❌ SOME TESTS FAILED'}")
+    print(f"Overall Result: {'ALL TESTS PASSED' if all_passed else 'SOME TESTS FAILED'}")
     
     return all_passed
 
 def test_profile_scenario():
     """Specific test for the reported /en/profile/ blocking issue"""
     
-    print("\n🚨 Specific Test: /en/profile/ Blocking Issue")
+    print("\nSpecific Test: /en/profile/ Blocking Issue")
     print("=" * 50)
     
     # This simulates the fix for the original issue
@@ -113,20 +113,20 @@ def test_profile_scenario():
     keyword = "profile"
     
     # Before fix: Would be blocked
-    print("❌ Before fix: 'profile' keyword would trigger blocking")
+    print("Before fix: 'profile' keyword would trigger blocking")
     print("   Reason: All learned keywords were treated as suspicious")
     
     # After fix: Should be allowed
-    print("✅ After fix: 'profile' keyword is allowed in legitimate paths")
+    print("After fix: 'profile' keyword is allowed in legitimate paths")
     print("   Reason: 'profile' is in legitimate_path_keywords + path exists in Django")
     
-    print("\n📋 Protection still works for:")
+    print("\nProtection still works for:")
     print("   • /nonexistent/profile/ (non-Django path)")
     print("   • /?cmd=profile&union=select (query injection)")
     print("   • /profile.php (file extension attack)")
 
 if __name__ == "__main__":
-    print("🛡️  AIWAF Enhanced Keyword Protection Test")
+    print("AIWAF Enhanced Keyword Protection Test")
     print("=" * 50)
     
     # Run the main test
@@ -135,12 +135,12 @@ if __name__ == "__main__":
     # Run specific scenario test
     test_profile_scenario()
     
-    print(f"\n🏁 Test Summary: {'SUCCESS' if success else 'FAILURE'}")
+    print(f"\nTest Summary: {'SUCCESS' if success else 'FAILURE'}")
     
     if success:
-        print("\n✅ The enhanced keyword filtering is working correctly!")
+        print("\nThe enhanced keyword filtering is working correctly!")
         print("   Legitimate paths like /en/profile/ will no longer be blocked.")
         print("   Malicious requests are still detected and blocked.")
     else:
-        print("\n❌ There are issues with the keyword filtering logic.")
+        print("\nThere are issues with the keyword filtering logic.")
         print("   Please review the implementation.")

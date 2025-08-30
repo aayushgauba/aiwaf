@@ -11,6 +11,11 @@ class Command(BaseCommand):
             action='store_true',
             help='Force regeneration even if model exists',
         )
+        parser.add_argument(
+            '--disable-ai',
+            action='store_true',
+            help='Disable AI model training, only perform keyword learning'
+        )
 
     def handle(self, *args, **options):
         self.stdout.write(self.style.HTTP_INFO("🔄 AI-WAF Model Regeneration"))
@@ -58,16 +63,28 @@ class Command(BaseCommand):
             self.stdout.write("Regenerating model to fix version compatibility...")
         
         # Regenerate model
-        self.stdout.write("🚀 Starting model training...")
+        disable_ai = options.get('disable_ai', False)
+        
+        if disable_ai:
+            self.stdout.write("� AI model training disabled - keyword learning only")
+            self.stdout.write("🚀 Starting keyword training...")
+        else:
+            self.stdout.write("�🚀 Starting model training...")
         
         try:
             from aiwaf.trainer import train
-            train()
+            train(disable_ai=disable_ai)
             self.stdout.write("")
-            self.stdout.write(self.style.SUCCESS("✅ Model regenerated successfully!"))
-            self.stdout.write("")
-            self.stdout.write("The model is now compatible with your current scikit-learn version.")
-            self.stdout.write("Version warnings should no longer appear.")
+            
+            if disable_ai:
+                self.stdout.write(self.style.SUCCESS("✅ Keyword training completed successfully!"))
+                self.stdout.write("")
+                self.stdout.write("Keyword-based protection is now active.")
+            else:
+                self.stdout.write(self.style.SUCCESS("✅ Model regenerated successfully!"))
+                self.stdout.write("")
+                self.stdout.write("The model is now compatible with your current scikit-learn version.")
+                self.stdout.write("Version warnings should no longer appear.")
             
         except Exception as e:
             self.stdout.write("")

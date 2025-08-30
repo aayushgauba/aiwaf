@@ -69,7 +69,7 @@ sys.modules['test_include_urls'] = test_urls_module
 def test_include_path_edge_case():
     """Test the edge case where path('school/', include('pages.urls')) 
     extracts 'school' as legitimate even though 'school' is not a Django app"""
-    print("🧪 Testing Include Path Edge Case")
+    print("Testing Include Path Edge Case")
     print("=" * 60)
     
     from aiwaf.trainer import _extract_django_route_keywords, get_legitimate_keywords
@@ -90,32 +90,32 @@ def test_include_path_edge_case():
     for prefix in url_prefixes_in_routes:
         if prefix in extracted_keywords:
             problematic_extractions.append(prefix)
-            print(f"   ⚠️  '{prefix}' extracted as legitimate (but it's not a Django app)")
+            print(f"'{prefix}' extracted as legitimate (but it's not a Django app)")
         else:
-            print(f"   ✅ '{prefix}' NOT extracted (correct behavior)")
+            print(f"'{prefix}' NOT extracted (correct behavior)")
     
     print("\n3. Testing complete legitimate keywords...")
     all_legitimate = get_legitimate_keywords()
     
     for prefix in url_prefixes_in_routes:
         if prefix in all_legitimate:
-            print(f"   ⚠️  '{prefix}' marked as legitimate keyword")
+            print(f"'{prefix}' marked as legitimate keyword")
         else:
-            print(f"   ✅ '{prefix}' NOT marked as legitimate")
+            print(f"'{prefix}' NOT marked as legitimate")
     
     print(f"\n4. Edge case analysis:")
     if problematic_extractions:
-        print(f"   ❌ ISSUE DETECTED: {problematic_extractions} are extracted as legitimate")
-        print(f"      This means requests to /{problematic_extractions[0]}/malicious.php might not be flagged")
-        print(f"      because '{problematic_extractions[0]}' is considered legitimate")
+        print(f"ISSUE DETECTED: {problematic_extractions} are extracted as legitimate")
+        print(f"This means requests to /{problematic_extractions[0]}/malicious.php might not be flagged")
+        print(f"because '{problematic_extractions[0]}' is considered legitimate")
     else:
-        print(f"   ✅ No issues detected")
+        print(f"No issues detected")
     
     return problematic_extractions
 
 def test_middleware_behavior_with_edge_case():
     """Test how the middleware behaves with the edge case"""
-    print("\n🧪 Testing Middleware Behavior with Edge Case")
+    print("\nTesting Middleware Behavior with Edge Case")
     print("=" * 60)
     
     from django.test import RequestFactory
@@ -149,9 +149,9 @@ def test_middleware_behavior_with_edge_case():
     # Check if problematic keywords are in middleware's legitimate set
     for keyword in ['school', 'library', 'cafeteria']:
         if keyword in middleware.legitimate_path_keywords:
-            print(f"   ⚠️  '{keyword}' is in middleware legitimate keywords")
+            print(f"'{keyword}' is in middleware legitimate keywords")
         else:
-            print(f"   ✅ '{keyword}' NOT in middleware legitimate keywords")
+            print(f"'{keyword}' NOT in middleware legitimate keywords")
     
     print("\n   Simulating requests:")
     for path in test_paths:
@@ -169,7 +169,7 @@ def test_middleware_behavior_with_edge_case():
 
 def suggest_fix():
     """Suggest a fix for the edge case"""
-    print("\n💡 Suggested Fix for Edge Case")
+    print("\nSuggested Fix for Edge Case")
     print("=" * 60)
     
     print("""
@@ -200,13 +200,13 @@ if __name__ == "__main__":
         suggest_fix()
         
         if problematic_extractions:
-            print(f"\n❌ EDGE CASE CONFIRMED: {problematic_extractions} incorrectly marked as legitimate")
-            print("   This could lead to missed malicious requests")
+            print(f"\nEDGE CASE CONFIRMED: {problematic_extractions} incorrectly marked as legitimate")
+            print("This could lead to missed malicious requests")
         else:
-            print(f"\n✅ NO EDGE CASE DETECTED")
+            print(f"\nNO EDGE CASE DETECTED")
             
     except Exception as e:
-        print(f"❌ Test failed with error: {e}")
+        print(f"Test failed with error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

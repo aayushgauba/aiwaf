@@ -783,13 +783,25 @@ python manage.py aiwaf_reset --blacklist --confirm
 
 ---
 
-## 📄 License
+## Sponsors
+
+This project is proudly supported by:
+
+<a href="https://www.digitalocean.com/">
+  <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px">
+</a>
+
+[DigitalOcean](https://www.digitalocean.com/) provides the cloud infrastructure that powers AIWAF development.
+
+---
+
+## License
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 👤 Credits
+## Credits
 
 **AI‑WAF** by [Aayush Gauba](https://github.com/aayushgauba)  
-> “Let your firewall learn and evolve — keep your site a fortress.”
+> "Let your firewall learn and evolve — keep your site a fortress." your Django `INSTALLED_APPS` to avoid setup errors.

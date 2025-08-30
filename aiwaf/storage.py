@@ -19,7 +19,6 @@ def _import_models():
     
     if FeatureSample is not None:
         return  # Already imported
-    
     try:
         from django.apps import apps
         if apps.ready:
@@ -84,7 +83,6 @@ class ModelFeatureStore:
             if df.empty:
                 return df
             
-            # Ensure proper column order and types
             feature_cols = ['path_len', 'kw_hits', 'resp_time', 'status_idx', 'burst_count', 'total_404']
             for col in feature_cols:
                 if col in df.columns:
@@ -292,12 +290,12 @@ class ModelKeywordStore:
         """Add a keyword to the dynamic keyword list"""
         _import_models()
         if DynamicKeyword is None:
-            # Use fallback storage
+            # Use fallback storage when Django models not available
             ModelKeywordStore._load_fallback_keywords()
             _fallback_keywords[keyword] += count
             ModelKeywordStore._save_fallback_keywords()
             import sys
-            print(f"Warning: Using fallback storage for keyword '{keyword}' - Django models not available.", file=sys.stderr)
+            print(f"Info: Using fallback storage for keyword '{keyword}' - Django models not available.", file=sys.stderr)
             return
         try:
             obj, created = DynamicKeyword.objects.get_or_create(keyword=keyword)
@@ -371,6 +369,18 @@ class ModelKeywordStore:
             DynamicKeyword.objects.all().delete()
         except Exception as e:
             print(f"Error resetting keywords: {e}")
+
+    def add_keyword_for_route(self, route, keyword, count=1):
+        """Add a keyword for a specific route (fallback method)"""
+        # For now, just use the general add_keyword method
+        # In a full implementation, this would handle route-specific storage
+        return ModelKeywordStore.add_keyword(keyword, count)
+    
+    def get_keywords_for_route(self, route):
+        """Get keywords for a specific route (fallback method)"""
+        # For now, return all keywords
+        # In a full implementation, this would return route-specific keywords
+        return ModelKeywordStore.get_all_keywords()
 
 # Factory functions that only return Django model stores
 def get_feature_store():

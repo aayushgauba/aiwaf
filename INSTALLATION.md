@@ -2,19 +2,19 @@
 
 This guide helps you properly install AI-WAF in your Django project to avoid common setup errors.
 
-## 🚨 Common Error Fix
+## Common Error Fix
 
 **Error:** `RuntimeError: Model class aiwaf.models.FeatureSample doesn't declare an explicit app_label and isn't in an application in INSTALLED_APPS.`
 
 **Solution:** Follow the complete installation steps below.
 
-## 📦 Step 1: Install AI-WAF
+## Step 1: Install AI-WAF
 
 ```bash
 pip install aiwaf
 ```
 
-## ⚙️ Step 2: Configure Django Settings
+## Step 2: Configure Django Settings
 
 Add AI-WAF to your Django project's `settings.py`:
 
@@ -71,7 +71,7 @@ MIDDLEWARE = [
 ]
 ```
 
-## 🗄️ Step 3: Database Setup
+## Step 3: Database Setup
 
 ### **Django Models Setup**
 
@@ -85,7 +85,7 @@ python manage.py migrate
 
 All data is stored in Django models for real-time performance.
 
-## 🚀 Step 4: Test Installation
+## Step 4: Test Installation
 
 ```bash
 # Test the installation
@@ -130,14 +130,14 @@ AIWAF_MIN_FORM_TIME = 1.0      # Honeypot timing
 AIWAF_RATE_MAX = 20            # Rate limiting
 ```
 
-## 🎯 Step 6: Start Training
+## Step 6: Start Training
 
 ```bash
 # Train the AI model (after some traffic)
 python manage.py detect_and_train
 ```
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### **Error: Model not in INSTALLED_APPS**
 
@@ -167,7 +167,7 @@ pip install --upgrade aiwaf
 1. Fix log path in settings
 2. Enable middleware logger: `AIWAF_MIDDLEWARE_LOGGING = True`
 
-## 📁 File Structure After Installation
+## File Structure After Installation
 
 ### **Django Models Storage:**
 ```
@@ -194,7 +194,7 @@ your_project/
 - `aiwaf_requestlog` - Request logs (if middleware logging enabled)
 ```
 
-## ✅ Verification Checklist
+## Verification Checklist
 
 - [ ] `aiwaf` added to `INSTALLED_APPS`
 - [ ] `AIWAF_ACCESS_LOG` configured
