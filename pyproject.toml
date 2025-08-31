@@ -1,6 +1,6 @@
 [project]
 name = "aiwaf"
-version = "0.1.9.2.9"
+version = "0.1.9.3.0"
 description = "AI-powered Web Application Firewall"
 readme = "README.md"
 requires-python = ">=3.8"
