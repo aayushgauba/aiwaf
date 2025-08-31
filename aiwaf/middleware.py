@@ -4,17 +4,30 @@ import time
 import re
 import os
 import warnings
-import numpy as np
-import joblib
-from django.db.models import UUIDField
 from collections import defaultdict
 from django.utils.deprecation import MiddlewareMixin
 from django.http import JsonResponse
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import F
+from django.db.models import F, UUIDField
 from django.apps import apps
 from django.urls import get_resolver
+
+# Optional dependencies with graceful fallbacks
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    np = None
+    NUMPY_AVAILABLE = False
+
+try:
+    import joblib
+    JOBLIB_AVAILABLE = True
+except ImportError:
+    joblib = None
+    JOBLIB_AVAILABLE = False
+
 from .trainer import STATIC_KW, STATUS_IDX, path_exists_in_django
 from .blacklist_manager import BlacklistManager
 from .models import IPExemption
@@ -30,12 +43,22 @@ MODEL_PATH = getattr(
 def load_model_safely():
     """Load the AI model with version compatibility checking."""
     import warnings
-    import sklearn
     
     # Check if AI is disabled globally
     ai_disabled = getattr(settings, "AIWAF_DISABLE_AI", False)
     if ai_disabled:
-        print("AI functionality disabled via AIWAF_DISABLE_AI setting")
+        print("ℹ️  AI functionality disabled via AIWAF_DISABLE_AI setting")
+        return None
+    
+    # Check if required dependencies are available
+    if not JOBLIB_AVAILABLE:
+        print("ℹ️  joblib not available, AI functionality disabled")
+        return None
+    
+    try:
+        import sklearn
+    except ImportError:
+        print("ℹ️  sklearn not available, AI functionality disabled")
         return None
     
     try:
@@ -52,19 +75,20 @@ def load_model_safely():
                 current_version = sklearn.__version__
                 
                 if stored_version != current_version:
-                    print(f"Model was trained with sklearn v{stored_version}, current v{current_version}")
+                    print(f"ℹ️  Model was trained with sklearn v{stored_version}, current v{current_version}")
                     print("   Run 'python manage.py detect_and_train' to update model if needed.")
                 
                 return model
             else:
                 # Old format - direct model object
-                print("Using legacy model format. Consider retraining for better compatibility.")
+                print("ℹ️  Using legacy model format. Consider retraining for better compatibility.")
                 return model_data
                 
     except Exception as e:
         print(f"Warning: Could not load AI model from {MODEL_PATH}: {e}")
         print("AI anomaly detection will be disabled until model is retrained.")
         print("Run 'python manage.py detect_and_train' to regenerate the model.")
+        return None
         return None
 
 # Load model with safety checks
@@ -529,20 +553,22 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         burst_count = sum(1 for (t, _, _, _) in data if now - t <= 10)
         total_404 = sum(1 for (_, _, st, _) in data if st == 404)
         feats = [path_len, kw_hits, resp_time, status_idx, burst_count, total_404]
-        X = np.array(feats, dtype=float).reshape(1, -1)
         
-        # Only use AI model if it's available
-        if self.model is not None and self.model.predict(X)[0] == -1:
-            # AI detected anomaly - but analyze patterns before blocking (like trainer.py)
+        # Only use AI model if it's available and numpy is available
+        if self.model is not None and NUMPY_AVAILABLE:
+            X = np.array(feats, dtype=float).reshape(1, -1)
             
-            # Get recent behavior data for this IP to make intelligent blocking decision
-            recent_data = [d for d in data if now - d[0] <= 300]  # Last 5 minutes
-            
-            if recent_data:
-                # Calculate behavior metrics similar to trainer.py
-                recent_kw_hits = []
-                recent_404s = 0
-                recent_burst_counts = []
+            if self.model.predict(X)[0] == -1:
+                # AI detected anomaly - but analyze patterns before blocking (like trainer.py)
+                
+                # Get recent behavior data for this IP to make intelligent blocking decision
+                recent_data = [d for d in data if now - d[0] <= 300]  # Last 5 minutes
+                
+                if recent_data:
+                    # Calculate behavior metrics similar to trainer.py
+                    recent_kw_hits = []
+                    recent_404s = 0
+                    recent_burst_counts = []
                 
                 for entry_time, entry_path, entry_status, entry_resp_time in recent_data:
                     # Calculate keyword hits for this entry
@@ -615,6 +641,110 @@ class AIAnomalyMiddleware(MiddlewareMixin):
 
 class HoneypotTimingMiddleware(MiddlewareMixin):
     MIN_FORM_TIME = getattr(settings, "AIWAF_MIN_FORM_TIME", 1.0)  # seconds
+    MAX_PAGE_TIME = getattr(settings, "AIWAF_MAX_PAGE_TIME", 240)  # 4 minutes default
+    
+    def _view_accepts_method(self, request, method):
+        """Check if the current view/URL pattern accepts the specified HTTP method"""
+        try:
+            from django.urls import resolve
+            from django.urls.resolvers import URLResolver, URLPattern
+            
+            # Resolve the current URL to get the view
+            resolved = resolve(request.path)
+            view_func = resolved.func
+            
+            # Handle class-based views
+            if hasattr(view_func, 'cls'):
+                view_class = view_func.cls
+                
+                # Check http_method_names attribute (most reliable)
+                if hasattr(view_class, 'http_method_names'):
+                    allowed_methods = [m.upper() for m in view_class.http_method_names]
+                    return method.upper() in allowed_methods
+                
+                # Check for method-handling methods
+                method_handlers = {
+                    'GET': ['get'],
+                    'POST': ['post', 'form_valid', 'form_invalid'],
+                    'PUT': ['put'],
+                    'PATCH': ['patch'],
+                    'DELETE': ['delete']
+                }
+                
+                if method.upper() in method_handlers:
+                    handlers = method_handlers[method.upper()]
+                    has_handler = any(hasattr(view_class, handler) for handler in handlers)
+                    if has_handler:
+                        return True
+                    
+                    # If no handler found, check if it's a common method that should be rejected
+                    if method.upper() in ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']:
+                        return False
+                
+                # Default: assume method is allowed for class-based views
+                return True
+            
+            # Handle function-based views
+            else:
+                # Check if view has explicit allowed methods
+                if hasattr(view_func, 'http_method_names'):
+                    allowed_methods = [m.upper() for m in view_func.http_method_names]
+                    return method.upper() in allowed_methods
+                
+                # For function-based views, inspect the source code
+                import inspect
+                try:
+                    source = inspect.getsource(view_func)
+                    method_upper = method.upper()
+                    
+                    # Look for method handling in the source
+                    if f'request.method' in source and method_upper in source:
+                        return True
+                    
+                    # Look for method-specific patterns
+                    method_patterns = {
+                        'GET': ['request.GET', 'GET'],
+                        'POST': ['request.POST', 'POST', 'form.is_valid()'],
+                        'PUT': ['PUT', 'request.PUT'],
+                        'DELETE': ['DELETE', 'request.DELETE']
+                    }
+                    
+                    if method.upper() in method_patterns:
+                        patterns = method_patterns[method.upper()]
+                        if any(pattern in source for pattern in patterns):
+                            return True
+                            
+                except (OSError, TypeError):
+                    # Can't get source, make educated guess
+                    pass
+                
+                # Check URL pattern name for method-specific endpoints
+                if resolved.url_name:
+                    url_name_lower = resolved.url_name.lower()
+                    
+                    # POST-only patterns
+                    post_only_patterns = ['create', 'submit', 'upload', 'process']
+                    # GET-only patterns  
+                    get_only_patterns = ['list', 'detail', 'view', 'display']
+                    
+                    if method.upper() == 'POST':
+                        if any(pattern in url_name_lower for pattern in post_only_patterns):
+                            return True
+                        if any(pattern in url_name_lower for pattern in get_only_patterns):
+                            return False
+                    elif method.upper() == 'GET':
+                        if any(pattern in url_name_lower for pattern in get_only_patterns):
+                            return True
+                        if any(pattern in url_name_lower for pattern in post_only_patterns):
+                            return False
+                
+                # Default: assume function-based views accept common methods
+                return method.upper() in ['GET', 'POST', 'HEAD', 'OPTIONS']
+                
+        except Exception as e:
+            # If we can't determine, err on the side of caution and allow
+            print(f"AIWAF: Could not determine {method} capability for {request.path}: {e}")
+            return True
     
     def process_request(self, request):
         if is_exempt(request):
@@ -629,11 +759,33 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             return None
             
         if request.method == "GET":
+            # ENHANCEMENT: Check if this view accepts GET requests
+            if not self._view_accepts_method(request, 'GET'):
+                # This view is POST-only, but received a GET - likely scanning/probing
+                if not exemption_store.is_exempted(ip):
+                    BlacklistManager.block(ip, f"GET to POST-only view: {request.path}")
+                    if BlacklistManager.is_blocked(ip):
+                        return JsonResponse({
+                            "error": "blocked", 
+                            "message": f"GET not allowed for {request.path}"
+                        }, status=405)  # Method Not Allowed
+            
             # Store timestamp for this IP's GET request  
             # Use a general key for the IP, not path-specific
             cache.set(f"honeypot_get:{ip}", time.time(), timeout=300)  # 5 min timeout
         
         elif request.method == "POST":
+            # ENHANCEMENT: Check if this view actually accepts POST requests
+            if not self._view_accepts_method(request, 'POST'):
+                # This view is GET-only, but received a POST - likely malicious
+                if not exemption_store.is_exempted(ip):
+                    BlacklistManager.block(ip, f"POST to GET-only view: {request.path}")
+                    if BlacklistManager.is_blocked(ip):
+                        return JsonResponse({
+                            "error": "blocked", 
+                            "message": f"POST not allowed for {request.path}"
+                        }, status=405)  # Method Not Allowed
+            
             # Check if there was a preceding GET request
             get_time = cache.get(f"honeypot_get:{ip}")
             
@@ -654,6 +806,17 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 time_diff = time.time() - get_time
                 min_time = self.MIN_FORM_TIME
                 
+                # ENHANCEMENT 2: Check for page timeout (4+ minutes)
+                if time_diff > self.MAX_PAGE_TIME:
+                    # Page has been open too long - suspicious or stale session
+                    # Don't block immediately, but require a fresh page load
+                    cache.delete(f"honeypot_get:{ip}")  # Force fresh GET
+                    return JsonResponse({
+                        "error": "page_expired", 
+                        "message": "Page has expired. Please reload and try again.",
+                        "reload_required": True
+                    }, status=409)  # 409 Conflict - client should reload
+                
                 # Use shorter time threshold for login paths (users can login quickly)
                 if any(request.path.lower().startswith(login_path) for login_path in [
                     "/admin/login/", "/login/", "/accounts/login/", "/auth/login/", "/signin/"
@@ -667,6 +830,19 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                         # Check if actually blocked (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
                             return JsonResponse({"error": "blocked"}, status=403)
+        
+        else:
+            # Handle other HTTP methods (PUT, DELETE, PATCH, etc.)
+            if request.method not in ['GET', 'POST', 'HEAD', 'OPTIONS']:
+                # Check if this view supports the requested method
+                if not self._view_accepts_method(request, request.method):
+                    if not exemption_store.is_exempted(ip):
+                        BlacklistManager.block(ip, f"{request.method} to view that doesn't support it: {request.path}")
+                        if BlacklistManager.is_blocked(ip):
+                            return JsonResponse({
+                                "error": "blocked", 
+                                "message": f"{request.method} not allowed for {request.path}"
+                            }, status=405)  # Method Not Allowed
         
         return None
 

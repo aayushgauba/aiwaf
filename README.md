@@ -9,6 +9,8 @@
 - ✅ **Granular Reset Commands** - Clear specific data types (`--blacklist`, `--keywords`, `--exemptions`)
 - ✅ **Context-Aware Learning** - Only learns from suspicious requests, not legitimate site functionality
 - ✅ **Enhanced Configuration** - `AIWAF_ALLOWED_PATH_KEYWORDS` and `AIWAF_EXEMPT_KEYWORDS`
+- ✅ **Comprehensive HTTP Method Validation** - Blocks GET→POST-only, POST→GET-only, unsupported REST methods
+- ✅ **Enhanced Honeypot Protection** - POST validation & 4-minute page timeout with smart reload detection
 
 ---
 
@@ -88,10 +90,16 @@ aiwaf/
 - **File‑Extension Probing Detection**  
   Tracks repeated 404s on common extensions (e.g. `.php`, `.asp`) and blocks IPs.
 
-- **Timing-Based Honeypot**  
-  Tracks GET→POST timing patterns. Blocks IPs that:
+- **Enhanced Timing-Based Honeypot**  
+  Advanced GET→POST timing analysis with comprehensive HTTP method validation:
   - POST directly without a preceding GET request
   - Submit forms faster than `AIWAF_MIN_FORM_TIME` seconds (default: 1 second)
+  - **🆕 Smart HTTP Method Validation** - Comprehensive protection against method misuse:
+    - Blocks GET requests to POST-only views (form endpoints, API creates)
+    - Blocks POST requests to GET-only views (list pages, read-only content)
+    - Blocks unsupported REST methods (PUT/DELETE to non-REST views)
+    - Uses Django view analysis: class-based views, method handlers, URL patterns
+  - **🆕 Page expiration** after `AIWAF_MAX_PAGE_TIME` (4 minutes) with smart reload
 
 - **UUID Tampering Protection**  
   Blocks guessed or invalid UUIDs that don't resolve to real models.
@@ -486,6 +494,7 @@ python manage.py aiwaf_logging --clear     # Clear log files
 ```python
 AIWAF_MODEL_PATH         = BASE_DIR / "aiwaf" / "resources" / "model.pkl"
 AIWAF_MIN_FORM_TIME      = 1.0        # minimum seconds between GET and POST
+AIWAF_MAX_PAGE_TIME      = 240        # maximum page age before requiring reload (4 minutes)
 AIWAF_AI_CONTAMINATION   = 0.05       # AI anomaly detection sensitivity (5%)
 AIWAF_RATE_WINDOW        = 10         # seconds
 AIWAF_RATE_MAX           = 20         # max requests per window
@@ -778,8 +787,35 @@ python manage.py aiwaf_reset --blacklist --confirm
 | IPAndKeywordBlockMiddleware        | Blocks requests from known blacklisted IPs and Keywords         |
 | RateLimitMiddleware                | Enforces burst & flood thresholds                               |
 | AIAnomalyMiddleware                | ML‑driven behavior analysis + block on anomaly                  |
-| HoneypotTimingMiddleware           | Detects bots via GET→POST timing analysis                       |
+| HoneypotTimingMiddleware           | Enhanced bot detection: GET→POST timing, POST validation, page timeouts |
 | UUIDTamperMiddleware               | Blocks guessed/nonexistent UUIDs across all models in an app    |
+
+### 🍯 Enhanced Honeypot Protection
+
+The **HoneypotTimingMiddleware** now includes advanced bot detection capabilities:
+
+#### 🚫 Smart POST Request Validation
+- **Analyzes Django views** to determine actual allowed HTTP methods
+- **Intelligent detection** of GET-only vs POST-capable views
+- **Example**: `POST` to view with `http_method_names = ['get']` → `403 Blocked`
+
+#### ⏰ Page Timeout with Smart Reload
+- **4-minute page expiration** prevents stale session attacks
+- **HTTP 409 response** with reload instructions instead of immediate blocking
+- **CSRF protection** by forcing fresh page loads for old sessions
+
+```python
+# Configuration
+AIWAF_MIN_FORM_TIME = 1.0     # Minimum form submission time
+AIWAF_MAX_PAGE_TIME = 240     # Page timeout (4 minutes)
+```
+
+**Timeline Example**:
+```
+12:00:00 - GET /contact/   ✅ Page loaded
+12:02:00 - POST /contact/  ✅ Valid submission (2 minutes)
+12:04:30 - POST /contact/  ❌ 409 Conflict (page expired, reload required)
+```
 
 ---
 
