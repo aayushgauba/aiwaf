@@ -10,7 +10,8 @@ def _sort(items, order):
                   reverse=reverse)
 
 def _filter_since(items, seconds):
-    if not seconds: return items
+    if not seconds:
+        return items
     cutoff = timezone.now() - timedelta(seconds=seconds)
     return [it for it in items if it.get("created_at") and it["created_at"] >= cutoff]
 
@@ -25,57 +26,79 @@ def _print_table(rows, headers):
         print(" | ".join(str(cell).ljust(widths[i]) for i, cell in enumerate(r)))
 
 class Command(BaseCommand):
-    help = "Lister les données AIWAF (IPs bloquées, exemptions, mots-clés dynamiques)."
+    help = "AIWAF list (v2): blocked IPs, exempted IPs, monitored keywords."
 
     def add_arguments(self, parser):
         grp = parser.add_mutually_exclusive_group()
-        grp.add_argument("--ips", action="store_true", help="Lister les IPs bloquées (défaut).")
-        grp.add_argument("--exemptions", action="store_true", help="Lister les IPs exemptées.")
-        grp.add_argument("--keywords", action="store_true", help="Lister les mots-clés dynamiques.")
-        grp.add_argument("--all", action="store_true", help="Tout lister.")
-        parser.add_argument("--format", choices=["table", "json"], default="table")
-        parser.add_argument("--limit", type=int, default=100)
-        parser.add_argument("--order", choices=["newest", "oldest"], default="newest")
-        parser.add_argument("--since", type=int, help="Fenêtre en secondes (ex: 86400 = 24h).")
+        grp.add_argument("--ips-blocked", action="store_true", help="List blocked IPs (blacklist).")
+        grp.add_argument("--ips-exempted", action="store_true", help="List exempted IPs (whitelist).")
+        grp.add_argument("--keywords-monitored", action="store_true", help="List monitored dynamic keywords.")
+        grp.add_argument("--all", action="store_true", help="List everything.")
 
-    def handle(self, *args, **o):
-        if not any([o["exemptions"], o["keywords"], o["all"]]):  # défaut = ips
-            o["ips"] = True
+        parser.add_argument("--format", choices=["table", "json"], default="table", help="Output format.")
+        parser.add_argument("--limit", type=int, default=100, help="Max items to display.")
+        parser.add_argument("--order", choices=["newest", "oldest"], default="newest", help="Sort order for IP entries.")
+        parser.add_argument("--since", type=int, help="Time window in seconds (e.g. 86400 = last 24h) for IP entries.")
+        parser.add_argument("--only-ip", action="store_true", help="For IP lists: print only the IP column.")
+
+    def handle(self, *args, **options):
+        # default: show blocked IPs if nothing specific is requested
+        if not any([options["ips_blocked"], options["ips_exempted"], options["keywords_monitored"], options["all"]]):
+            options["ips_blocked"] = True
+
         payload = {}
 
-        if o["all"] or o["ips"]:
-            data = get_blacklist_store().get_all()
-            data = _filter_since(data, o.get("since"))
-            data = _sort(data, o["order"])[:o["limit"]]
-            payload["ips"] = data
+        if options["all"] or options["ips_blocked"]:
+            data = get_blacklist_store().get_all()  # [{ip_address, reason, created_at}]
+            data = _filter_since(data, options.get("since"))
+            data = _sort(data, options["order"])[: options["limit"]]
+            payload["ips_blocked"] = data
 
-        if o["all"] or o["exemptions"]:
-            data = get_exemption_store().get_all()
-            data = _filter_since(data, o.get("since"))
-            data = _sort(data, o["order"])[:o["limit"]]
-            payload["exemptions"] = data
+        if options["all"] or options["ips_exempted"]:
+            data = get_exemption_store().get_all()  # [{ip_address, reason, created_at}]
+            data = _filter_since(data, options.get("since"))
+            data = _sort(data, options["order"])[: options["limit"]]
+            payload["ips_exempted"] = data
 
-        if o["all"] or o["keywords"]:
-            kws = get_keyword_store().get_top_keywords(o["limit"])
-            payload["keywords"] = [{"keyword": k} for k in kws]
+        if options["all"] or options["keywords_monitored"]:
+            kws = get_keyword_store().get_top_keywords(options["limit"])  # [str]
+            payload["keywords_monitored"] = [{"keyword": k} for k in kws]
 
-        if o["format"] == "json":
+        if options["format"] == "json":
             def _default(v):
-                try: return v.isoformat()
-                except Exception: return str(v)
+                try:
+                    return v.isoformat()
+                except Exception:
+                    return str(v)
             self.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2, default=_default))
-        else:
-            if "ips" in payload:
-                print("\n== IPs bloquées ==")
-                rows = [[r.get("ip_address",""), r.get("reason",""), r.get("created_at","")]
-                        for r in payload["ips"]]
-                _print_table(rows, ["ip_address", "reason", "created_at"])
-            if "exemptions" in payload:
-                print("\n== Exemptions ==")
-                rows = [[r.get("ip_address",""), r.get("reason",""), r.get("created_at","")]
-                        for r in payload["exemptions"]]
-                _print_table(rows, ["ip_address", "reason", "created_at"])
-            if "keywords" in payload:
-                print("\n== Mots-clés dynamiques ==")
-                rows = [[r["keyword"]] for r in payload["keywords"]]
-                _print_table(rows, ["keyword"])
+            return
+
+        # table output
+        if "ips_blocked" in payload:
+            print("\n== IPs blocked ==")
+            rows = payload["ips_blocked"]
+            if options["only_ip"]:
+                for r in rows:
+                    print(r.get("ip_address", ""))
+            else:
+                _print_table(
+                    [[r.get("ip_address",""), r.get("reason",""), r.get("created_at","")] for r in rows],
+                    ["ip_address", "reason", "created_at"],
+                )
+
+        if "ips_exempted" in payload:
+            print("\n== IPs exempted ==")
+            rows = payload["ips_exempted"]
+            if options["only_ip"]:
+                for r in rows:
+                    print(r.get("ip_address", ""))
+            else:
+                _print_table(
+                    [[r.get("ip_address",""), r.get("reason",""), r.get("created_at","")] for r in rows],
+                    ["ip_address", "reason", "created_at"],
+                )
+
+        if "keywords_monitored" in payload:
+            print("\n== Keywords monitored ==")
+            rows = payload["keywords_monitored"]
+            _print_table([[r["keyword"]] for r in rows], ["keyword"])
