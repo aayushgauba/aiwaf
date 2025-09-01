@@ -92,7 +92,6 @@ aiwaf/
 
 - **Enhanced Timing-Based Honeypot**  
   Advanced GET→POST timing analysis with comprehensive HTTP method validation:
-  - POST directly without a preceding GET request
   - Submit forms faster than `AIWAF_MIN_FORM_TIME` seconds (default: 1 second)
   - **🆕 Smart HTTP Method Validation** - Comprehensive protection against method misuse:
     - Blocks GET requests to POST-only views (form endpoints, API creates)

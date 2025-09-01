@@ -786,22 +786,10 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                             "message": f"POST not allowed for {request.path}"
                         }, status=405)  # Method Not Allowed
             
-            # Check if there was a preceding GET request
+            # Check if there was a preceding GET request for timing validation
             get_time = cache.get(f"honeypot_get:{ip}")
             
-            if get_time is None:
-                # No GET request - likely bot posting directly
-                # But be more lenient for login paths since users might bookmark them
-                if not any(request.path.lower().startswith(login_path) for login_path in [
-                    "/admin/login/", "/login/", "/accounts/login/", "/auth/login/", "/signin/"
-                ]):
-                    # Double-check exemption before blocking
-                    if not exemption_store.is_exempted(ip):
-                        BlacklistManager.block(ip, "Direct POST without GET")
-                        # Check if actually blocked (exempted IPs won't be blocked)
-                        if BlacklistManager.is_blocked(ip):
-                            return JsonResponse({"error": "blocked"}, status=403)
-            else:
+            if get_time is not None:
                 # Check timing - be more lenient for login paths
                 time_diff = time.time() - get_time
                 min_time = self.MIN_FORM_TIME
