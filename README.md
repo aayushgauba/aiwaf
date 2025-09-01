@@ -11,6 +11,7 @@
 - ✅ **Enhanced Configuration** - `AIWAF_ALLOWED_PATH_KEYWORDS` and `AIWAF_EXEMPT_KEYWORDS`
 - ✅ **Comprehensive HTTP Method Validation** - Blocks GET→POST-only, POST→GET-only, unsupported REST methods
 - ✅ **Enhanced Honeypot Protection** - POST validation & 4-minute page timeout with smart reload detection
+- ✅ **HTTP Header Validation** - Comprehensive bot detection via header analysis and quality scoring
 
 ---
 
@@ -89,6 +90,50 @@ aiwaf/
 
 - **File‑Extension Probing Detection**  
   Tracks repeated 404s on common extensions (e.g. `.php`, `.asp`) and blocks IPs.
+
+- **🆕 HTTP Header Validation**
+  Advanced header analysis to detect bots and malicious requests:
+  - **Missing Required Headers** - Blocks requests without User-Agent or Accept headers
+  - **Suspicious User-Agents** - Detects curl, wget, python-requests, automated tools
+  - **Header Quality Scoring** - Calculates realism score based on browser-standard headers
+  - **Legitimate Bot Whitelist** - Allows Googlebot, Bingbot, and other search engines
+  - **Header Combination Analysis** - Detects impossible combinations (HTTP/2 + old browsers)
+  - **Static File Exemption** - Skips validation for CSS, JS, images
+
+## 🛡️ Header Validation Middleware Features
+
+The **HeaderValidationMiddleware** provides advanced bot detection through HTTP header analysis:
+
+### **What it detects:**
+- **Missing Headers**: Requests without standard browser headers
+- **Suspicious User-Agents**: WordPress scanners, exploit tools, basic scrapers
+- **Bot-like Patterns**: Low header diversity, missing Accept headers
+- **Quality Scoring**: 0-11 point system based on header completeness
+
+### **What it allows:**
+- **Legitimate Browsers**: Chrome, Firefox, Safari, Edge with full headers
+- **Search Engine Bots**: Google, Bing, DuckDuckGo, Yandex crawlers
+- **API Clients**: Properly identified with good headers
+- **Static Files**: CSS, JS, images (automatically exempted)
+
+### **Real-world effectiveness:**
+```
+✅ Blocks: WordPress scanners, exploit bots, basic scrapers
+✅ Allows: Real browsers, legitimate bots, API clients
+✅ Quality Score: 10/11 = Legitimate, 2/11 = Suspicious bot
+```
+
+### **Testing header validation:**
+```bash
+# Test with curl (will be blocked - low quality headers)
+curl http://yoursite.com/
+
+# Test with browser (will be allowed - high quality headers)
+# Visit site normally in Chrome/Firefox
+
+# Check logs for header validation blocks
+python manage.py aiwaf_logging --recent
+```
 
 - **Enhanced Timing-Based Honeypot**  
   Advanced GET→POST timing analysis with comprehensive HTTP method validation:

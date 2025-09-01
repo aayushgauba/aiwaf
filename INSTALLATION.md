@@ -61,6 +61,7 @@ MIDDLEWARE = [
     
     # AI-WAF Protection Middleware (add these)
     'aiwaf.middleware.IPAndKeywordBlockMiddleware',
+    'aiwaf.middleware.HeaderValidationMiddleware',
     'aiwaf.middleware.RateLimitMiddleware',
     'aiwaf.middleware.AIAnomalyMiddleware',
     'aiwaf.middleware.HoneypotTimingMiddleware',
@@ -70,6 +71,15 @@ MIDDLEWARE = [
     'aiwaf.middleware_logger.AIWAFLoggerMiddleware',
 ]
 ```
+
+**Middleware Order Explanation:**
+- **HeaderValidationMiddleware**: Should be first among AI-WAF middlewares for early bot detection
+- **IPAndKeywordBlockMiddleware**: Core IP and keyword blocking
+- **RateLimitMiddleware**: Rate limiting protection  
+- **AIAnomalyMiddleware**: AI-based anomaly detection
+- **HoneypotTimingMiddleware**: Form timing analysis
+- **UUIDTamperMiddleware**: UUID tampering detection
+- **AIWAFLoggerMiddleware**: Request logging (optional, can be last)
 
 ## Step 3: Database Setup
 
@@ -130,12 +140,48 @@ AIWAF_MIN_FORM_TIME = 1.0      # Honeypot timing
 AIWAF_RATE_MAX = 20            # Rate limiting
 ```
 
+### **Header Validation Settings**
+
+```python
+# settings.py - HTTP Header Bot Detection Configuration
+
+# Enable/disable header validation (default: True)
+AIWAF_HEADER_VALIDATION_ENABLED = True
+
+# Minimum header quality score (default: 5, range: 0-11)
+AIWAF_MIN_HEADER_QUALITY = 5
+
+# Block requests with suspicious User-Agent patterns (default: True)
+AIWAF_BLOCK_SUSPICIOUS_USER_AGENTS = True
+
+# Allow legitimate bots (Google, Bing, etc.) even with low scores (default: True)
+AIWAF_ALLOW_LEGITIMATE_BOTS = True
+
+# Log blocked header validation requests (default: True)
+AIWAF_LOG_HEADER_BLOCKS = True
+
+# Custom suspicious User-Agent patterns (regex)
+AIWAF_CUSTOM_SUSPICIOUS_PATTERNS = [
+    r'wordpress',
+    r'scanner',
+    r'exploit',
+    # Add your patterns here
+]
+
+# Whitelist additional legitimate bot User-Agents
+AIWAF_LEGITIMATE_BOT_PATTERNS = [
+    r'MyCustomBot/1.0',
+    r'LegitimateScanner',
+    # Add your patterns here  
+]
+```
+
 ## Step 6: Start Training
 
 ```bash
 # Train the AI model (after some traffic)
 python manage.py detect_and_train
-```
+
 
 ## Troubleshooting
 
@@ -215,6 +261,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     # ... existing middleware ...
+    'aiwaf.middleware.HeaderValidationMiddleware',   # Bot detection (recommended first)
     'aiwaf.middleware.IPAndKeywordBlockMiddleware',  # Basic protection
 ]
 
@@ -222,6 +269,9 @@ MIDDLEWARE = [
 AIWAF_ACCESS_LOG = "/var/log/nginx/access.log"  # Use server logs
 # OR
 AIWAF_MIDDLEWARE_LOGGING = True  # Use built-in logger
+
+# Optional: Configure header validation
+AIWAF_MIN_HEADER_QUALITY = 5  # Block requests with low header quality
 ```
 
 ```bash

@@ -868,3 +868,270 @@ class UUIDTamperMiddleware(MiddlewareMixin):
             # Check if actually blocked (exempted IPs won't be blocked)
             if BlacklistManager.is_blocked(ip):
                 return JsonResponse({"error": "blocked"}, status=403)
+
+
+class HeaderValidationMiddleware(MiddlewareMixin):
+    """
+    Validates HTTP headers to detect bots and malicious requests
+    """
+    
+    # Standard browser headers that legitimate requests should have
+    REQUIRED_HEADERS = [
+        'HTTP_USER_AGENT',
+        'HTTP_ACCEPT',
+    ]
+    
+    # Headers that browsers typically send
+    BROWSER_HEADERS = [
+        'HTTP_ACCEPT_LANGUAGE',
+        'HTTP_ACCEPT_ENCODING',
+        'HTTP_CONNECTION', 
+        'HTTP_CACHE_CONTROL',
+    ]
+    
+    # Suspicious User-Agent patterns
+    SUSPICIOUS_USER_AGENTS = [
+        r'bot',
+        r'crawler',
+        r'spider',
+        r'scraper', 
+        r'curl',
+        r'wget',
+        r'python',
+        r'java',
+        r'node',
+        r'go-http',
+        r'axios',
+        r'okhttp',
+        r'libwww',
+        r'lwp-trivial',
+        r'mechanize',
+        r'requests',
+        r'urllib',
+        r'httpie',
+        r'postman',
+        r'insomnia',
+        r'^$',  # Empty user agent
+        r'mozilla/4\.0$',  # Fake old browser
+        r'mozilla/5\.0$',  # Incomplete mozilla string
+    ]
+    
+    # Known legitimate bot user agents to whitelist
+    LEGITIMATE_BOTS = [
+        r'googlebot',
+        r'bingbot', 
+        r'slurp',  # Yahoo
+        r'duckduckbot',
+        r'baiduspider',
+        r'yandexbot',
+        r'facebookexternalhit',
+        r'twitterbot',
+        r'linkedinbot',
+        r'whatsapp',
+        r'telegrambot',
+        r'applebot',
+        r'pingdom',
+        r'uptimerobot',
+        r'statuscake',
+        r'site24x7',
+    ]
+    
+    # Suspicious header combinations
+    SUSPICIOUS_COMBINATIONS = [
+        # High version HTTP with old user agent
+        {
+            'condition': lambda headers: (
+                headers.get('SERVER_PROTOCOL', '').startswith('HTTP/2') and
+                'mozilla/4.0' in headers.get('HTTP_USER_AGENT', '').lower()
+            ),
+            'reason': 'HTTP/2 with old browser user agent'
+        },
+        # No Accept header but has User-Agent
+        {
+            'condition': lambda headers: (
+                headers.get('HTTP_USER_AGENT') and 
+                not headers.get('HTTP_ACCEPT')
+            ),
+            'reason': 'User-Agent present but no Accept header'
+        },
+        # Accept */* only (very generic)
+        {
+            'condition': lambda headers: (
+                headers.get('HTTP_ACCEPT') == '*/*' and
+                not any(h in headers for h in ['HTTP_ACCEPT_LANGUAGE', 'HTTP_ACCEPT_ENCODING'])
+            ),
+            'reason': 'Generic Accept header without language/encoding'
+        },
+        # No browser-standard headers at all
+        {
+            'condition': lambda headers: (
+                headers.get('HTTP_USER_AGENT') and
+                not any(headers.get(h) for h in ['HTTP_ACCEPT_LANGUAGE', 'HTTP_ACCEPT_ENCODING', 'HTTP_CONNECTION'])
+            ),
+            'reason': 'Missing all browser-standard headers'
+        },
+        # Suspicious HTTP version patterns
+        {
+            'condition': lambda headers: (
+                'HTTP_USER_AGENT' in headers and
+                headers.get('SERVER_PROTOCOL') == 'HTTP/1.0' and
+                'chrome' in headers.get('HTTP_USER_AGENT', '').lower()
+            ),
+            'reason': 'Modern browser with HTTP/1.0'
+        }
+    ]
+
+    def process_request(self, request):
+        # Skip if request is exempted
+        if is_exempt(request):
+            return None
+            
+        ip = get_ip(request)
+        
+        # Check IP-level exemption
+        from .storage import get_exemption_store
+        exemption_store = get_exemption_store()
+        if exemption_store.is_exempted(ip):
+            return None
+            
+        # Skip for static files and common paths
+        if self._is_static_request(request):
+            return None
+        
+        # Get headers from request.META
+        headers = request.META
+        
+        # Check for missing required headers
+        missing_headers = self._check_missing_headers(headers)
+        if missing_headers:
+            return self._block_request(ip, f"Missing required headers: {', '.join(missing_headers)}", request.path)
+        
+        # Check for suspicious user agent
+        suspicious_ua = self._check_user_agent(headers.get('HTTP_USER_AGENT', ''))
+        if suspicious_ua:
+            return self._block_request(ip, f"Suspicious user agent: {suspicious_ua}", request.path)
+        
+        # Check for suspicious header combinations
+        suspicious_combo = self._check_header_combinations(headers)
+        if suspicious_combo:
+            return self._block_request(ip, f"Suspicious headers: {suspicious_combo}", request.path)
+        
+        # Check header quality score
+        quality_score = self._calculate_header_quality(headers)
+        if quality_score < 3:  # Threshold for suspicion
+            return self._block_request(ip, f"Low header quality score: {quality_score}", request.path)
+        
+        return None
+    
+    def _is_static_request(self, request):
+        """Check if this is a request for static files"""
+        static_extensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.woff', '.woff2', '.ttf']
+        path = request.path.lower()
+        
+        # Check file extensions
+        if any(path.endswith(ext) for ext in static_extensions):
+            return True
+            
+        # Check static paths
+        static_paths = ['/static/', '/media/', '/assets/', '/favicon.ico']
+        if any(path.startswith(static_path) for static_path in static_paths):
+            return True
+            
+        return False
+    
+    def _check_missing_headers(self, headers):
+        """Check for missing required headers"""
+        missing = []
+        
+        for header in self.REQUIRED_HEADERS:
+            if not headers.get(header):
+                missing.append(header.replace('HTTP_', '').replace('_', '-').lower())
+                
+        return missing
+    
+    def _check_user_agent(self, user_agent):
+        """Check if user agent is suspicious"""
+        if not user_agent:
+            return "Empty user agent"
+            
+        user_agent_lower = user_agent.lower()
+        
+        # Check if it's a legitimate bot first
+        for legitimate_pattern in self.LEGITIMATE_BOTS:
+            if re.search(legitimate_pattern, user_agent_lower):
+                return None  # Allow legitimate bots
+        
+        # Check for suspicious patterns
+        for suspicious_pattern in self.SUSPICIOUS_USER_AGENTS:
+            if re.search(suspicious_pattern, user_agent_lower, re.IGNORECASE):
+                return f"Pattern: {suspicious_pattern}"
+                
+        # Check for very short user agents (likely fake)
+        if len(user_agent) < 10:
+            return "Too short"
+            
+        # Check for very long user agents (possibly malicious)
+        if len(user_agent) > 500:
+            return "Too long"
+            
+        return None
+    
+    def _check_header_combinations(self, headers):
+        """Check for suspicious header combinations"""
+        for combo in self.SUSPICIOUS_COMBINATIONS:
+            try:
+                if combo['condition'](headers):
+                    return combo['reason']
+            except Exception:
+                # If condition check fails, skip it
+                continue
+                
+        return None
+    
+    def _calculate_header_quality(self, headers):
+        """Calculate a quality score based on header completeness"""
+        score = 0
+        
+        # Basic required headers (2 points each)
+        if headers.get('HTTP_USER_AGENT'):
+            score += 2
+        if headers.get('HTTP_ACCEPT'):
+            score += 2
+            
+        # Browser-standard headers (1 point each)
+        for header in self.BROWSER_HEADERS:
+            if headers.get(header):
+                score += 1
+                
+        # Bonus points for realistic combinations
+        if headers.get('HTTP_ACCEPT_LANGUAGE') and headers.get('HTTP_ACCEPT_ENCODING'):
+            score += 1
+            
+        if headers.get('HTTP_CONNECTION') == 'keep-alive':
+            score += 1
+            
+        # Check for realistic Accept header
+        accept = headers.get('HTTP_ACCEPT', '')
+        if 'text/html' in accept and 'application/xml' in accept:
+            score += 1
+            
+        return score
+    
+    def _block_request(self, ip, reason, path):
+        """Block the request and return error response"""
+        from .storage import get_exemption_store
+        exemption_store = get_exemption_store()
+        
+        # Double-check exemption before blocking
+        if not exemption_store.is_exempted(ip):
+            BlacklistManager.block(ip, f"Header validation: {reason}")
+            
+            # Check if actually blocked (exempted IPs won't be blocked)
+            if BlacklistManager.is_blocked(ip):
+                return JsonResponse({
+                    "error": "blocked",
+                    "message": "Request blocked due to suspicious headers",
+                    "path": path
+                }, status=403)
+                
+        return None
