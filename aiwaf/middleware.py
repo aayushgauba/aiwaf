@@ -504,6 +504,51 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         
         return any(malicious_indicators)
 
+    def _is_scanning_path(self, path):
+        """
+        Determine if a 404 path looks like automated scanning vs legitimate browsing.
+        Focus on common scanner patterns that indicate malicious intent.
+        """
+        path_lower = path.lower()
+        
+        # Common scanning patterns that are clear indicators of malicious activity
+        scanning_patterns = [
+            # WordPress scanning
+            'wp-admin', 'wp-content', 'wp-includes', 'wp-config', 'xmlrpc.php',
+            
+            # Admin/config scanning  
+            'admin', 'phpmyadmin', 'adminer', 'config', 'configuration',
+            'settings', 'setup', 'install', 'installer',
+            
+            # Database/backup scanning
+            'backup', 'database', 'db', 'mysql', 'sql', 'dump',
+            
+            # System files scanning
+            '.env', '.git', '.htaccess', '.htpasswd', 'passwd', 'shadow',
+            'robots.txt', 'sitemap.xml',
+            
+            # Common vulnerabilities
+            'cgi-bin', 'scripts', 'shell', 'cmd', 'exec',
+            
+            # File extensions that shouldn't exist on most sites
+            '.php', '.asp', '.aspx', '.jsp', '.cgi', '.pl'
+        ]
+        
+        # Check for scanning patterns
+        for pattern in scanning_patterns:
+            if pattern in path_lower:
+                return True
+                
+        # Check for directory traversal attempts
+        if '../' in path or '..' in path:
+            return True
+            
+        # Check for encoded attack patterns  
+        if any(encoded in path for encoded in ['%2e%2e', '%252e', '%c0%ae']):
+            return True
+            
+        return False
+
     def process_request(self, request):
         # First exemption check - early exit for exempt requests
         if is_exempt(request):
@@ -592,28 +637,37 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                 avg_burst = sum(recent_burst_counts) / len(recent_burst_counts) if recent_burst_counts else 0
                 total_requests = len(recent_data)
                 
-                # Don't block if it looks like legitimate behavior (same thresholds as trainer.py):
+                # Enhanced 404 analysis - focus on scanning patterns
+                scanning_404s = sum(1 for (_, path, status, _) in recent_data 
+                                  if status == 404 and self._is_scanning_path(path))
+                legitimate_404s = max_404s - scanning_404s
+                
+                # Don't block if it looks like legitimate behavior:
                 if (
-                    avg_kw_hits < 2 and           # Not hitting many malicious keywords
-                    max_404s < 10 and            # Not excessive 404s
-                    avg_burst < 15 and           # Not excessive burst activity
-                    total_requests < 100         # Not excessive total requests
+                    avg_kw_hits < 3 and           # Allow some keyword hits (increased from 2)
+                    scanning_404s < 5 and        # Focus on scanning 404s, not all 404s  
+                    legitimate_404s < 20 and     # Allow more legitimate 404s (typos, old links)
+                    avg_burst < 25 and           # Allow higher burst (increased from 15)
+                    total_requests < 150         # Allow more total requests (increased from 100)
                 ):
                     # Anomalous but looks legitimate - don't block
                     pass
                 else:
                     # Double-check exemption before blocking
                     if not exemption_store.is_exempted(ip):
-                        BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
+                        BlacklistManager.block(ip, f"AI anomaly + scanning 404s (total:{max_404s}, scanning:{scanning_404s}, kw:{avg_kw_hits:.1f}, burst:{avg_burst:.1f})")
                         # Check if actually blocked (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
                             return JsonResponse({"error": "blocked"}, status=403)
             else:
-                # No recent data to analyze - be more conservative, only block on very suspicious current request
-                if kw_hits >= 2 or status_idx == STATUS_IDX.index("404"):
+                # No recent data to analyze - be more conservative
+                # Only block on multiple suspicious indicators, not single 404
+                current_scanning = self._is_scanning_path(request.path)
+                
+                if kw_hits >= 3 and current_scanning:  # Require both high keywords AND scanning pattern
                     # Double-check exemption before blocking
                     if not exemption_store.is_exempted(ip):
-                        BlacklistManager.block(ip, "AI anomaly + immediate suspicious behavior")
+                        BlacklistManager.block(ip, f"AI anomaly + scanning behavior (kw:{kw_hits}, scanning_path:{request.path})")
                         if BlacklistManager.is_blocked(ip):
                             return JsonResponse({"error": "blocked"}, status=403)
 
