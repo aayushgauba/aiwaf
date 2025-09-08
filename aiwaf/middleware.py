@@ -698,10 +698,13 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
     MAX_PAGE_TIME = getattr(settings, "AIWAF_MAX_PAGE_TIME", 240)  # 4 minutes default
     
     def _view_accepts_method(self, request, method):
-        """Check if the current view/URL pattern accepts the specified HTTP method"""
+        """
+        Check if the current view accepts the specified HTTP method.
+        Be very conservative - only block when we're absolutely certain.
+        Handle decorator issues by being permissive when detection fails.
+        """
         try:
             from django.urls import resolve
-            from django.urls.resolvers import URLResolver, URLPattern
             
             # Resolve the current URL to get the view
             resolved = resolve(request.path)
@@ -711,12 +714,12 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             if hasattr(view_func, 'cls'):
                 view_class = view_func.cls
                 
-                # Check http_method_names attribute (most reliable)
+                # Check http_method_names attribute (most reliable for CBVs)
                 if hasattr(view_class, 'http_method_names'):
                     allowed_methods = [m.upper() for m in view_class.http_method_names]
                     return method.upper() in allowed_methods
                 
-                # Check for method-handling methods
+                # For CBVs without http_method_names, check for method handlers
                 method_handlers = {
                     'GET': ['get'],
                     'POST': ['post', 'form_valid', 'form_invalid'],
@@ -728,76 +731,30 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 if method.upper() in method_handlers:
                     handlers = method_handlers[method.upper()]
                     has_handler = any(hasattr(view_class, handler) for handler in handlers)
-                    if has_handler:
-                        return True
-                    
-                    # If no handler found, check if it's a common method that should be rejected
-                    if method.upper() in ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']:
-                        return False
+                    return has_handler
                 
-                # Default: assume method is allowed for class-based views
+                # Default for CBVs: be permissive
                 return True
             
-            # Handle function-based views
+            # Handle function-based views (including decorated ones)
             else:
-                # Check if view has explicit allowed methods
-                if hasattr(view_func, 'http_method_names'):
-                    allowed_methods = [m.upper() for m in view_func.http_method_names]
+                # Try to unwrap decorators to get the actual view function
+                actual_func = view_func
+                while hasattr(actual_func, '__wrapped__'):
+                    actual_func = actual_func.__wrapped__
+                
+                # Check if the actual function has explicit allowed methods
+                if hasattr(actual_func, 'http_method_names'):
+                    allowed_methods = [m.upper() for m in actual_func.http_method_names]
                     return method.upper() in allowed_methods
                 
-                # For function-based views, inspect the source code
-                import inspect
-                try:
-                    source = inspect.getsource(view_func)
-                    method_upper = method.upper()
-                    
-                    # Look for method handling in the source
-                    if f'request.method' in source and method_upper in source:
-                        return True
-                    
-                    # Look for method-specific patterns
-                    method_patterns = {
-                        'GET': ['request.GET', 'GET'],
-                        'POST': ['request.POST', 'POST', 'form.is_valid()'],
-                        'PUT': ['PUT', 'request.PUT'],
-                        'DELETE': ['DELETE', 'request.DELETE']
-                    }
-                    
-                    if method.upper() in method_patterns:
-                        patterns = method_patterns[method.upper()]
-                        if any(pattern in source for pattern in patterns):
-                            return True
-                            
-                except (OSError, TypeError):
-                    # Can't get source, make educated guess
-                    pass
-                
-                # Check URL pattern name for method-specific endpoints
-                if resolved.url_name:
-                    url_name_lower = resolved.url_name.lower()
-                    
-                    # POST-only patterns
-                    post_only_patterns = ['create', 'submit', 'upload', 'process']
-                    # GET-only patterns  
-                    get_only_patterns = ['list', 'detail', 'view', 'display']
-                    
-                    if method.upper() == 'POST':
-                        if any(pattern in url_name_lower for pattern in post_only_patterns):
-                            return True
-                        if any(pattern in url_name_lower for pattern in get_only_patterns):
-                            return False
-                    elif method.upper() == 'GET':
-                        if any(pattern in url_name_lower for pattern in get_only_patterns):
-                            return True
-                        if any(pattern in url_name_lower for pattern in post_only_patterns):
-                            return False
-                
-                # Default: assume function-based views accept common methods
-                return method.upper() in ['GET', 'POST', 'HEAD', 'OPTIONS']
+                # For function-based views, be very conservative
+                # Most Django views accept both GET and POST, so default to allowing
+                return True
                 
         except Exception as e:
-            # If we can't determine, err on the side of caution and allow
-            print(f"AIWAF: Could not determine {method} capability for {request.path}: {e}")
+            # If anything fails (decorators, imports, etc.), be permissive
+            # Better to allow a legitimate request than block it
             return True
     
     def process_request(self, request):
@@ -813,16 +770,25 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             return None
             
         if request.method == "GET":
-            # ENHANCEMENT: Check if this view accepts GET requests
+            # CONSERVATIVE: Only block GET if we're absolutely certain it's POST-only
+            # Most Django views accept both GET and POST (forms show on GET, process on POST)
             if not self._view_accepts_method(request, 'GET'):
-                # This view is POST-only, but received a GET - likely scanning/probing
-                if not exemption_store.is_exempted(ip):
-                    BlacklistManager.block(ip, f"GET to POST-only view: {request.path}")
-                    if BlacklistManager.is_blocked(ip):
-                        return JsonResponse({
-                            "error": "blocked", 
-                            "message": f"GET not allowed for {request.path}"
-                        }, status=405)  # Method Not Allowed
+                # EXTRA CHECK: Only block if path looks like obvious POST-only API endpoint
+                path_lower = request.path.lower()
+                obvious_post_only = any(path_lower.endswith(pattern) for pattern in [
+                    '/create/', '/submit/', '/upload/', '/delete/', '/process/'
+                ])
+                
+                if obvious_post_only:
+                    # This is very likely a POST-only endpoint getting a GET
+                    if not exemption_store.is_exempted(ip):
+                        BlacklistManager.block(ip, f"GET to obvious POST-only endpoint: {request.path}")
+                        if BlacklistManager.is_blocked(ip):
+                            return JsonResponse({
+                                "error": "blocked", 
+                                "message": f"GET not allowed for {request.path}"
+                            }, status=405)  # Method Not Allowed
+                # Otherwise, don't block - could be a decorated view or complex form
             
             # Store timestamp for this IP's GET request  
             # Use a general key for the IP, not path-specific
