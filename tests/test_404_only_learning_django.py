@@ -19,7 +19,7 @@ django.setup()
 from tests.base_test import AIWAFTestCase
 
 
-class 404OnlyLearningTestCase(AIWAFTestCase):
+class Only404LearningTestCase(AIWAFTestCase):
     """Test 404 Only Learning functionality"""
     
     def setUp(self):
