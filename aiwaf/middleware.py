@@ -609,27 +609,27 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                 # Get recent behavior data for this IP to make intelligent blocking decision
                 recent_data = [d for d in data if now - d[0] <= 300]  # Last 5 minutes
                 
-                if recent_data:
-                    # Calculate behavior metrics similar to trainer.py
-                    recent_kw_hits = []
-                    recent_404s = 0
-                    recent_burst_counts = []
+                # Always initialize variables before use
+                recent_kw_hits = []
+                recent_404s = 0
+                recent_burst_counts = []
                 
-                for entry_time, entry_path, entry_status, entry_resp_time in recent_data:
-                    # Calculate keyword hits for this entry
-                    entry_known_path = path_exists_in_django(entry_path)
-                    entry_kw_hits = 0
-                    if not entry_known_path and not is_exempt_path(entry_path):
-                        entry_kw_hits = sum(1 for kw in STATIC_KW if kw in entry_path.lower())
-                    recent_kw_hits.append(entry_kw_hits)
-                    
-                    # Count 404s
-                    if entry_status == 404:
-                        recent_404s += 1
-                    
-                    # Calculate burst for this entry (requests within 10 seconds)
-                    entry_burst = sum(1 for (t, _, _, _) in recent_data if abs(entry_time - t) <= 10)
-                    recent_burst_counts.append(entry_burst)
+                if recent_data:
+                    for entry_time, entry_path, entry_status, entry_resp_time in recent_data:
+                        # Calculate keyword hits for this entry
+                        entry_known_path = path_exists_in_django(entry_path)
+                        entry_kw_hits = 0
+                        if not entry_known_path and not is_exempt_path(entry_path):
+                            entry_kw_hits = sum(1 for kw in STATIC_KW if kw in entry_path.lower())
+                        recent_kw_hits.append(entry_kw_hits)
+                        
+                        # Count 404s
+                        if entry_status == 404:
+                            recent_404s += 1
+                        
+                        # Calculate burst for this entry (requests within 10 seconds)
+                        entry_burst = sum(1 for (t, _, _, _) in recent_data if abs(entry_time - t) <= 10)
+                        recent_burst_counts.append(entry_burst)
                 
                 # Calculate averages and maximums
                 avg_kw_hits = sum(recent_kw_hits) / len(recent_kw_hits) if recent_kw_hits else 0

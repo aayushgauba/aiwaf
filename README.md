@@ -881,7 +881,3 @@ This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) f
 
 ---
 
-## Credits
-
-**AI‑WAF** by [Aayush Gauba](https://github.com/aayushgauba)  
-> "Let your firewall learn and evolve — keep your site a fortress." your Django `INSTALLED_APPS` to avoid setup errors.
