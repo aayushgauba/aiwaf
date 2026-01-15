@@ -155,6 +155,26 @@ python manage.py aiwaf_logging --recent
   - **Captures response times** for better anomaly detection
   - **Zero configuration** - works out of the box
 
+- **Blocked Request Debug Logging**  
+  Optional debug logs that explain why a request was blocked:
+  - **Reason included** (keyword, flood pattern, AI anomaly, header validation, etc.)
+  - **Request context** (IP, method, path, user agent)
+  - **Disabled by default** - enable via Django `LOGGING`
+  
+  Example `settings.py`:
+  ```python
+  LOGGING = {
+      "version": 1,
+      "disable_existing_loggers": False,
+      "handlers": {
+          "console": {"class": "logging.StreamHandler"},
+      },
+      "loggers": {
+          "aiwaf.middleware": {"handlers": ["console"], "level": "DEBUG"},
+      },
+  }
+  ```
+
 - **Smart Training System**  
   AI trainer automatically uses the best available data source:
   - **Primary**: Configured access log files (`AIWAF_ACCESS_LOG`)
