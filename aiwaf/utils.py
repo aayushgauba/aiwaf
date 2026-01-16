@@ -2,6 +2,7 @@ import os
 import re
 import glob
 import gzip
+import ipaddress
 from datetime import datetime
 from django.conf import settings
 from .storage import get_exemption_store
@@ -53,8 +54,29 @@ def parse_log_line(line):
 
 def is_ip_exempted(ip):
     """Check if IP is in exemption list"""
+    exempt_ips = getattr(settings, "AIWAF_EXEMPT_IPS", [])
+    if _ip_in_allowlist(ip, exempt_ips):
+        return True
     store = get_exemption_store()
     return store.is_exempted(ip)
+
+def _ip_in_allowlist(ip, allowlist):
+    if not allowlist:
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    for entry in allowlist:
+        try:
+            if "/" in str(entry):
+                if ip_obj in ipaddress.ip_network(entry, strict=False):
+                    return True
+            elif ip_obj == ipaddress.ip_address(entry):
+                return True
+        except ValueError:
+            continue
+    return False
 
 def is_view_exempt(request):
     """Check if the current view is marked as AI-WAF exempt"""

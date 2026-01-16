@@ -13,6 +13,9 @@ from django.db.models import F
 from .utils import is_exempt_path
 from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
 from .blacklist_manager import BlacklistManager
+from .settings_compat import apply_legacy_settings
+
+apply_legacy_settings()
 
 # ─────────── Configuration ───────────
 LOG_PATH   = getattr(settings, 'AIWAF_ACCESS_LOG', None)
@@ -590,57 +593,61 @@ def train(disable_ai=False, force_ai=False) -> None:
         print("AI model training skipped (disabled)")
         df = pd.DataFrame(feature_dicts)  # Still need df for some operations
 
-    tokens = Counter()
-    legitimate_keywords = get_legitimate_keywords()
-    
-    print(f"Learning keywords from {len(parsed)} parsed requests...")
-    
-    for r in parsed:
-        # Only learn from suspicious requests (errors on non-existent paths)
-        if (r["status"].startswith(("4", "5")) and 
-            not path_exists_in_django(r["path"]) and 
-            not is_exempt_path(r["path"])):
-            
-            for seg in re.split(r"\W+", r["path"].lower()):
-                if (len(seg) > 3 and 
-                    seg not in STATIC_KW and 
-                    seg not in legitimate_keywords and  # Don't learn legitimate keywords
-                    _is_malicious_context_trainer(r["path"], seg, r["status"])):  # Smart context check
-                    tokens[seg] += 1
-
-    keyword_store = get_keyword_store()
-    top_tokens = tokens.most_common(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
-    
-    # Additional filtering: only add keywords that appear suspicious enough AND in malicious context
-    filtered_tokens = []
-    learned_from_paths = []  # Track which paths we learned from
-    
-    for kw, cnt in top_tokens:
-        # Find example paths where this keyword appeared
-        example_paths = [r["path"] for r in parsed 
-                        if kw in r["path"].lower() and 
-                        r["status"].startswith(("4", "5")) and
-                        not path_exists_in_django(r["path"])]
+    keyword_learning_enabled = getattr(settings, "AIWAF_ENABLE_KEYWORD_LEARNING", True)
+    if keyword_learning_enabled:
+        tokens = Counter()
+        legitimate_keywords = get_legitimate_keywords()
         
-        # Only add if keyword appears in malicious contexts
-        if (cnt >= 2 and  # Must appear at least twice
-            len(kw) >= 4 and  # Must be at least 4 characters
-            kw not in legitimate_keywords and  # Not in legitimate set
-            example_paths and  # Has example paths
-            any(_is_malicious_context_trainer(path, kw) for path in example_paths[:3])):  # Check first 3 paths
+        print(f"Learning keywords from {len(parsed)} parsed requests...")
+        
+        for r in parsed:
+            # Only learn from suspicious requests (errors on non-existent paths)
+            if (r["status"].startswith(("4", "5")) and 
+                not path_exists_in_django(r["path"]) and 
+                not is_exempt_path(r["path"])):
+                
+                for seg in re.split(r"\W+", r["path"].lower()):
+                    if (len(seg) > 3 and 
+                        seg not in STATIC_KW and 
+                        seg not in legitimate_keywords and  # Don't learn legitimate keywords
+                        _is_malicious_context_trainer(r["path"], seg, r["status"])):  # Smart context check
+                        tokens[seg] += 1
+
+        keyword_store = get_keyword_store()
+        top_tokens = tokens.most_common(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
+        
+        # Additional filtering: only add keywords that appear suspicious enough AND in malicious context
+        filtered_tokens = []
+        learned_from_paths = []  # Track which paths we learned from
+        
+        for kw, cnt in top_tokens:
+            # Find example paths where this keyword appeared
+            example_paths = [r["path"] for r in parsed 
+                            if kw in r["path"].lower() and 
+                            r["status"].startswith(("4", "5")) and
+                            not path_exists_in_django(r["path"])]
             
-            filtered_tokens.append((kw, cnt))
-            keyword_store.add_keyword(kw, cnt)
-            learned_from_paths.extend(example_paths[:2])  # Track first 2 example paths
-    
-    if filtered_tokens:
-        print(f"Added {len(filtered_tokens)} suspicious keywords: {[kw for kw, _ in filtered_tokens]}")
-        print(f"Example malicious paths learned from: {learned_from_paths[:5]}")  # Show first 5
+            # Only add if keyword appears in malicious contexts
+            if (cnt >= 2 and  # Must appear at least twice
+                len(kw) >= 4 and  # Must be at least 4 characters
+                kw not in legitimate_keywords and  # Not in legitimate set
+                example_paths and  # Has example paths
+                any(_is_malicious_context_trainer(path, kw) for path in example_paths[:3])):  # Check first 3 paths
+                
+                filtered_tokens.append((kw, cnt))
+                keyword_store.add_keyword(kw, cnt)
+                learned_from_paths.extend(example_paths[:2])  # Track first 2 example paths
+        
+        if filtered_tokens:
+            print(f"Added {len(filtered_tokens)} suspicious keywords: {[kw for kw, _ in filtered_tokens]}")
+            print(f"Example malicious paths learned from: {learned_from_paths[:5]}")  # Show first 5
+        else:
+            print("No new suspicious keywords learned (good sign!)")
+        
+        print(f"Smart keyword learning complete. Excluded {len(legitimate_keywords)} legitimate keywords.")
+        print(f"Used malicious context analysis to filter out false positives.")
     else:
-        print("No new suspicious keywords learned (good sign!)")
-    
-    print(f"Smart keyword learning complete. Excluded {len(legitimate_keywords)} legitimate keywords.")
-    print(f"Used malicious context analysis to filter out false positives.")
+        print("Keyword learning disabled via AIWAF_ENABLE_KEYWORD_LEARNING.")
     
     # Training summary
     print("\n" + "="*60)

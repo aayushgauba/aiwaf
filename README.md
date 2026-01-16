@@ -595,6 +595,10 @@ AIWAF_DYNAMIC_TOP_N = 10        # Number of dynamic keywords to learn (default: 
 
 > **Note:** You no longer need to define `AIWAF_MALICIOUS_KEYWORDS` or `AIWAF_STATUS_CODES` — they evolve dynamically.
 
+### Legacy `AIWAF_SETTINGS` Compatibility
+
+If you already use the nested `AIWAF_SETTINGS` dict, AI-WAF will map common keys into the flat `AIWAF_*` settings at startup (without overriding explicit `AIWAF_*` values). Supported mappings include `RATE_LIMITING`, `EXEMPTIONS.PATHS`, `IP_BLOCKING.ENABLED`, `KEYWORD_DETECTION` (custom patterns + sensitivity), and `LOGGING.ENABLED`.
+
 ---
 
 ## 🧱 Middleware Setup

@@ -37,6 +37,9 @@ from .blacklist_manager import BlacklistManager
 from .models import IPExemption
 from .utils import is_exempt, get_ip, is_ip_exempted, is_exempt_path
 from .storage import get_keyword_store
+from .settings_compat import apply_legacy_settings
+
+apply_legacy_settings()
 
 MODEL_PATH = getattr(
     settings,
@@ -135,6 +138,7 @@ class IPAndKeywordBlockMiddleware:
         self.exempt_keywords = self._get_exempt_keywords()
         self.legitimate_path_keywords = self._get_legitimate_path_keywords()
         self.malicious_keywords = set(STATIC_KW)  # Initialize malicious keywords
+        self.keyword_learning_enabled = getattr(settings, "AIWAF_ENABLE_KEYWORD_LEARNING", True)
 
     def _get_exempt_keywords(self):
         """Get keywords that should be exempt from blocking"""
@@ -342,9 +346,7 @@ class IPAndKeywordBlockMiddleware:
         path = raw_path.lstrip("/")
         
         # Additional IP-level exemption check
-        from .storage import get_exemption_store
-        exemption_store = get_exemption_store()
-        if exemption_store.is_exempted(ip):
+        if is_ip_exempted(ip):
             return self.get_response(request)
         
         # BlacklistManager handles exemption checking internally
@@ -359,7 +361,7 @@ class IPAndKeywordBlockMiddleware:
         segments = [seg for seg in re.split(r"\W+", path) if len(seg) > 3]
         
         # Smart learning: only learn from suspicious contexts, never from valid paths
-        if not path_exists:  # Only learn from non-existent paths
+        if self.keyword_learning_enabled and not path_exists:  # Only learn from non-existent paths
             for seg in segments:
                 # Only learn if it's not a legitimate keyword AND in a suspicious context
                 if (seg not in self.legitimate_path_keywords and 
@@ -367,7 +369,10 @@ class IPAndKeywordBlockMiddleware:
                     self._is_malicious_context(request, seg)):
                     keyword_store.add_keyword(seg)
         
-        dynamic_top = keyword_store.get_top_keywords(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
+        if self.keyword_learning_enabled:
+            dynamic_top = keyword_store.get_top_keywords(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
+        else:
+            dynamic_top = []
         all_kw = set(STATIC_KW) | set(dynamic_top)
         
         # Enhanced filtering logic
@@ -434,7 +439,7 @@ class IPAndKeywordBlockMiddleware:
                 # For non-existent paths or paths with very strong indicators, proceed with blocking
                 if self._is_malicious_context(request, seg) or not path_exists:
                     # Double-check exemption before blocking
-                    if not exemption_store.is_exempted(ip):
+                    if not is_ip_exempted(ip):
                         BlacklistManager.block(ip, f"Keyword block: {block_reason}")
                         # Check again after blocking attempt (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
@@ -459,9 +464,7 @@ class RateLimitMiddleware:
         ip = get_ip(request)
         
         # Additional IP-level exemption check
-        from .storage import get_exemption_store
-        exemption_store = get_exemption_store()
-        if exemption_store.is_exempted(ip):
+        if is_ip_exempted(ip):
             return self.get_response(request)
             
         key = f"ratelimit:{ip}"
@@ -473,7 +476,7 @@ class RateLimitMiddleware:
         
         if len(timestamps) > self.FLOOD:
             # Double-check exemption before blocking
-            if not exemption_store.is_exempted(ip):
+            if not is_ip_exempted(ip):
                 BlacklistManager.block(ip, "Flood pattern")
                 # Check if actually blocked (exempted IPs won't be blocked)
                 if BlacklistManager.is_blocked(ip):
@@ -504,6 +507,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                     self.min_ai_logs,
                 )
         self.malicious_keywords = set(STATIC_KW)  # Initialize malicious keywords
+        self.keyword_learning_enabled = getattr(settings, "AIWAF_ENABLE_KEYWORD_LEARNING", True)
 
     def _count_log_lines(self, path, limit):
         if limit <= 0:
@@ -634,9 +638,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         ip = get_ip(request)
         
         # Additional IP-level exemption check
-        from .storage import get_exemption_store
-        exemption_store = get_exemption_store()
-        if exemption_store.is_exempted(ip):
+        if is_ip_exempted(ip):
             return None
             
         # BlacklistManager handles exemption checking internally
@@ -653,9 +655,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         ip = get_ip(request)
         
         # Additional IP-level exemption check
-        from .storage import get_exemption_store
-        exemption_store = get_exemption_store()
-        if exemption_store.is_exempted(ip):
+        if is_ip_exempted(ip):
             return response
             
         now = time.time()
@@ -731,7 +731,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                     pass
                 else:
                     # Double-check exemption before blocking
-                    if not exemption_store.is_exempted(ip):
+                    if not is_ip_exempted(ip):
                         BlacklistManager.block(ip, f"AI anomaly + scanning 404s (total:{max_404s}, scanning:{scanning_404s}, kw:{avg_kw_hits:.1f}, burst:{avg_burst:.1f})")
                         # Check if actually blocked (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
@@ -748,7 +748,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                 
                 if kw_hits >= 3 and current_scanning:  # Require both high keywords AND scanning pattern
                     # Double-check exemption before blocking
-                    if not exemption_store.is_exempted(ip):
+                    if not is_ip_exempted(ip):
                         BlacklistManager.block(ip, f"AI anomaly + scanning behavior (kw:{kw_hits}, scanning_path:{request.path})")
                         if BlacklistManager.is_blocked(ip):
                             _log_block(
@@ -764,7 +764,8 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         
         # Only learn keywords from 404 responses (not found) on non-existent paths
         # This prevents learning from 403 (blocked IPs accessing legitimate paths) or other error codes
-        if (response.status_code == 404 and not known_path and not is_exempt_path(request.path)):
+        if (self.keyword_learning_enabled and response.status_code == 404 and
+            not known_path and not is_exempt_path(request.path)):
             keyword_store = get_keyword_store()
             # Get legitimate keywords to avoid learning them
             from .trainer import get_legitimate_keywords
@@ -851,9 +852,7 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
         ip = get_ip(request)
         
         # Additional IP-level exemption check
-        from .storage import get_exemption_store
-        exemption_store = get_exemption_store()
-        if exemption_store.is_exempted(ip):
+        if is_ip_exempted(ip):
             return None
             
         if request.method == "GET":
@@ -868,7 +867,7 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 
                 if obvious_post_only:
                     # This is very likely a POST-only endpoint getting a GET
-                    if not exemption_store.is_exempted(ip):
+                    if not is_ip_exempted(ip):
                         BlacklistManager.block(ip, f"GET to obvious POST-only endpoint: {request.path}")
                         if BlacklistManager.is_blocked(ip):
                             _log_block(request, f"GET to obvious POST-only endpoint: {request.path}", status_code=405)
@@ -886,7 +885,7 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             # ENHANCEMENT: Check if this view actually accepts POST requests
             if not self._view_accepts_method(request, 'POST'):
                 # This view is GET-only, but received a POST - likely malicious
-                if not exemption_store.is_exempted(ip):
+                if not is_ip_exempted(ip):
                     BlacklistManager.block(ip, f"POST to GET-only view: {request.path}")
                     if BlacklistManager.is_blocked(ip):
                         _log_block(request, f"POST to GET-only view: {request.path}", status_code=405)
@@ -922,7 +921,7 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 
                 if time_diff < min_time:
                     # Double-check exemption before blocking
-                    if not exemption_store.is_exempted(ip):
+                    if not is_ip_exempted(ip):
                         BlacklistManager.block(ip, f"Form submitted too quickly ({time_diff:.2f}s)")
                         # Check if actually blocked (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
@@ -934,7 +933,7 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             if request.method not in ['GET', 'POST', 'HEAD', 'OPTIONS']:
                 # Check if this view supports the requested method
                 if not self._view_accepts_method(request, request.method):
-                    if not exemption_store.is_exempted(ip):
+                    if not is_ip_exempted(ip):
                         BlacklistManager.block(ip, f"{request.method} to view that doesn't support it: {request.path}")
                         if BlacklistManager.is_blocked(ip):
                             _log_block(
@@ -962,9 +961,7 @@ class UUIDTamperMiddleware(MiddlewareMixin):
         ip = get_ip(request)
         
         # Additional IP-level exemption check
-        from .storage import get_exemption_store
-        exemption_store = get_exemption_store()
-        if exemption_store.is_exempted(ip):
+        if is_ip_exempted(ip):
             return None
             
         app_label = view_func.__module__.split(".")[0]
@@ -978,7 +975,7 @@ class UUIDTamperMiddleware(MiddlewareMixin):
                     continue
 
         # Double-check exemption before blocking
-        if not exemption_store.is_exempted(ip):
+        if not is_ip_exempted(ip):
             BlacklistManager.block(ip, "UUID tampering")
             # Check if actually blocked (exempted IPs won't be blocked)
             if BlacklistManager.is_blocked(ip):
@@ -1105,9 +1102,7 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         ip = get_ip(request)
         
         # Check IP-level exemption
-        from .storage import get_exemption_store
-        exemption_store = get_exemption_store()
-        if exemption_store.is_exempted(ip):
+        if is_ip_exempted(ip):
             return None
             
         # Skip for static files and common paths
@@ -1235,11 +1230,8 @@ class HeaderValidationMiddleware(MiddlewareMixin):
     
     def _block_request(self, request, ip, reason, path):
         """Block the request and return error response"""
-        from .storage import get_exemption_store
-        exemption_store = get_exemption_store()
-        
         # Double-check exemption before blocking
-        if not exemption_store.is_exempted(ip):
+        if not is_ip_exempted(ip):
             BlacklistManager.block(ip, f"Header validation: {reason}")
             
             # Check if actually blocked (exempted IPs won't be blocked)

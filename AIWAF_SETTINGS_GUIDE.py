@@ -5,6 +5,11 @@
 # AIWAF AI Configuration
 # =============================================================================
 
+# Legacy nested configuration (optional)
+# AIWAF_SETTINGS will be mapped into AIWAF_* values at startup.
+# Example keys supported: RATE_LIMITING, EXEMPTIONS, IP_BLOCKING, KEYWORD_DETECTION, LOGGING.
+# AIWAF_SETTINGS = {}
+
 # Disable AI functionality globally (optional)
 # When set to True, all AI anomaly detection and training will be disabled
 # Keyword learning and basic protection will still work
