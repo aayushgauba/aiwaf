@@ -181,6 +181,9 @@ AIWAF_LEGITIMATE_BOT_PATTERNS = [
 ```bash
 # Train the AI model (after some traffic)
 python manage.py detect_and_train
+```
+
+**Training thresholds:** AI training runs when there are at least `AIWAF_MIN_AI_LOGS` (default 10,000) log lines. If fewer logs are available, AI training is skipped and keyword-only training runs as long as there are at least `AIWAF_MIN_TRAIN_LOGS` (default 50). Set `AIWAF_FORCE_AI_TRAINING = True` to override the AI log threshold.
 
 
 ## Troubleshooting

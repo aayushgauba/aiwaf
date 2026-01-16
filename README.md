@@ -181,6 +181,7 @@ python manage.py aiwaf_logging --recent
   - **Fallback**: Database RequestLog model when files unavailable
   - **Seamless switching** between data sources
   - **Enhanced compatibility** with exemption system
+  - **Minimum log thresholds**: AI training requires `AIWAF_MIN_AI_LOGS` (default 10,000); fewer logs falls back to keyword-only, which still requires `AIWAF_MIN_TRAIN_LOGS` (default 50)
 
 - **Dependency Management**  
   Built-in dependency checker ensures package compatibility:
@@ -560,6 +561,9 @@ AIWAF_MODEL_PATH         = BASE_DIR / "aiwaf" / "resources" / "model.pkl"
 AIWAF_MIN_FORM_TIME      = 1.0        # minimum seconds between GET and POST
 AIWAF_MAX_PAGE_TIME      = 240        # maximum page age before requiring reload (4 minutes)
 AIWAF_AI_CONTAMINATION   = 0.05       # AI anomaly detection sensitivity (5%)
+AIWAF_MIN_AI_LOGS        = 10000      # minimum log lines for AI training
+AIWAF_MIN_TRAIN_LOGS     = 50         # minimum log lines for keyword training
+AIWAF_FORCE_AI_TRAINING  = False      # override AIWAF_MIN_AI_LOGS gate
 AIWAF_RATE_WINDOW        = 10         # seconds
 AIWAF_RATE_MAX           = 20         # max requests per window
 AIWAF_RATE_FLOOD         = 10         # flood threshold

@@ -71,6 +71,11 @@ AIWAF_WINDOW_SECONDS = 60  # seconds to analyze behavior
 # Model path for AI detection
 AIWAF_MODEL_PATH = os.path.join(BASE_DIR, "aiwaf", "resources", "model.pkl")
 
+# Minimum log thresholds for training
+AIWAF_MIN_AI_LOGS = 10000      # minimum log lines for AI training
+AIWAF_MIN_TRAIN_LOGS = 50      # minimum log lines for keyword training
+AIWAF_FORCE_AI_TRAINING = False  # override AIWAF_MIN_AI_LOGS gate
+
 # =============================================================================
 # RECOMMENDED SETTINGS FOR PRODUCTION
 # =============================================================================

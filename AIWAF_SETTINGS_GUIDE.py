@@ -10,6 +10,12 @@
 # Keyword learning and basic protection will still work
 AIWAF_DISABLE_AI = False  # Set to True to disable AI features
 
+# Minimum log thresholds for training
+# AI model training only runs when enough log lines are available
+AIWAF_MIN_AI_LOGS = 10000       # Minimum logs required for AI model training
+AIWAF_MIN_TRAIN_LOGS = 50       # Minimum logs required for keyword learning
+AIWAF_FORCE_AI_TRAINING = False # Override AIWAF_MIN_AI_LOGS gate
+
 # =============================================================================
 # AIWAF Core Settings
 # =============================================================================
