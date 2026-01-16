@@ -3,8 +3,11 @@
 import time
 import re
 import os
+import glob
+import gzip
 import warnings
 import logging
+from datetime import datetime, timedelta
 from collections import defaultdict
 from django.utils.deprecation import MiddlewareMixin
 from django.http import JsonResponse
@@ -489,7 +492,61 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         super().__init__(get_response)
         # Use the safely loaded global MODEL instead of loading again
         self.model = MODEL
+        self.min_ai_logs = getattr(settings, "AIWAF_MIN_AI_LOGS", 10000)
+        self.ai_logs_sufficient, self.ai_log_count = self._check_ai_log_sufficiency()
+        if self.model is not None and not self.ai_logs_sufficient:
+            self.model = None
+            if logger.isEnabledFor(logging.INFO):
+                count_display = self.ai_log_count if self.ai_log_count is not None else "unknown"
+                logger.info(
+                    "AIWAF AI model disabled due to insufficient logs (%s/%s).",
+                    count_display,
+                    self.min_ai_logs,
+                )
         self.malicious_keywords = set(STATIC_KW)  # Initialize malicious keywords
+
+    def _count_log_lines(self, path, limit):
+        if limit <= 0:
+            return 0
+        opener = gzip.open if path.endswith(".gz") else open
+        count = 0
+        try:
+            with opener(path, "rt", errors="ignore") as f:
+                for _ in f:
+                    count += 1
+                    if count >= limit:
+                        break
+        except OSError:
+            return 0
+        return count
+
+    def _check_ai_log_sufficiency(self):
+        if self.min_ai_logs <= 0:
+            return True, None
+
+        count = 0
+        log_path = getattr(settings, "AIWAF_ACCESS_LOG", None)
+
+        if log_path and os.path.exists(log_path):
+            count += self._count_log_lines(log_path, self.min_ai_logs - count)
+            if count >= self.min_ai_logs:
+                return True, count
+
+            for path in sorted(glob.glob(f"{log_path}.*")):
+                count += self._count_log_lines(path, self.min_ai_logs - count)
+                if count >= self.min_ai_logs:
+                    return True, count
+
+        try:
+            from .models import RequestLog
+            cutoff_date = datetime.now() - timedelta(days=30)
+            db_count = RequestLog.objects.filter(timestamp__gte=cutoff_date).count()
+            count = max(count, db_count)
+        except Exception as exc:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("AIWAF log sufficiency check failed: %s", exc)
+
+        return count >= self.min_ai_logs, count
 
     def _is_malicious_context(self, request, keyword):
         """

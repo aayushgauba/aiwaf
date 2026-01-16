@@ -17,6 +17,8 @@ from .blacklist_manager import BlacklistManager
 # ─────────── Configuration ───────────
 LOG_PATH   = getattr(settings, 'AIWAF_ACCESS_LOG', None)
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "resources", "model.pkl")
+MIN_AI_LOGS = getattr(settings, "AIWAF_MIN_AI_LOGS", 10000)
+MIN_TRAIN_LOGS = getattr(settings, "AIWAF_MIN_TRAIN_LOGS", 50)
 
 STATIC_KW  = [".php", "xmlrpc", "wp-", ".env", ".git", ".bak", "conflg", "shell", "filemanager"]
 STATUS_IDX = ["200", "403", "404", "500"]
@@ -406,11 +408,12 @@ def _is_malicious_context_trainer(path: str, keyword: str, status: str = "404") 
     return any(malicious_indicators)
 
 
-def train(disable_ai=False) -> None:
+def train(disable_ai=False, force_ai=False) -> None:
     """Enhanced training with improved keyword filtering and exemption handling
     
     Args:
         disable_ai (bool): If True, skip AI model training and only do keyword learning
+        force_ai (bool): If True, train AI model even with fewer than MIN_AI_LOGS
     """
     print("Starting AIWAF enhanced training...")
     
@@ -450,6 +453,10 @@ def train(disable_ai=False) -> None:
                 ip_404_login[rec["ip"]] += 1  # Login path 404s
             else:
                 ip_404[rec["ip"]] += 1  # Non-login path 404s
+
+    if len(parsed) < MIN_TRAIN_LOGS:
+        print(f"Not enough log lines ({len(parsed)}) for training. Need at least {MIN_TRAIN_LOGS}.")
+        return
 
     # 3. Optional immediate 404‐flood blocking (only for non-login paths)
     for ip, count in ip_404.items():
@@ -493,6 +500,11 @@ def train(disable_ai=False) -> None:
 
     # AI Model Training (optional)
     blocked_count = 0
+    force_ai = force_ai or getattr(settings, "AIWAF_FORCE_AI_TRAINING", False)
+    if not disable_ai and not force_ai and len(parsed) < MIN_AI_LOGS:
+        print(f"AI training skipped: {len(parsed)} log lines < {MIN_AI_LOGS}. Falling back to keyword-only.")
+        disable_ai = True
+
     if not disable_ai:
         print(" Training AI anomaly detection model...")
         
