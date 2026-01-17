@@ -2,11 +2,27 @@ import os
 import glob
 import gzip
 import re
-import joblib
+try:
+    import joblib
+    JOBLIB_AVAILABLE = True
+except ImportError:
+    joblib = None
+    JOBLIB_AVAILABLE = False
 from datetime import datetime
 from collections import defaultdict, Counter
-import pandas as pd
-from sklearn.ensemble import IsolationForest
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    pd = None
+    PANDAS_AVAILABLE = False
+
+try:
+    from sklearn.ensemble import IsolationForest
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    IsolationForest = None
+    SKLEARN_AVAILABLE = False
 from django.conf import settings
 from django.apps import apps
 from django.db.models import F
@@ -14,6 +30,7 @@ from .utils import is_exempt_path
 from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
 from .blacklist_manager import BlacklistManager
 from .settings_compat import apply_legacy_settings
+from .model_store import save_model_data
 
 apply_legacy_settings()
 
@@ -509,6 +526,14 @@ def train(disable_ai=False, force_ai=False) -> None:
         disable_ai = True
 
     if not disable_ai:
+        if not JOBLIB_AVAILABLE:
+            print("AI model training skipped - joblib not available.")
+            disable_ai = True
+        elif not PANDAS_AVAILABLE or not SKLEARN_AVAILABLE:
+            print("AI model training skipped - pandas or scikit-learn not available.")
+            disable_ai = True
+
+    if not disable_ai:
         print(" Training AI anomaly detection model...")
         
         try:
@@ -526,21 +551,29 @@ def train(disable_ai=False, force_ai=False) -> None:
                 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
                 model.fit(X)
 
-            os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-            
-            # Save model with version metadata
             import sklearn
             from django.utils import timezone as django_timezone
-            model_data = {
-                'model': model,
-                'sklearn_version': sklearn.__version__,
-                'created_at': str(django_timezone.now()),
-                'feature_count': len(feature_cols),
-                'samples_count': len(X)
+
+            metadata = {
+                "sklearn_version": sklearn.__version__,
+                "created_at": str(django_timezone.now()),
+                "feature_count": len(feature_cols),
+                "samples_count": len(X),
             }
-            joblib.dump(model_data, MODEL_PATH)
-            print(f"Model trained on {len(X)} samples → {MODEL_PATH}")
-            print(f"Created with scikit-learn v{sklearn.__version__}")
+            
+            # Save model with version metadata
+            model_data = {"model": model, **metadata}
+            if save_model_data(model_data, metadata=metadata):
+                print(f"Model trained on {len(X)} samples")
+            else:
+                fallback = getattr(settings, "AIWAF_MODEL_STORAGE_FALLBACK", True)
+                if fallback:
+                    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+                    joblib.dump(model_data, MODEL_PATH)
+                    print(f"Model trained on {len(X)} samples → {MODEL_PATH}")
+                else:
+                    print("Model trained, but saving failed (storage fallback disabled).")
+            print(f"Created with scikit-learn v{metadata['sklearn_version']}")
             
             # Check for anomalies and intelligently decide which IPs to block
             preds = model.predict(X)
@@ -591,7 +624,6 @@ def train(disable_ai=False, force_ai=False) -> None:
             print("   Continuing with keyword learning only...")
     else:
         print("AI model training skipped (disabled)")
-        df = pd.DataFrame(feature_dicts)  # Still need df for some operations
 
     keyword_learning_enabled = getattr(settings, "AIWAF_ENABLE_KEYWORD_LEARNING", True)
     if keyword_learning_enabled:

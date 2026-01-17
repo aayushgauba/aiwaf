@@ -20,13 +20,17 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "Django>=3.2",
-        "numpy>=1.21",
-        "pandas>=1.3",
-        "scikit-learn>=1.0,<2.0",
-        "joblib>=1.1",
         "packaging>=21.0",
         "requests>=2.25.0",
     ],
+    extras_require={
+        "learning": [
+            "numpy>=1.21",
+            "pandas>=1.3",
+            "scikit-learn>=1.0,<2.0",
+            "joblib>=1.1",
+        ],
+    },
     include_package_data=True,
     package_data={
         # include your pretrained model and any JSON resources

@@ -38,6 +38,7 @@ from .models import IPExemption
 from .utils import is_exempt, get_ip, is_ip_exempted, is_exempt_path
 from .storage import get_keyword_store
 from .settings_compat import apply_legacy_settings
+from .model_store import load_model_data
 
 apply_legacy_settings()
 
@@ -87,7 +88,9 @@ def load_model_safely():
         # Suppress sklearn version warnings temporarily
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.base")
-            model_data = joblib.load(MODEL_PATH)
+            model_data = load_model_data()
+            if model_data is None:
+                raise ValueError("no model data available")
             
             # Handle both old format (direct model) and new format (with metadata)
             if isinstance(model_data, dict) and 'model' in model_data:

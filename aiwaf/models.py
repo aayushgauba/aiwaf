@@ -71,3 +71,18 @@ class RequestLog(models.Model):
     
     def __str__(self):
         return f"{self.ip_address} {self.method} {self.path} - {self.status_code}"
+
+
+class AIModelArtifact(models.Model):
+    name = models.CharField(max_length=100, unique=True, default="default")
+    data = models.BinaryField()
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "AI Model Artifact"
+        verbose_name_plural = "AI Model Artifacts"
+
+    def __str__(self):
+        return f"{self.name} ({self.updated_at:%Y-%m-%d %H:%M:%S})"

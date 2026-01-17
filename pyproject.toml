@@ -8,10 +8,14 @@ license = {text = "MIT"}
 authors = [{ name = "Aayush Gauba", email = "gauba.aayush@gmail.com" }]
 dependencies = [
     "Django>=3.2",
+    "packaging>=21.0",
+    "requests>=2.25.0"
+]
+
+[project.optional-dependencies]
+learning = [
     "numpy>=1.21",
     "pandas>=1.3",
     "scikit-learn>=1.0,<2.0",
-    "joblib>=1.1",
-    "packaging>=21.0",
-    "requests>=2.25.0"
+    "joblib>=1.1"
 ]

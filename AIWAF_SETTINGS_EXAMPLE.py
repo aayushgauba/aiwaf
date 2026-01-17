@@ -71,6 +71,12 @@ AIWAF_WINDOW_SECONDS = 60  # seconds to analyze behavior
 # Model path for AI detection
 AIWAF_MODEL_PATH = os.path.join(BASE_DIR, "aiwaf", "resources", "model.pkl")
 
+# Model storage configuration
+AIWAF_MODEL_STORAGE = "file"  # file | db | cache
+AIWAF_MODEL_CACHE_KEY = "aiwaf:model"
+AIWAF_MODEL_CACHE_TIMEOUT = None
+AIWAF_MODEL_STORAGE_FALLBACK = True
+
 # Minimum log thresholds for training
 AIWAF_MIN_AI_LOGS = 10000      # minimum log lines for AI training
 AIWAF_MIN_TRAIN_LOGS = 50      # minimum log lines for keyword training

@@ -1,5 +1,12 @@
-import numpy as np
-import pandas as pd
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 from django.conf import settings
 from django.utils import timezone
 import os
@@ -72,13 +79,15 @@ class ModelFeatureStore:
         """Get all feature data as DataFrame"""
         _import_models()
         if FeatureSample is None:
-            return pd.DataFrame()
+            return pd.DataFrame() if pd is not None else []
             
         try:
             queryset = FeatureSample.objects.all().values(
                 'ip', 'path_len', 'kw_hits', 'resp_time', 
                 'status_idx', 'burst_count', 'total_404', 'label'
             )
+            if pd is None:
+                return list(queryset)
             df = pd.DataFrame(list(queryset))
             if df.empty:
                 return df

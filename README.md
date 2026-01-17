@@ -558,6 +558,10 @@ python manage.py aiwaf_logging --clear     # Clear log files
 
 ```python
 AIWAF_MODEL_PATH         = BASE_DIR / "aiwaf" / "resources" / "model.pkl"
+AIWAF_MODEL_STORAGE      = "file"    # file | db | cache
+AIWAF_MODEL_CACHE_KEY    = "aiwaf:model"
+AIWAF_MODEL_CACHE_TIMEOUT = None     # seconds; None for no expiry
+AIWAF_MODEL_STORAGE_FALLBACK = True  # fallback to file when db/cache unavailable
 AIWAF_MIN_FORM_TIME      = 1.0        # minimum seconds between GET and POST
 AIWAF_MAX_PAGE_TIME      = 240        # maximum page age before requiring reload (4 minutes)
 AIWAF_AI_CONTAMINATION   = 0.05       # AI anomaly detection sensitivity (5%)
@@ -594,6 +598,19 @@ AIWAF_DYNAMIC_TOP_N = 10        # Number of dynamic keywords to learn (default: 
 ```
 
 > **Note:** You no longer need to define `AIWAF_MALICIOUS_KEYWORDS` or `AIWAF_STATUS_CODES` — they evolve dynamically.
+
+**Model storage options:**
+- `file` (default) writes to `AIWAF_MODEL_PATH`
+- `db` stores the model in the `AIModelArtifact` table (run migrations)
+- `cache` stores the model in your Django cache backend
+
+### Optional Learning Dependencies
+
+To install AI training dependencies:
+
+```bash
+pip install "aiwaf[learning]"
+```
 
 ### Legacy `AIWAF_SETTINGS` Compatibility
 

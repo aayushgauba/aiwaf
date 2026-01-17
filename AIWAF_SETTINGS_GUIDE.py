@@ -21,6 +21,13 @@ AIWAF_MIN_AI_LOGS = 10000       # Minimum logs required for AI model training
 AIWAF_MIN_TRAIN_LOGS = 50       # Minimum logs required for keyword learning
 AIWAF_FORCE_AI_TRAINING = False # Override AIWAF_MIN_AI_LOGS gate
 
+# Model storage configuration
+# Use "db" to store model in the database, or "cache" for cache backends.
+AIWAF_MODEL_STORAGE = "file"    # file | db | cache
+AIWAF_MODEL_CACHE_KEY = "aiwaf:model"
+AIWAF_MODEL_CACHE_TIMEOUT = None
+AIWAF_MODEL_STORAGE_FALLBACK = True
+
 # =============================================================================
 # AIWAF Core Settings
 # =============================================================================
