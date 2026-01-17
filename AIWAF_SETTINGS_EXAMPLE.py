@@ -79,11 +79,7 @@ AIWAF_MODEL_STORAGE_FALLBACK = True
 
 # Geo-blocking (optional, requires aiwaf[geoblock])
 AIWAF_GEO_BLOCK_ENABLED = False
-AIWAF_GEO_PROVIDER = "maxmind"  # maxmind | ipinfo
-AIWAF_GEOIP_DB_PATH = "geolock/ipinfo_lite.mmdb"
-AIWAF_GEOIP_TOKEN = ""
-AIWAF_GEOIP_ENDPOINT = "https://ipinfo.io"
-AIWAF_GEOIP_TIMEOUT = 2.0
+AIWAF_GEOIP_DB_PATH = "aiwaf/geolock/ipinfo_lite.mmdb"
 AIWAF_GEO_BLOCK_COUNTRIES = ["CN", "RU"]
 AIWAF_GEO_ALLOW_COUNTRIES = []
 AIWAF_GEO_CACHE_SECONDS = 3600

@@ -432,6 +432,14 @@ def _is_malicious_context_trainer(path: str, keyword: str, status: str = "404") 
 def _print_geoip_summary(ips):
     if not ips:
         return
+    db_path = getattr(
+        settings,
+        "AIWAF_GEOIP_DB_PATH",
+        os.path.join(os.path.dirname(__file__), "geolock", "ipinfo_lite.mmdb"),
+    )
+    if not db_path or not os.path.exists(db_path):
+        print("GeoIP summary skipped: AIWAF_GEOIP_DB_PATH not set or file missing.")
+        return
 
     counts = Counter()
     unknown = 0
