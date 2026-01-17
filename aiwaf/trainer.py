@@ -31,7 +31,7 @@ from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
 from .blacklist_manager import BlacklistManager
 from .settings_compat import apply_legacy_settings
 from .model_store import save_model_data
-from .geoip import lookup_country
+from .geoip import lookup_country, lookup_country_name
 
 apply_legacy_settings()
 
@@ -444,9 +444,9 @@ def _print_geoip_summary(ips, title):
     counts = Counter()
     unknown = 0
     for ip in ips:
-        code = lookup_country(ip, cache_prefix=None, cache_seconds=None)
-        if code:
-            counts[code.upper()] += 1
+        name = lookup_country_name(ip, cache_prefix=None, cache_seconds=None)
+        if name:
+            counts[name] += 1
         else:
             unknown += 1
 

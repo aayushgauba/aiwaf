@@ -2,7 +2,7 @@ from collections import Counter
 
 from django.core.management.base import BaseCommand
 
-from aiwaf.geoip import lookup_country
+from aiwaf.geoip import lookup_country_name
 from aiwaf.trainer import _read_all_logs, _parse
 
 
@@ -52,9 +52,9 @@ class Command(BaseCommand):
         unknown = 0
 
         for ip, count in ip_counts.items():
-            code = lookup_country(ip, cache_prefix="aiwaf:geo:summary:", cache_seconds=3600)
-            if code:
-                country_counts[code.upper()] += count
+            name = lookup_country_name(ip, cache_prefix="aiwaf:geo:summary:", cache_seconds=3600)
+            if name:
+                country_counts[name] += count
             else:
                 unknown += count
 
