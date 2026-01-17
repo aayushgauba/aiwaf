@@ -429,7 +429,7 @@ def _is_malicious_context_trainer(path: str, keyword: str, status: str = "404") 
     return any(malicious_indicators)
 
 
-def _print_geoip_summary(ips):
+def _print_geoip_summary(ips, title):
     if not ips:
         return
     db_path = getattr(
@@ -454,11 +454,24 @@ def _print_geoip_summary(ips):
         return
 
     top = counts.most_common(10)
-    print("GeoIP summary for anomalous IPs (top 10):")
+    print(title)
     for code, cnt in top:
         print(f"  - {code}: {cnt}")
     if unknown:
         print(f"  - UNKNOWN: {unknown}")
+
+
+def _print_geoip_blocklist_summary():
+    blacklist_store = get_blacklist_store()
+    try:
+        blocked_ips = blacklist_store.get_all_blocked_ips()
+    except Exception:
+        blocked_ips = []
+
+    if not blocked_ips:
+        return
+
+    _print_geoip_summary(blocked_ips, "GeoIP summary for blocked IPs (top 10):")
 
 
 def train(disable_ai=False, force_ai=False) -> None:
@@ -614,7 +627,7 @@ def train(disable_ai=False, force_ai=False) -> None:
             
             if anomalous_ips:
                 print(f"Detected {len(anomalous_ips)} potentially anomalous IPs during training")
-                _print_geoip_summary(anomalous_ips)
+                _print_geoip_summary(anomalous_ips, "GeoIP summary for anomalous IPs (top 10):")
                 
                 exemption_store = get_exemption_store()
                 blacklist_store = get_blacklist_store()
@@ -660,9 +673,10 @@ def train(disable_ai=False, force_ai=False) -> None:
         print("AI model training skipped (disabled)")
 
     keyword_learning_enabled = getattr(settings, "AIWAF_ENABLE_KEYWORD_LEARNING", True)
+    filtered_tokens = []
+    legitimate_keywords = get_legitimate_keywords()
     if keyword_learning_enabled:
         tokens = Counter()
-        legitimate_keywords = get_legitimate_keywords()
         
         print(f"Learning keywords from {len(parsed)} parsed requests...")
         
@@ -683,7 +697,6 @@ def train(disable_ai=False, force_ai=False) -> None:
         top_tokens = tokens.most_common(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
         
         # Additional filtering: only add keywords that appear suspicious enough AND in malicious context
-        filtered_tokens = []
         learned_from_paths = []  # Track which paths we learned from
         
         for kw, cnt in top_tokens:
@@ -714,7 +727,9 @@ def train(disable_ai=False, force_ai=False) -> None:
         print(f"Used malicious context analysis to filter out false positives.")
     else:
         print("Keyword learning disabled via AIWAF_ENABLE_KEYWORD_LEARNING.")
-    
+
+    _print_geoip_blocklist_summary()
+
     # Training summary
     print("\n" + "="*60)
     if disable_ai:
