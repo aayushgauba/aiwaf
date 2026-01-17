@@ -523,10 +523,20 @@ class GeoBlockMiddleware(MiddlewareMixin):
             return None
 
         country = country.upper()
+        dynamic_block = []
+        try:
+            from .models import GeoBlockedCountry
+            dynamic_block = list(
+                GeoBlockedCountry.objects.values_list("country_code", flat=True)
+            )
+        except Exception:
+            dynamic_block = []
+        dynamic_block = [c.upper() for c in dynamic_block]
+
         if self.allow_countries:
             should_block = country not in self.allow_countries
         else:
-            should_block = country in self.block_countries
+            should_block = country in (self.block_countries + dynamic_block)
 
         if should_block:
             BlacklistManager.block(ip, f"Geo-blocked country: {country}")

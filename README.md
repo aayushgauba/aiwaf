@@ -463,6 +463,14 @@ pip install "aiwaf[geoblock]"
 
 Geo-blocking uses the bundled `.mmdb` file by default. Set `AIWAF_GEOIP_DB_PATH` to override.
 
+**Dynamic country blocking (database-backed):**
+
+```bash
+python manage.py geo_block_country list
+python manage.py geo_block_country add US
+python manage.py geo_block_country remove US
+```
+
 ### Legacy `AIWAF_SETTINGS` Compatibility
 
 If you already use the nested `AIWAF_SETTINGS` dict, AI-WAF will map common keys into the flat `AIWAF_*` settings at startup (without overriding explicit `AIWAF_*` values). Supported mappings include `RATE_LIMITING`, `EXEMPTIONS.PATHS`, `IP_BLOCKING.ENABLED`, `KEYWORD_DETECTION` (custom patterns + sensitivity), and `LOGGING.ENABLED`.

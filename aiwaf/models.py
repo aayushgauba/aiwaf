@@ -86,3 +86,16 @@ class AIModelArtifact(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.updated_at:%Y-%m-%d %H:%M:%S})"
+
+
+class GeoBlockedCountry(models.Model):
+    country_code = models.CharField(max_length=2, unique=True, db_index=True)
+    reason = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Geo Blocked Country"
+        verbose_name_plural = "Geo Blocked Countries"
+
+    def __str__(self):
+        return self.country_code
