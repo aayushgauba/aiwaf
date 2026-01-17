@@ -30,8 +30,8 @@ AIWAF_MODEL_STORAGE_FALLBACK = True
 
 # Geo-blocking (optional, requires aiwaf[geoblock])
 AIWAF_GEO_BLOCK_ENABLED = False
-AIWAF_GEO_PROVIDER = "ipinfo"  # maxmind | ipinfo
-AIWAF_GEOIP_DB_PATH = "/path/to/GeoLite2-Country.mmdb"
+AIWAF_GEO_PROVIDER = "maxmind"  # maxmind | ipinfo
+AIWAF_GEOIP_DB_PATH = "geolock/ipinfo_lite.mmdb"
 AIWAF_GEOIP_TOKEN = ""
 AIWAF_GEOIP_ENDPOINT = "https://ipinfo.io"
 AIWAF_GEOIP_TIMEOUT = 2.0

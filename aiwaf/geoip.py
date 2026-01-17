@@ -95,7 +95,7 @@ def _lookup_ipinfo(ip, endpoint, token, timeout):
 
 
 def lookup_country(ip, cache_prefix=None, cache_seconds=3600):
-    provider = _normalize_provider(getattr(settings, "AIWAF_GEO_PROVIDER", "ipinfo"))
+    provider = _normalize_provider(getattr(settings, "AIWAF_GEO_PROVIDER", "maxmind"))
     cache_key = None
     if cache_prefix:
         cache_key = f"{cache_prefix}{provider}:{ip}"

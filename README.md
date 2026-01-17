@@ -409,8 +409,8 @@ AIWAF_FILE_EXTENSIONS    = [".php", ".asp", ".jsp"]
 
 # Geo-blocking (optional, requires aiwaf[geoblock])
 AIWAF_GEO_BLOCK_ENABLED  = False
-AIWAF_GEO_PROVIDER       = "ipinfo"  # maxmind | ipinfo
-AIWAF_GEOIP_DB_PATH      = "/path/to/GeoLite2-Country.mmdb"
+AIWAF_GEO_PROVIDER       = "maxmind"  # maxmind | ipinfo
+AIWAF_GEOIP_DB_PATH      = "geolock/ipinfo_lite.mmdb"
 AIWAF_GEOIP_TOKEN        = ""
 AIWAF_GEOIP_ENDPOINT     = "https://ipinfo.io"
 AIWAF_GEOIP_TIMEOUT      = 2.0
@@ -466,7 +466,7 @@ pip install "aiwaf[geoblock]"
 ```
 
 Provider options:
-- `maxmind`: use a local GeoLite2 `.mmdb` file (set `AIWAF_GEOIP_DB_PATH`)
+- `maxmind`: use a local `.mmdb` file (default: `geolock/ipinfo_lite.mmdb`)
 - `ipinfo`: use the ipinfo.io API (set `AIWAF_GEOIP_TOKEN`)
 
 ### Legacy `AIWAF_SETTINGS` Compatibility
