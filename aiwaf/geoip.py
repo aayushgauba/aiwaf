@@ -33,6 +33,10 @@ def _cache_set(cache_key, value, timeout):
 def _extract_country_from_raw(raw):
     if not isinstance(raw, dict):
         return None
+    for key in ("country_code", "country_code2", "country_code3"):
+        code = raw.get(key)
+        if code:
+            return code
     country = raw.get("country")
     if isinstance(country, dict):
         code = country.get("iso_code")
@@ -40,10 +44,6 @@ def _extract_country_from_raw(raw):
             return code
     if isinstance(country, str) and len(country) >= 2:
         return country
-    for key in ("country_code", "country_code2", "country_code3"):
-        code = raw.get(key)
-        if code:
-            return code
     return None
 
 
@@ -72,7 +72,11 @@ def _lookup_maxmind(ip, db_path):
             pass
 
         try:
-            raw = reader.get(ip)
+            if hasattr(reader, "get"):
+                raw = reader.get(ip)
+            else:
+                raw_reader = getattr(reader, "_db_reader", None)
+                raw = raw_reader.get(ip) if raw_reader is not None else None
             code = _extract_country_from_raw(raw)
             if code:
                 return code
@@ -91,11 +95,11 @@ def _lookup_maxmind(ip, db_path):
 
 
 def lookup_country(ip, cache_prefix=None, cache_seconds=3600):
-    db_path = getattr(
-        settings,
-        "AIWAF_GEOIP_DB_PATH",
-        os.path.join(os.path.dirname(__file__), "geolock", "ipinfo_lite.mmdb"),
-    )
+    default_path = os.path.join(os.path.dirname(__file__), "geolock", "ipinfo_lite.mmdb")
+    if getattr(settings, "configured", False):
+        db_path = getattr(settings, "AIWAF_GEOIP_DB_PATH", default_path)
+    else:
+        db_path = default_path
     cache_key = None
     if cache_prefix:
         cache_key = f"{cache_prefix}{ip}"
