@@ -30,6 +30,23 @@ def _cache_set(cache_key, value, timeout):
         return
 
 
+def _extract_country_from_raw(raw):
+    if not isinstance(raw, dict):
+        return None
+    country = raw.get("country")
+    if isinstance(country, dict):
+        code = country.get("iso_code")
+        if code:
+            return code
+    if isinstance(country, str) and len(country) >= 2:
+        return country
+    for key in ("country_code", "country_code2", "country_code3"):
+        code = raw.get(key)
+        if code:
+            return code
+    return None
+
+
 def _lookup_maxmind(ip, db_path):
     if not GEOIP_AVAILABLE or not db_path:
         return None
@@ -38,9 +55,29 @@ def _lookup_maxmind(ip, db_path):
     reader = None
     try:
         reader = GeoIPReader(db_path)
-        response = reader.country(ip)
-        code = getattr(response.country, "iso_code", None)
-        return code
+        try:
+            response = reader.country(ip)
+            code = getattr(response.country, "iso_code", None)
+            if code:
+                return code
+        except Exception:
+            pass
+
+        try:
+            response = reader.city(ip)
+            code = getattr(response.country, "iso_code", None)
+            if code:
+                return code
+        except Exception:
+            pass
+
+        try:
+            raw = reader.get(ip)
+            code = _extract_country_from_raw(raw)
+            if code:
+                return code
+        except Exception:
+            return None
     except AddressNotFoundError:
         return None
     except Exception:
