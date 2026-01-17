@@ -30,6 +30,9 @@ setup(
             "scikit-learn>=1.0,<2.0",
             "joblib>=1.1",
         ],
+        "geoblock": [
+            "geoip2>=4.0",
+        ],
     },
     include_package_data=True,
     package_data={

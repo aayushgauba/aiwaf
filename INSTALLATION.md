@@ -189,6 +189,12 @@ python manage.py detect_and_train
 pip install "aiwaf[learning]"
 ```
 
+**Optional geo-blocking dependencies:**
+
+```bash
+pip install "aiwaf[geoblock]"
+```
+
 **Training thresholds:** AI training runs when there are at least `AIWAF_MIN_AI_LOGS` (default 10,000) log lines. If fewer logs are available, AI training is skipped and keyword-only training runs as long as there are at least `AIWAF_MIN_TRAIN_LOGS` (default 50). Set `AIWAF_FORCE_AI_TRAINING = True` to override the AI log threshold.
 
 

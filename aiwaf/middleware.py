@@ -32,6 +32,8 @@ except ImportError:
     joblib = None
     JOBLIB_AVAILABLE = False
 
+from .geoip import lookup_country
+
 from .trainer import STATIC_KW, STATUS_IDX, path_exists_in_django
 from .blacklist_manager import BlacklistManager
 from .models import IPExemption
@@ -488,6 +490,50 @@ class RateLimitMiddleware:
         if len(timestamps) > self.MAX:
             return JsonResponse({"error": "too_many_requests"}, status=429)
         return self.get_response(request)
+
+
+class GeoBlockMiddleware(MiddlewareMixin):
+    def __init__(self, get_response=None):
+        super().__init__(get_response)
+        self.enabled = getattr(settings, "AIWAF_GEO_BLOCK_ENABLED", False)
+        self.allow_countries = [
+            c.upper() for c in getattr(settings, "AIWAF_GEO_ALLOW_COUNTRIES", [])
+        ]
+        self.block_countries = [
+            c.upper() for c in getattr(settings, "AIWAF_GEO_BLOCK_COUNTRIES", [])
+        ]
+        self.db_path = getattr(settings, "AIWAF_GEOIP_DB_PATH", None)
+        self.cache_seconds = getattr(settings, "AIWAF_GEO_CACHE_SECONDS", 3600)
+        self.cache_prefix = getattr(settings, "AIWAF_GEO_CACHE_PREFIX", "aiwaf:geo:")
+
+    def process_request(self, request):
+        if not self.enabled:
+            return None
+        if not (self.allow_countries or self.block_countries):
+            return None
+        if is_exempt(request):
+            return None
+
+        ip = get_ip(request)
+        if is_ip_exempted(ip):
+            return None
+
+        country = lookup_country(ip, cache_prefix=self.cache_prefix, cache_seconds=self.cache_seconds)
+        if not country:
+            return None
+
+        country = country.upper()
+        if self.allow_countries:
+            should_block = country not in self.allow_countries
+        else:
+            should_block = country in self.block_countries
+
+        if should_block:
+            BlacklistManager.block(ip, f"Geo-blocked country: {country}")
+            if BlacklistManager.is_blocked(ip):
+                _log_block(request, f"Geo-blocked country: {country}", status_code=403)
+                return JsonResponse({"error": "blocked"}, status=403)
+        return None
 
 
 class AIAnomalyMiddleware(MiddlewareMixin):

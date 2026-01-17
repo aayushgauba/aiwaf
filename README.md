@@ -462,6 +462,7 @@ This will ensure the IP is never blocked by AI‑WAF. You can also manage exempt
 
 - **Daily Retraining**  
   Reads rotated logs, auto‑blocks 404 floods, retrains the IsolationForest, updates `model.pkl`, and evolves the keyword DB.
+  If GeoIP is enabled, it also prints a country summary for anomalous IPs.
 
 ---
 
@@ -573,6 +574,18 @@ AIWAF_RATE_MAX           = 20         # max requests per window
 AIWAF_RATE_FLOOD         = 10         # flood threshold
 AIWAF_WINDOW_SECONDS     = 60         # anomaly detection window
 AIWAF_FILE_EXTENSIONS    = [".php", ".asp", ".jsp"]
+
+# Geo-blocking (optional, requires aiwaf[geoblock])
+AIWAF_GEO_BLOCK_ENABLED  = False
+AIWAF_GEO_PROVIDER       = "ipinfo"  # maxmind | ipinfo
+AIWAF_GEOIP_DB_PATH      = "/path/to/GeoLite2-Country.mmdb"
+AIWAF_GEOIP_TOKEN        = ""
+AIWAF_GEOIP_ENDPOINT     = "https://ipinfo.io"
+AIWAF_GEOIP_TIMEOUT      = 2.0
+AIWAF_GEO_BLOCK_COUNTRIES = ["CN", "RU"]
+AIWAF_GEO_ALLOW_COUNTRIES = []        # If set, only these countries are allowed
+AIWAF_GEO_CACHE_SECONDS  = 3600
+AIWAF_GEO_CACHE_PREFIX   = "aiwaf:geo:"
 AIWAF_EXEMPT_PATHS = [          # optional but highly recommended
     "/favicon.ico",
     "/robots.txt",
@@ -612,6 +625,18 @@ To install AI training dependencies:
 pip install "aiwaf[learning]"
 ```
 
+### Optional GeoIP Dependencies
+
+To enable geo-blocking support:
+
+```bash
+pip install "aiwaf[geoblock]"
+```
+
+Provider options:
+- `maxmind`: use a local GeoLite2 `.mmdb` file (set `AIWAF_GEOIP_DB_PATH`)
+- `ipinfo`: use the ipinfo.io API (set `AIWAF_GEOIP_TOKEN`)
+
 ### Legacy `AIWAF_SETTINGS` Compatibility
 
 If you already use the nested `AIWAF_SETTINGS` dict, AI-WAF will map common keys into the flat `AIWAF_*` settings at startup (without overriding explicit `AIWAF_*` values). Supported mappings include `RATE_LIMITING`, `EXEMPTIONS.PATHS`, `IP_BLOCKING.ENABLED`, `KEYWORD_DETECTION` (custom patterns + sensitivity), and `LOGGING.ENABLED`.
@@ -624,6 +649,7 @@ Add in **this** order to your `MIDDLEWARE` list:
 
 ```python
 MIDDLEWARE = [
+    "aiwaf.middleware.GeoBlockMiddleware",
     "aiwaf.middleware.IPAndKeywordBlockMiddleware",
     "aiwaf.middleware.RateLimitMiddleware", 
     "aiwaf.middleware.AIAnomalyMiddleware",

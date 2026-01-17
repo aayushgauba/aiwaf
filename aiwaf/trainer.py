@@ -31,6 +31,7 @@ from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
 from .blacklist_manager import BlacklistManager
 from .settings_compat import apply_legacy_settings
 from .model_store import save_model_data
+from .geoip import lookup_country
 
 apply_legacy_settings()
 
@@ -428,6 +429,30 @@ def _is_malicious_context_trainer(path: str, keyword: str, status: str = "404") 
     return any(malicious_indicators)
 
 
+def _print_geoip_summary(ips):
+    if not ips:
+        return
+
+    counts = Counter()
+    unknown = 0
+    for ip in ips:
+        code = lookup_country(ip, cache_prefix=None, cache_seconds=None)
+        if code:
+            counts[code.upper()] += 1
+        else:
+            unknown += 1
+
+    if not counts and not unknown:
+        return
+
+    top = counts.most_common(10)
+    print("GeoIP summary for anomalous IPs (top 10):")
+    for code, cnt in top:
+        print(f"  - {code}: {cnt}")
+    if unknown:
+        print(f"  - UNKNOWN: {unknown}")
+
+
 def train(disable_ai=False, force_ai=False) -> None:
     """Enhanced training with improved keyword filtering and exemption handling
     
@@ -581,6 +606,7 @@ def train(disable_ai=False, force_ai=False) -> None:
             
             if anomalous_ips:
                 print(f"Detected {len(anomalous_ips)} potentially anomalous IPs during training")
+                _print_geoip_summary(anomalous_ips)
                 
                 exemption_store = get_exemption_store()
                 blacklist_store = get_blacklist_store()

@@ -77,6 +77,18 @@ AIWAF_MODEL_CACHE_KEY = "aiwaf:model"
 AIWAF_MODEL_CACHE_TIMEOUT = None
 AIWAF_MODEL_STORAGE_FALLBACK = True
 
+# Geo-blocking (optional, requires aiwaf[geoblock])
+AIWAF_GEO_BLOCK_ENABLED = False
+AIWAF_GEO_PROVIDER = "ipinfo"  # maxmind | ipinfo
+AIWAF_GEOIP_DB_PATH = "/path/to/GeoLite2-Country.mmdb"
+AIWAF_GEOIP_TOKEN = ""
+AIWAF_GEOIP_ENDPOINT = "https://ipinfo.io"
+AIWAF_GEOIP_TIMEOUT = 2.0
+AIWAF_GEO_BLOCK_COUNTRIES = ["CN", "RU"]
+AIWAF_GEO_ALLOW_COUNTRIES = []
+AIWAF_GEO_CACHE_SECONDS = 3600
+AIWAF_GEO_CACHE_PREFIX = "aiwaf:geo:"
+
 # Minimum log thresholds for training
 AIWAF_MIN_AI_LOGS = 10000      # minimum log lines for AI training
 AIWAF_MIN_TRAIN_LOGS = 50      # minimum log lines for keyword training
