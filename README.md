@@ -67,6 +67,9 @@ aiwaf/
 - **AI Anomaly Detection**  
   IsolationForest trained on:
   - Path length  
+
+- **GeoIP Support**  
+  AIWAF supports optional geo-blocking and country-level traffic statistics using a local GeoIP database.
   - Keyword hits (static + dynamic)  
   - Response time  
   - Status‑code index  
@@ -461,6 +464,11 @@ pip install "Django>=3.2" "requests>=2.25.0"
 ```
 
 Geo-blocking uses the bundled `.mmdb` file by default. Set `AIWAF_GEOIP_DB_PATH` to override.
+
+### Acknowledgements
+
+Geo-blocking functionality in AIWAF relies on the IPinfo MMDB for IP-to-country mapping.  
+Thanks to IPinfo for providing a reliable GeoIP database.    
 
 **Dynamic country blocking (database-backed):**
 
