@@ -37,7 +37,7 @@ from .geoip import lookup_country
 from .trainer import STATIC_KW, STATUS_IDX, path_exists_in_django
 from .blacklist_manager import BlacklistManager
 from .models import IPExemption
-from .utils import is_exempt, get_ip, is_ip_exempted, is_exempt_path
+from .utils import is_exempt, get_ip, is_ip_exempted, is_exempt_path, get_exempt_paths
 from .storage import get_keyword_store
 from .settings_compat import apply_legacy_settings
 from .model_store import load_model_data
@@ -150,7 +150,7 @@ class IPAndKeywordBlockMiddleware:
         exempt_tokens = set()
         
         # Extract from exempt paths
-        for path in getattr(settings, "AIWAF_EXEMPT_PATHS", []):
+        for path in get_exempt_paths():
             for seg in re.split(r"\W+", path.strip("/").lower()):
                 if len(seg) > 3:
                     exempt_tokens.add(seg)

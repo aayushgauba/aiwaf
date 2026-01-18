@@ -28,6 +28,7 @@ from django.apps import apps
 from django.db.models import F
 from .utils import is_exempt_path
 from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
+from .utils import get_exempt_paths
 from .blacklist_manager import BlacklistManager
 from .settings_compat import apply_legacy_settings
 from .model_store import save_model_data
@@ -91,7 +92,7 @@ def remove_exempt_keywords() -> None:
     exempt_tokens = set()
     
     # Extract tokens from exempt paths
-    for path in getattr(settings, "AIWAF_EXEMPT_PATHS", []):
+    for path in get_exempt_paths():
         for seg in re.split(r"\W+", path.strip("/").lower()):
             if len(seg) > 3:
                 exempt_tokens.add(seg)

@@ -14,7 +14,7 @@ import json
 from collections import defaultdict
 
 # Defer model imports to avoid AppRegistryNotReady during Django app loading
-FeatureSample = BlacklistEntry = IPExemption = DynamicKeyword = None
+FeatureSample = BlacklistEntry = IPExemption = ExemptPath = DynamicKeyword = None
 
 # Fallback storage for when Django models are unavailable
 _fallback_keywords = defaultdict(int)
@@ -22,7 +22,7 @@ _fallback_storage_path = os.path.join(os.path.dirname(__file__), 'fallback_keywo
 
 def _import_models():
     """Import Django models only when needed and apps are ready."""
-    global FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
+    global FeatureSample, BlacklistEntry, IPExemption, ExemptPath, DynamicKeyword
     
     if FeatureSample is not None:
         return  # Already imported
@@ -32,13 +32,25 @@ def _import_models():
             # Try multiple ways to import models
             try:
                 # First try: direct import (most reliable)
-                from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
+                from .models import (
+                    FeatureSample,
+                    BlacklistEntry,
+                    IPExemption,
+                    ExemptPath,
+                    DynamicKeyword,
+                )
             except ImportError:
                 # Second try: check if aiwaf app is installed under different name
                 for app_config in apps.get_app_configs():
                     if 'aiwaf' in app_config.name.lower() or 'aiwaf' in app_config.label.lower():
                         try:
-                            from .models import FeatureSample, BlacklistEntry, IPExemption, DynamicKeyword
+                            from .models import (
+                                FeatureSample,
+                                BlacklistEntry,
+                                IPExemption,
+                                ExemptPath,
+                                DynamicKeyword,
+                            )
                             break
                         except ImportError:
                             continue
@@ -270,6 +282,82 @@ class ModelExemptionStore:
             print(f"Error clearing all exemption entries: {e}")
             return 0
 
+class ModelPathExemptionStore:
+    @staticmethod
+    def is_exempted(path):
+        """Check if a path is exempted"""
+        _import_models()
+        if ExemptPath is None:
+            return False
+        try:
+            return ExemptPath.objects.filter(path=path, enabled=True).exists()
+        except Exception:
+            return False
+
+    @staticmethod
+    def add_exemption(path, reason="Manual exemption", enabled=True):
+        """Add a path to the exemption list"""
+        _import_models()
+        if ExemptPath is None:
+            print(f"Warning: Cannot exempt path {path}, models not available")
+            return
+        try:
+            ExemptPath.objects.update_or_create(
+                path=path,
+                defaults={"reason": reason, "enabled": enabled},
+            )
+        except Exception as e:
+            print(f"Error exempting path {path}: {e}")
+
+    @staticmethod
+    def remove_exemption(path):
+        """Remove a path from the exemption list"""
+        _import_models()
+        if ExemptPath is None:
+            return
+        try:
+            ExemptPath.objects.filter(path=path).delete()
+        except Exception as e:
+            print(f"Error removing exemption for path {path}: {e}")
+
+    @staticmethod
+    def get_all_exempted_paths():
+        """Get all exempted paths"""
+        _import_models()
+        if ExemptPath is None:
+            return []
+        try:
+            return list(
+                ExemptPath.objects.filter(enabled=True).values_list("path", flat=True)
+            )
+        except Exception:
+            return []
+
+    @staticmethod
+    def get_all():
+        """Get all exempted path entries as dictionaries"""
+        _import_models()
+        if ExemptPath is None:
+            return []
+        try:
+            return list(ExemptPath.objects.values("path", "reason", "enabled", "created_at"))
+        except Exception:
+            return []
+
+    @staticmethod
+    def clear_all():
+        """Clear all path exemption entries"""
+        _import_models()
+        if ExemptPath is None:
+            return 0
+        try:
+            count = ExemptPath.objects.count()
+            ExemptPath.objects.all().delete()
+            return count
+        except Exception as e:
+            print(f"Error clearing all path exemptions: {e}")
+            return 0
+
 class ModelKeywordStore:
     @staticmethod
     def _load_fallback_keywords():
@@ -403,6 +491,10 @@ def get_blacklist_store():
 def get_exemption_store():
     """Get the exemption store (Django models only)"""
     return ModelExemptionStore()
+
+def get_path_exemption_store():
+    """Get the path exemption store (Django models only)"""
+    return ModelPathExemptionStore()
 
 def get_keyword_store():
     """Get the keyword store (Django models only)"""

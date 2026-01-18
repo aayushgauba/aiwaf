@@ -5,7 +5,7 @@ import gzip
 import ipaddress
 from datetime import datetime
 from django.conf import settings
-from .storage import get_exemption_store
+from .storage import get_exemption_store, get_path_exemption_store
 
 _LOG_RX = re.compile(
     r'(\d+\.\d+\.\d+\.\d+).*\[(.*?)\].*"(GET|POST) (.*?) HTTP/.*?" (\d{3}).*?"(.*?)" "(.*?)"'
@@ -115,10 +115,15 @@ def is_exempt_path(path):
         if path.startswith(exempt_path):
             return True
         
-    # Check configured exempt paths
-    exempt_paths = getattr(settings, "AIWAF_EXEMPT_PATHS", [])
+    # Check configured exempt paths (settings + database)
+    exempt_paths = get_exempt_paths()
     for exempt_path in exempt_paths:
-        if path == exempt_path or path.startswith(exempt_path.rstrip("/") + "/"):
+        prefix = exempt_path.rstrip("/")
+        if not prefix:
+            if path == "/":
+                return True
+            continue
+        if path == exempt_path or path == prefix or path.startswith(prefix + "/"):
             return True
     
     return False
@@ -126,3 +131,24 @@ def is_exempt_path(path):
 def is_exempt(request):
     """Check if request should be exempt (either by path or view decorator)"""
     return is_exempt_path(request.path) or is_view_exempt(request)
+
+
+def get_exempt_paths():
+    """Return all exempt paths from settings and database."""
+    paths = []
+    settings_paths = getattr(settings, "AIWAF_EXEMPT_PATHS", [])
+    if settings_paths:
+        paths.extend(settings_paths)
+    store = get_path_exemption_store()
+    db_paths = store.get_all_exempted_paths()
+    if db_paths:
+        paths.extend(db_paths)
+    normalized = []
+    for path in paths:
+        if not path:
+            continue
+        cleaned = re.sub(r"/{2,}", "/", str(path).strip())
+        if not cleaned.startswith("/"):
+            cleaned = "/" + cleaned
+        normalized.append(cleaned.lower())
+    return normalized

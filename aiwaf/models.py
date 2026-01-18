@@ -46,6 +46,21 @@ class IPExemption(models.Model):
         return f"{self.ip_address} (Exempted: {self.reason})"
 
 
+class ExemptPath(models.Model):
+    path = models.CharField(max_length=500, unique=True, db_index=True)
+    reason = models.CharField(max_length=200, blank=True, default="")
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Exempt Path"
+        verbose_name_plural = "Exempt Paths"
+
+    def __str__(self):
+        return f"{self.path} ({'enabled' if self.enabled else 'disabled'})"
+
+
 # Model to store request logs for AI-WAF training
 class RequestLog(models.Model):
     ip_address = models.GenericIPAddressField(db_index=True)

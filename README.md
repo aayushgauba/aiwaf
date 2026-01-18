@@ -198,6 +198,18 @@ AIWAF_EXEMPT_PATHS = [
 ]
 ```
 
+You can also store exempt paths in the database (no deploy needed):
+
+```bash
+python manage.py aiwaf_pathshell
+```
+
+Or add directly:
+
+```bash
+python manage.py add_pathexemption /myapp/api/ --reason "API traffic"
+```
+
 
 **Exempt Path & IP Awareness**
 
@@ -210,6 +222,18 @@ AIWAF_EXEMPT_PATHS = [
     "/health/",
     "/special-endpoint/",
 ]
+```
+
+You can also store exempt paths in the database (no deploy needed):
+
+```bash
+python manage.py aiwaf_pathshell
+```
+
+Or add directly:
+
+```bash
+python manage.py add_pathexemption /myapp/api/ --reason "API traffic"
 ```
 
 **Exempt Views (Decorator):**
@@ -335,6 +359,7 @@ AI-WAF uses Django models for real-time, high-performance storage:
 # Tables created automatically with migrations:
 # - aiwaf_blacklistentry     # Blocked IP addresses
 # - aiwaf_ipexemption        # Exempt IP addresses  
+# - aiwaf_exemptpath         # Exempt path prefixes
 # - aiwaf_dynamickeyword     # Dynamic keywords with counts
 # - aiwaf_featuresample      # Feature samples for ML training
 # - aiwaf_requestlog         # Request logs (if middleware logging enabled)
