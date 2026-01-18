@@ -210,6 +210,16 @@ Or add directly:
 python manage.py add_pathexemption /myapp/api/ --reason "API traffic"
 ```
 
+**AIWAF Path Shell Commands:**
+```
+ls                     # list routes at current level
+cd <index|name>        # enter a route segment
+up / cd ..             # go up one level
+pwd                    # show current path prefix
+exempt <index|name|.>  # add exemption for selection or current path
+exit                   # quit
+```
+
 
 **Exempt Path & IP Awareness**
 
@@ -234,6 +244,16 @@ Or add directly:
 
 ```bash
 python manage.py add_pathexemption /myapp/api/ --reason "API traffic"
+```
+
+**AIWAF Path Shell Commands:**
+```
+ls                     # list routes at current level
+cd <index|name>        # enter a route segment
+up / cd ..             # go up one level
+pwd                    # show current path prefix
+exempt <index|name|.>  # add exemption for selection or current path
+exit                   # quit
 ```
 
 **Exempt Views (Decorator):**
@@ -490,6 +510,20 @@ pip install "Django>=3.2" "requests>=2.25.0"
 
 Geo-blocking uses the bundled `.mmdb` file by default. Set `AIWAF_GEOIP_DB_PATH` to override.
 
+**GeoBlock Middleware:**
+Enable the middleware and the feature flag:
+
+```python
+AIWAF_GEO_BLOCK_ENABLED = True
+```
+
+```python
+MIDDLEWARE = [
+    "aiwaf.middleware.GeoBlockMiddleware",
+    # ... other AI-WAF middleware ...
+]
+```
+
 ### Acknowledgements
 
 Geo-blocking functionality in AIWAF relies on the IPinfo MMDB for IP-to-country mapping.  
@@ -704,11 +738,14 @@ python manage.py aiwaf_reset --blacklist --confirm
 
 | Middleware                         | Purpose                                                         |
 |------------------------------------|-----------------------------------------------------------------|
+| GeoBlockMiddleware                 | Blocks traffic by country based on GeoIP database               |
 | IPAndKeywordBlockMiddleware        | Blocks requests from known blacklisted IPs and Keywords         |
 | RateLimitMiddleware                | Enforces burst & flood thresholds                               |
 | AIAnomalyMiddleware                | ML‑driven behavior analysis + block on anomaly                  |
 | HoneypotTimingMiddleware           | Enhanced bot detection: GET→POST timing, POST validation, page timeouts |
 | UUIDTamperMiddleware               | Blocks guessed/nonexistent UUIDs across all models in an app    |
+| HeaderValidationMiddleware         | Blocks suspicious header patterns and low‑quality user agents   |
+| AIWAFLoggerMiddleware              | Optional request logger for model training and analysis         |
 
 ### 🍯 Enhanced Honeypot Protection
 
