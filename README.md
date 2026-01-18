@@ -445,20 +445,19 @@ AIWAF_DYNAMIC_TOP_N = 10        # Number of dynamic keywords to learn (default: 
 - `db` stores the model in the `AIModelArtifact` table (run migrations)
 - `cache` stores the model in your Django cache backend
 
-### Optional Learning Dependencies
+### Installation Modes
 
-To install AI training dependencies:
+Full install (default) includes AI training and GeoIP support:
 
 ```bash
-pip install "aiwaf[learning]"
+pip install aiwaf
 ```
 
-### Optional GeoIP Dependencies
-
-To enable geo-blocking support:
+Light install (manual deps only):
 
 ```bash
-pip install "aiwaf[geoblock]"
+pip install aiwaf --no-deps
+pip install "Django>=3.2" "requests>=2.25.0"
 ```
 
 Geo-blocking uses the bundled `.mmdb` file by default. Set `AIWAF_GEOIP_DB_PATH` to override.

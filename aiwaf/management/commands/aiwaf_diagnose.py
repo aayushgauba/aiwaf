@@ -43,7 +43,8 @@ class Command(BaseCommand):
             'RateLimitMiddleware', 
             'AIAnomalyMiddleware',
             'HoneypotTimingMiddleware',
-            'UUIDTamperMiddleware'
+            'UUIDTamperMiddleware',
+            'GeoBlockMiddleware',
         ]
         
         try:
@@ -107,6 +108,25 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("  ✅ Middleware logging enabled"))
         else:
             self.stdout.write(self.style.WARNING("  ⚠️  Middleware logging disabled"))
+
+        # Check geo-blocking configuration
+        self.stdout.write("")
+        self.stdout.write(self.style.HTTP_INFO("🌍 Geo-Blocking Check:"))
+        geo_enabled = getattr(settings, 'AIWAF_GEO_BLOCK_ENABLED', False)
+        if geo_enabled:
+            self.stdout.write(self.style.SUCCESS("  ✅ Geo-blocking enabled"))
+        else:
+            self.stdout.write(self.style.WARNING("  ⚠️  Geo-blocking disabled"))
+
+        geo_db_path = getattr(settings, 'AIWAF_GEOIP_DB_PATH', None)
+        if geo_db_path:
+            import os
+            if os.path.exists(geo_db_path):
+                self.stdout.write(self.style.SUCCESS(f"  ✅ GeoIP DB found: {geo_db_path}"))
+            else:
+                self.stdout.write(self.style.WARNING(f"  ⚠️  GeoIP DB not found: {geo_db_path}"))
+        else:
+            self.stdout.write(self.style.WARNING("  ⚠️  AIWAF_GEOIP_DB_PATH not configured"))
         
         # Recommendations
         self.stdout.write("")

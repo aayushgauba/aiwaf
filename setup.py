@@ -9,7 +9,7 @@ long_description = (HERE / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="aiwaf",
-    version="0.1.9.4.3",
+    version="0.1.9.4.4",
     description="AI‑driven, self‑learning Web Application Firewall for Django",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -20,6 +20,11 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "Django>=3.2",
+        "numpy>=1.21",
+        "pandas>=1.3",
+        "scikit-learn>=1.0,<2.0",
+        "joblib>=1.1",
+        "geoip2>=4.0",
         "packaging>=21.0",
         "requests>=2.25.0",
     ],
@@ -33,6 +38,7 @@ setup(
         "geoblock": [
             "geoip2>=4.0",
         ],
+        "light": [],
     },
     include_package_data=True,
     package_data={

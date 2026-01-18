@@ -183,16 +183,11 @@ AIWAF_LEGITIMATE_BOT_PATTERNS = [
 python manage.py detect_and_train
 ```
 
-**Optional learning dependencies:**
+**Light install (manual deps only):**
 
 ```bash
-pip install "aiwaf[learning]"
-```
-
-**Optional geo-blocking dependencies:**
-
-```bash
-pip install "aiwaf[geoblock]"
+pip install aiwaf --no-deps
+pip install "Django>=3.2" "requests>=2.25.0"
 ```
 
 **Training thresholds:** AI training runs when there are at least `AIWAF_MIN_AI_LOGS` (default 10,000) log lines. If fewer logs are available, AI training is skipped and keyword-only training runs as long as there are at least `AIWAF_MIN_TRAIN_LOGS` (default 50). Set `AIWAF_FORCE_AI_TRAINING = True` to override the AI log threshold.
