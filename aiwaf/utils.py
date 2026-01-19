@@ -152,3 +152,76 @@ def get_exempt_paths():
             cleaned = "/" + cleaned
         normalized.append(cleaned.lower())
     return normalized
+
+
+def get_path_rule_for_path(path):
+    """Return the most specific PATH_RULES entry matching the path."""
+    if not path:
+        return None
+    rules = []
+    settings_block = getattr(settings, "AIWAF_SETTINGS", {}) or {}
+    for rule in settings_block.get("PATH_RULES", []) or []:
+        if not isinstance(rule, dict):
+            continue
+        prefix = _normalize_rule_prefix(rule.get("PREFIX"))
+        if not prefix:
+            continue
+        rules.append((prefix, rule))
+    if not rules:
+        return None
+    path = _normalize_rule_prefix(path, trailing_slash=False)
+    best = None
+    for prefix, rule in rules:
+        if path == prefix.rstrip("/") or path.startswith(prefix):
+            if best is None or len(prefix) > len(best[0]):
+                best = (prefix, rule)
+    return best[1] if best else None
+
+
+def is_middleware_disabled(request, middleware_name):
+    """Check if middleware is disabled by PATH_RULES for this request."""
+    rule = get_path_rule_for_path(getattr(request, "path", ""))
+    if not rule:
+        return False
+    disabled = rule.get("DISABLE", []) or []
+    if not isinstance(disabled, (list, tuple, set)):
+        return False
+    target = _normalize_middleware_name(middleware_name)
+    for entry in disabled:
+        entry_norm = _normalize_middleware_name(entry)
+        if entry_norm == target:
+            return True
+    return False
+
+
+def get_rate_limit_overrides(request):
+    """Return rate limit overrides from PATH_RULES for this request."""
+    rule = get_path_rule_for_path(getattr(request, "path", ""))
+    if not rule:
+        return {}
+    overrides = rule.get("RATE_LIMIT", {}) or {}
+    if not isinstance(overrides, dict):
+        return {}
+    return overrides
+
+
+def _normalize_rule_prefix(prefix, trailing_slash=True):
+    if not prefix:
+        return None
+    cleaned = re.sub(r"/{2,}", "/", str(prefix).strip())
+    if not cleaned.startswith("/"):
+        cleaned = "/" + cleaned
+    if trailing_slash and not cleaned.endswith("/"):
+        cleaned += "/"
+    return cleaned.lower()
+
+
+def _normalize_middleware_name(name):
+    if not name:
+        return ""
+    if not isinstance(name, str):
+        name = getattr(name, "__name__", str(name))
+    name = name.strip()
+    if "." in name:
+        name = name.split(".")[-1]
+    return name.lower()

@@ -37,7 +37,15 @@ from .geoip import lookup_country
 from .trainer import STATIC_KW, STATUS_IDX, path_exists_in_django
 from .blacklist_manager import BlacklistManager
 from .models import IPExemption
-from .utils import is_exempt, get_ip, is_ip_exempted, is_exempt_path, get_exempt_paths
+from .utils import (
+    is_exempt,
+    get_ip,
+    is_ip_exempted,
+    is_exempt_path,
+    get_exempt_paths,
+    is_middleware_disabled,
+    get_rate_limit_overrides,
+)
 from .storage import get_keyword_store
 from .settings_compat import apply_legacy_settings
 from .model_store import load_model_data
@@ -342,6 +350,8 @@ class IPAndKeywordBlockMiddleware:
         return prefixes
 
     def __call__(self, request):
+        if is_middleware_disabled(request, self.__class__):
+            return self.get_response(request)
         # First exemption check - early exit for exempt requests
         if is_exempt(request):
             return self.get_response(request)
@@ -462,6 +472,8 @@ class RateLimitMiddleware:
         self.FLOOD = getattr(settings, "AIWAF_RATE_FLOOD", 40)    # hard limit
 
     def __call__(self, request):
+        if is_middleware_disabled(request, self.__class__):
+            return self.get_response(request)
         # First exemption check - early exit for exempt requests
         if is_exempt(request):
             return self.get_response(request)
@@ -472,14 +484,19 @@ class RateLimitMiddleware:
         if is_ip_exempted(ip):
             return self.get_response(request)
             
+        overrides = get_rate_limit_overrides(request)
+        window = overrides.get("WINDOW", self.WINDOW)
+        max_requests = overrides.get("MAX", self.MAX)
+        flood = overrides.get("FLOOD", self.FLOOD)
+
         key = f"ratelimit:{ip}"
         now = time.time()
         timestamps = cache.get(key, [])
-        timestamps = [t for t in timestamps if now - t < self.WINDOW]
+        timestamps = [t for t in timestamps if now - t < window]
         timestamps.append(now)
-        cache.set(key, timestamps, timeout=self.WINDOW)
+        cache.set(key, timestamps, timeout=window)
         
-        if len(timestamps) > self.FLOOD:
+        if len(timestamps) > flood:
             # Double-check exemption before blocking
             if not is_ip_exempted(ip):
                 BlacklistManager.block(ip, "Flood pattern")
@@ -487,7 +504,7 @@ class RateLimitMiddleware:
                 if BlacklistManager.is_blocked(ip):
                     _log_block(request, "Flood pattern", status_code=403)
                     return JsonResponse({"error": "blocked"}, status=403)
-        if len(timestamps) > self.MAX:
+        if len(timestamps) > max_requests:
             return JsonResponse({"error": "too_many_requests"}, status=429)
         return self.get_response(request)
 
@@ -507,6 +524,8 @@ class GeoBlockMiddleware(MiddlewareMixin):
         self.cache_prefix = getattr(settings, "AIWAF_GEO_CACHE_PREFIX", "aiwaf:geo:")
 
     def process_request(self, request):
+        if is_middleware_disabled(request, self.__class__):
+            return None
         if not self.enabled:
             return None
         if not (self.allow_countries or self.block_countries):
@@ -689,6 +708,8 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         return False
 
     def process_request(self, request):
+        if is_middleware_disabled(request, self.__class__):
+            return None
         # First exemption check - early exit for exempt requests
         if is_exempt(request):
             return None
@@ -707,6 +728,8 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         return None
 
     def process_response(self, request, response):
+        if is_middleware_disabled(request, self.__class__):
+            return response
         # First exemption check - early exit for exempt requests
         if is_exempt(request):
             return response
@@ -905,6 +928,8 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             return True
     
     def process_request(self, request):
+        if is_middleware_disabled(request, self.__class__):
+            return None
         if is_exempt(request):
             return None
             
@@ -1010,6 +1035,8 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
 
 class UUIDTamperMiddleware(MiddlewareMixin):
     def process_view(self, request, view_func, view_args, view_kwargs):
+        if is_middleware_disabled(request, self.__class__):
+            return None
         if is_exempt(request):
             return None
             
@@ -1154,6 +1181,8 @@ class HeaderValidationMiddleware(MiddlewareMixin):
     ]
 
     def process_request(self, request):
+        if is_middleware_disabled(request, self.__class__):
+            return None
         # Skip if request is exempted
         if is_exempt(request):
             return None
