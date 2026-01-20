@@ -647,6 +647,11 @@ def train(disable_ai=False, force_ai=False) -> None:
                     avg_burst = ip_data["burst_count"].mean()
                     total_requests = len(ip_data)
                     
+                    # Treat pure-burst traffic with no 404s/keywords as legitimate (e.g., polling)
+                    if max_404s == 0 and avg_kw_hits == 0:
+                        print(f"   - {ip}: Anomalous but looks legitimate (no 404s/keywords, burst:{avg_burst:.1f}) - NOT blocking")
+                        continue
+
                     # Don't block if it looks like legitimate behavior:
                     if (
                         avg_kw_hits < 2 and           # Not hitting many malicious keywords

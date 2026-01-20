@@ -802,16 +802,21 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                 legitimate_404s = max_404s - scanning_404s
                 
                 # Don't block if it looks like legitimate behavior:
-                if (
+                # 1) Pure burst traffic with no 404s/keywords (e.g., polling)
+                # 2) Mostly clean traffic within relaxed thresholds
+                should_block = True
+                if max_404s == 0 and avg_kw_hits == 0 and scanning_404s == 0:
+                    should_block = False
+                elif (
                     avg_kw_hits < 3 and           # Allow some keyword hits (increased from 2)
                     scanning_404s < 5 and        # Focus on scanning 404s, not all 404s  
                     legitimate_404s < 20 and     # Allow more legitimate 404s (typos, old links)
                     avg_burst < 25 and           # Allow higher burst (increased from 15)
                     total_requests < 150         # Allow more total requests (increased from 100)
                 ):
-                    # Anomalous but looks legitimate - don't block
-                    pass
-                else:
+                    should_block = False
+
+                if should_block:
                     # Double-check exemption before blocking
                     if not is_ip_exempted(ip):
                         BlacklistManager.block(ip, f"AI anomaly + scanning 404s (total:{max_404s}, scanning:{scanning_404s}, kw:{avg_kw_hits:.1f}, burst:{avg_burst:.1f})")
