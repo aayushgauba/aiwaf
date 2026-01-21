@@ -1,6 +1,7 @@
 import os
 import glob
 import gzip
+import csv
 import re
 try:
     import joblib
@@ -319,13 +320,19 @@ def _read_all_logs() -> list[str]:
     
     # First try to read from main access log files
     if LOG_PATH and os.path.exists(LOG_PATH):
-        with open(LOG_PATH, "r", errors="ignore") as f:
-            lines.extend(f.readlines())
+        if LOG_PATH.endswith(".csv") or LOG_PATH.endswith(".csv.gz"):
+            lines.extend(_read_csv_logs(LOG_PATH))
+        else:
+            with open(LOG_PATH, "r", errors="ignore") as f:
+                lines.extend(f.readlines())
         for p in sorted(glob.glob(f"{LOG_PATH}.*")):
             opener = gzip.open if p.endswith(".gz") else open
             try:
-                with opener(p, "rt", errors="ignore") as f:
-                    lines.extend(f.readlines())
+                if p.endswith(".csv") or p.endswith(".csv.gz"):
+                    lines.extend(_read_csv_logs(p))
+                else:
+                    with opener(p, "rt", errors="ignore") as f:
+                        lines.extend(f.readlines())
             except OSError:
                 continue
     
@@ -334,6 +341,35 @@ def _read_all_logs() -> list[str]:
         lines = _get_logs_from_model()
     
     return lines
+
+
+def _read_csv_logs(path: str) -> list[str]:
+    """Read CSV log files produced by AIWAFLoggerMiddleware and convert to log lines."""
+    log_lines = []
+    try:
+        opener = gzip.open if path.endswith(".gz") else open
+        with opener(path, "rt", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                timestamp = row.get("timestamp", "")
+                if not timestamp:
+                    continue
+                try:
+                    dt = datetime.fromisoformat(timestamp)
+                except ValueError:
+                    continue
+                timestamp_str = dt.strftime("%d/%b/%Y:%H:%M:%S %z")
+                log_line = (
+                    f'{row.get("ip", "-")} - - [{timestamp_str}] '
+                    f'"{row.get("method", "GET")} {row.get("path", "/")} HTTP/1.1" '
+                    f'{row.get("status_code", "200")} {row.get("content_length", "-")} '
+                    f'"{row.get("referer", "-")}" "{row.get("user_agent", "-")}" '
+                    f'response-time={row.get("response_time", "0")}\n'
+                )
+                log_lines.append(log_line)
+    except Exception:
+        return []
+    return log_lines
 
 
 def _get_logs_from_model() -> list[str]:

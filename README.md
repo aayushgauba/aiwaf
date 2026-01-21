@@ -408,6 +408,9 @@ Enable AI-WAF's built-in request logger as a fallback when main access logs aren
 ```python
 # Enable middleware logging
 AIWAF_MIDDLEWARE_LOGGING = True                    # Enable/disable logging
+AIWAF_MIDDLEWARE_LOG = "aiwaf_requests.log"        # Optional log file name
+AIWAF_MIDDLEWARE_CSV = True                        # Write CSV log file (default: True)
+AIWAF_MIDDLEWARE_DB = True                         # Write RequestLog entries (default: True)
 ```
 
 **Then add middleware to MIDDLEWARE list:**
@@ -429,9 +432,11 @@ python manage.py aiwaf_logging --clear     # Clear log files
 
 **Benefits:**
 - **Automatic fallback** when `AIWAF_ACCESS_LOG` unavailable
-- **Database storage** with precise timestamps and response times
+- **CSV or database storage** with precise timestamps and response times
 - **Zero configuration** - trainer automatically detects and uses model logs
 - **Lightweight** - fails silently to avoid breaking your application
+
+If you want the trainer to use the CSV log file, point `AIWAF_ACCESS_LOG` at the CSV path (e.g., `aiwaf_requests.csv`).
 
 ---
 
