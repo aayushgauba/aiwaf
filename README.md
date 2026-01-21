@@ -589,6 +589,10 @@ MIDDLEWARE = [
 
 > **⚠️ Order matters!** AI-WAF protection middleware should come early. The logger middleware should come near the end to capture final response data.
 
+**UUIDTamperMiddleware behavior:**
+- Only checks models in the view's app that have UUID primary keys or unique UUID fields.
+- If an app has no such models, the middleware is a no-op for that request.
+
 ### **Troubleshooting Middleware Errors**
 
 **Error: `Module "aiwaf.middleware" does not define a "UUIDTamperMiddleware" attribute/class`**
@@ -770,7 +774,7 @@ python manage.py aiwaf_reset --blacklist --confirm
 | RateLimitMiddleware                | Enforces burst & flood thresholds                               |
 | AIAnomalyMiddleware                | ML‑driven behavior analysis + block on anomaly                  |
 | HoneypotTimingMiddleware           | Enhanced bot detection: GET→POST timing, POST validation, page timeouts |
-| UUIDTamperMiddleware               | Blocks guessed/nonexistent UUIDs across all models in an app    |
+| UUIDTamperMiddleware               | Blocks guessed/nonexistent UUIDs across models with UUID PKs or unique UUID fields in an app (no-op if none) |
 | HeaderValidationMiddleware         | Blocks suspicious header patterns and low‑quality user agents   |
 | AIWAFLoggerMiddleware              | Optional request logger for model training and analysis         |
 

@@ -59,6 +59,7 @@ MODEL_PATH = getattr(
 )
 
 logger = logging.getLogger("aiwaf.middleware")
+_UUID_MODEL_CACHE = {}
 
 def _log_block(request, reason, status_code=403):
     if not logger.isEnabledFor(logging.DEBUG):
@@ -72,6 +73,29 @@ def _log_block(request, reason, status_code=403):
         status_code,
         request.META.get("HTTP_USER_AGENT", "-") if hasattr(request, "META") else "-",
     )
+
+
+def _get_uuid_model_fields(app_label):
+    """Return cached UUID model fields for an app (UUID PKs + unique UUID fields)."""
+    if app_label in _UUID_MODEL_CACHE:
+        return _UUID_MODEL_CACHE[app_label]
+    try:
+        app_cfg = apps.get_app_config(app_label)
+    except LookupError:
+        _UUID_MODEL_CACHE[app_label] = []
+        return _UUID_MODEL_CACHE[app_label]
+    uuid_fields = []
+    for Model in app_cfg.get_models():
+        pk_field = Model._meta.pk
+        if isinstance(pk_field, UUIDField):
+            uuid_fields.append((Model, "pk"))
+        for field in Model._meta.fields:
+            if field is pk_field:
+                continue
+            if isinstance(field, UUIDField) and getattr(field, "unique", False):
+                uuid_fields.append((Model, field.name))
+    _UUID_MODEL_CACHE[app_label] = uuid_fields
+    return uuid_fields
 
 def load_model_safely():
     """Load the AI model with version compatibility checking."""
@@ -1056,14 +1080,19 @@ class UUIDTamperMiddleware(MiddlewareMixin):
             return None
             
         app_label = view_func.__module__.split(".")[0]
-        app_cfg   = apps.get_app_config(app_label)
-        for Model in app_cfg.get_models():
-            if isinstance(Model._meta.pk, UUIDField):
-                try:
+        uuid_fields = _get_uuid_model_fields(app_label)
+        if not uuid_fields:
+            return None
+        for Model, field_name in uuid_fields:
+            try:
+                if field_name == "pk":
                     if Model.objects.filter(pk=uid).exists():
                         return None
-                except (ValueError, TypeError):
-                    continue
+                else:
+                    if Model.objects.filter(**{field_name: uid}).exists():
+                        return None
+            except (ValueError, TypeError):
+                continue
 
         # Double-check exemption before blocking
         if not is_ip_exempted(ip):
