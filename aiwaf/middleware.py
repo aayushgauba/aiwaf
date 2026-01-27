@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from django.utils.deprecation import MiddlewareMixin
 from django.http import JsonResponse
+from django.core.exceptions import PermissionDenied
 from django.conf import settings
 from django.core.cache import cache
 from django.db.models import F, UUIDField
@@ -73,6 +74,25 @@ def _log_block(request, reason, status_code=403):
         status_code,
         request.META.get("HTTP_USER_AGENT", "-") if hasattr(request, "META") else "-",
     )
+
+
+def _raise_blocked(request, reason, status_code=403):
+    _log_block(request, reason, status_code=status_code)
+    raise PermissionDenied("blocked")
+
+
+class JsonExceptionMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+    def process_exception(self, request, exception):
+        if request.content_type == "application/json" and isinstance(exception, PermissionDenied):
+            message = str(exception) or "Access denied"
+            return JsonResponse({"error": message}, status=403)
+        return None
 
 
 def _get_uuid_model_fields(app_label):
@@ -411,8 +431,7 @@ class IPAndKeywordBlockMiddleware:
         
         # BlacklistManager handles exemption checking internally
         if BlacklistManager.is_blocked(ip):
-            _log_block(request, "IP already blacklisted", status_code=403)
-            return JsonResponse({"error": "blocked"}, status=403)
+            _raise_blocked(request, "IP already blacklisted", status_code=403)
         
         # Check if path exists in Django - if yes, be more lenient
         path_exists = path_exists_in_django(request.path)
@@ -503,8 +522,7 @@ class IPAndKeywordBlockMiddleware:
                         BlacklistManager.block(ip, f"Keyword block: {block_reason}")
                         # Check again after blocking attempt (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
-                            _log_block(request, f"Keyword block: {block_reason}", status_code=403)
-                            return JsonResponse({"error": "blocked"}, status=403)
+                            _raise_blocked(request, f"Keyword block: {block_reason}", status_code=403)
         return self.get_response(request)
 
 
@@ -547,8 +565,7 @@ class RateLimitMiddleware:
                 BlacklistManager.block(ip, "Flood pattern")
                 # Check if actually blocked (exempted IPs won't be blocked)
                 if BlacklistManager.is_blocked(ip):
-                    _log_block(request, "Flood pattern", status_code=403)
-                    return JsonResponse({"error": "blocked"}, status=403)
+                    _raise_blocked(request, "Flood pattern", status_code=403)
         if len(timestamps) > max_requests:
             return JsonResponse({"error": "too_many_requests"}, status=429)
         return self.get_response(request)
@@ -605,8 +622,7 @@ class GeoBlockMiddleware(MiddlewareMixin):
         if should_block:
             BlacklistManager.block(ip, f"Geo-blocked country: {country}")
             if BlacklistManager.is_blocked(ip):
-                _log_block(request, f"Geo-blocked country: {country}", status_code=403)
-                return JsonResponse({"error": "blocked"}, status=403)
+                _raise_blocked(request, f"Geo-blocked country: {country}", status_code=403)
         return None
 
 
@@ -768,8 +784,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
             
         # BlacklistManager handles exemption checking internally
         if BlacklistManager.is_blocked(ip):
-            _log_block(request, "IP already blacklisted", status_code=403)
-            return JsonResponse({"error": "blocked"}, status=403)
+            _raise_blocked(request, "IP already blacklisted", status_code=403)
         return None
 
     def process_response(self, request, response):
@@ -867,12 +882,11 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                         BlacklistManager.block(ip, f"AI anomaly + scanning 404s (total:{max_404s}, scanning:{scanning_404s}, kw:{avg_kw_hits:.1f}, burst:{avg_burst:.1f})")
                         # Check if actually blocked (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
-                            _log_block(
+                            _raise_blocked(
                                 request,
                                 f"AI anomaly + scanning 404s (total:{max_404s}, scanning:{scanning_404s}, kw:{avg_kw_hits:.1f}, burst:{avg_burst:.1f})",
                                 status_code=403,
                             )
-                            return JsonResponse({"error": "blocked"}, status=403)
             else:
                 # No recent data to analyze - be more conservative
                 # Only block on multiple suspicious indicators, not single 404
@@ -883,12 +897,11 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                     if not is_ip_exempted(ip):
                         BlacklistManager.block(ip, f"AI anomaly + scanning behavior (kw:{kw_hits}, scanning_path:{request.path})")
                         if BlacklistManager.is_blocked(ip):
-                            _log_block(
+                            _raise_blocked(
                                 request,
                                 f"AI anomaly + scanning behavior (kw:{kw_hits}, scanning_path:{request.path})",
                                 status_code=403,
                             )
-                            return JsonResponse({"error": "blocked"}, status=403)
 
         data.append((now, request.path, response.status_code, resp_time))
         data = [d for d in data if now - d[0] < self.WINDOW]
@@ -1059,8 +1072,7 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                         BlacklistManager.block(ip, f"Form submitted too quickly ({time_diff:.2f}s)")
                         # Check if actually blocked (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
-                            _log_block(request, f"Form submitted too quickly ({time_diff:.2f}s)", status_code=403)
-                            return JsonResponse({"error": "blocked"}, status=403)
+                            _raise_blocked(request, f"Form submitted too quickly ({time_diff:.2f}s)", status_code=403)
         
         else:
             # Handle other HTTP methods (PUT, DELETE, PATCH, etc.)
@@ -1120,8 +1132,7 @@ class UUIDTamperMiddleware(MiddlewareMixin):
             BlacklistManager.block(ip, "UUID tampering")
             # Check if actually blocked (exempted IPs won't be blocked)
             if BlacklistManager.is_blocked(ip):
-                _log_block(request, "UUID tampering", status_code=403)
-                return JsonResponse({"error": "blocked"}, status=403)
+                _raise_blocked(request, "UUID tampering", status_code=403)
 
 
 class HeaderValidationMiddleware(MiddlewareMixin):
@@ -1372,18 +1383,13 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         return score
     
     def _block_request(self, request, ip, reason, path):
-        """Block the request and return error response"""
+        """Block the request and raise PermissionDenied"""
         # Double-check exemption before blocking
         if not is_ip_exempted(ip):
             BlacklistManager.block(ip, f"Header validation: {reason}")
             
             # Check if actually blocked (exempted IPs won't be blocked)
             if BlacklistManager.is_blocked(ip):
-                _log_block(request, f"Header validation: {reason}", status_code=403)
-                return JsonResponse({
-                    "error": "blocked",
-                    "message": "Request blocked due to suspicious headers",
-                    "path": path
-                }, status=403)
+                _raise_blocked(request, f"Header validation: {reason}", status_code=403)
                 
         return None

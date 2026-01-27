@@ -14,6 +14,7 @@ import django
 django.setup()
 
 from django.core.cache import cache
+from django.core.exceptions import PermissionDenied
 from django.test import override_settings
 
 from tests.base_test import AIWAFTestCase
@@ -41,9 +42,8 @@ class PathRulesTestCase(AIWAFTestCase):
             response = middleware.process_request(self._make_request("/api/test/", headers=headers))
             self.assertIsNone(response)
 
-            response = middleware.process_request(self._make_request("/web/test/", headers=headers))
-            self.assertIsNotNone(response)
-            self.assertEqual(response.status_code, 403)
+            with self.assertRaises(PermissionDenied):
+                middleware.process_request(self._make_request("/web/test/", headers=headers))
 
     def test_rate_limit_uses_most_specific_rule(self):
         settings_block = {

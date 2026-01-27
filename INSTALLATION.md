@@ -60,6 +60,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     
     # AI-WAF Protection Middleware (add these)
+    'aiwaf.middleware.JsonExceptionMiddleware',   # Optional: JSON error responses for API clients
     'aiwaf.middleware.IPAndKeywordBlockMiddleware',
     'aiwaf.middleware.HeaderValidationMiddleware',
     'aiwaf.middleware.RateLimitMiddleware',
@@ -73,6 +74,7 @@ MIDDLEWARE = [
 ```
 
 **Middleware Order Explanation:**
+- **JsonExceptionMiddleware**: Optional JSON error bodies for `PermissionDenied` on API requests (place early)
 - **HeaderValidationMiddleware**: Should be first among AI-WAF middlewares for early bot detection
 - **IPAndKeywordBlockMiddleware**: Core IP and keyword blocking
 - **RateLimitMiddleware**: Rate limiting protection  
@@ -271,6 +273,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     # ... existing middleware ...
+    'aiwaf.middleware.JsonExceptionMiddleware',      # Optional: JSON error responses for API clients
     'aiwaf.middleware.HeaderValidationMiddleware',   # Bot detection (recommended first)
     'aiwaf.middleware.IPAndKeywordBlockMiddleware',  # Basic protection
 ]

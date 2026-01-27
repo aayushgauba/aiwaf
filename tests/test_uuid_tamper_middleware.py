@@ -16,7 +16,7 @@ import django
 django.setup()
 
 from django.db import models
-from django.http import JsonResponse
+from django.core.exceptions import PermissionDenied
 from tests.base_test import AIWAFTestCase
 
 
@@ -55,18 +55,24 @@ class UUIDTamperMiddlewareTestCase(AIWAFTestCase):
                  patch("aiwaf.middleware.BlacklistManager.block") as mock_block, \
                  patch("aiwaf.middleware.BlacklistManager.is_blocked", return_value=is_blocked):
                 middleware = UUIDTamperMiddleware(MagicMock())
-                response = middleware.process_view(request, view_func, [], {"uuid": uuid_value})
-        return response, mock_block
+                try:
+                    response = middleware.process_view(request, view_func, [], {"uuid": uuid_value})
+                    captured_exc = None
+                except Exception as exc:
+                    response = None
+                    captured_exc = exc
+        return response, mock_block, captured_exc
 
     def test_no_uuid_models_is_noop(self):
         pk = models.AutoField(primary_key=True)
         model = self._fake_model(pk, other_fields=[], exists=False)
-        response, mock_block = self._run_middleware(
+        response, mock_block, captured_exc = self._run_middleware(
             "myapp.views",
             "9b4185fe-7c5d-4c6a-bd25-b79a4e4c0f7b",
             [model],
         )
         self.assertIsNone(response)
+        self.assertIsNone(captured_exc)
         mock_block.assert_not_called()
 
     def test_unique_uuid_field_allows_match(self):
@@ -74,25 +80,26 @@ class UUIDTamperMiddlewareTestCase(AIWAFTestCase):
         uuid_field = models.UUIDField(unique=True)
         uuid_field.name = "uuid"
         model = self._fake_model(pk, other_fields=[uuid_field], exists=True)
-        response, mock_block = self._run_middleware(
+        response, mock_block, captured_exc = self._run_middleware(
             "shop.views",
             "3f8b8fd0-ec0b-4d0a-bc0e-90ec0fd6f3ea",
             [model],
         )
         self.assertIsNone(response)
+        self.assertIsNone(captured_exc)
         mock_block.assert_not_called()
 
     def test_uuid_tamper_blocks_when_no_match(self):
         pk = models.UUIDField(primary_key=True)
         model = self._fake_model(pk, other_fields=[], exists=False)
-        response, mock_block = self._run_middleware(
+        response, mock_block, captured_exc = self._run_middleware(
             "accounts.views",
             "0ad0b8a7-7b95-4a7a-9ea5-9b5a5b07c2ef",
             [model],
             is_blocked=True,
         )
-        self.assertIsInstance(response, JsonResponse)
-        self.assertEqual(response.status_code, 403)
+        self.assertIsNone(response)
+        self.assertIsInstance(captured_exc, PermissionDenied)
         mock_block.assert_called_once()
 
 

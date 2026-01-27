@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from django.core.exceptions import PermissionDenied
 from django.test import override_settings
 
 from .base_test import AIWAFMiddlewareTestCase
@@ -35,9 +36,8 @@ class TestGeoBlocking(AIWAFMiddlewareTestCase):
              patch("aiwaf.geoip.os.path.exists", return_value=True):
             request = self.create_request(path="/")
             request.META["REMOTE_ADDR"] = "8.8.8.8"
-            response = mw.GeoBlockMiddleware(self.mock_get_response).process_request(request)
-            assert response is not None
-            assert response.status_code == 403
+            with self.assertRaises(PermissionDenied):
+                mw.GeoBlockMiddleware(self.mock_get_response).process_request(request)
 
     @override_settings(
         AIWAF_GEO_BLOCK_ENABLED=True,

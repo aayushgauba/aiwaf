@@ -177,6 +177,13 @@ python manage.py aiwaf_logging --recent
   }
   ```
 
+- **Blocked Request Responses**
+  By default, AI‑WAF raises `PermissionDenied("blocked")` when a request is blocked,
+  allowing Django to render a standard 403 page. For API clients that need JSON,
+  add `JsonExceptionMiddleware` near the top of your `MIDDLEWARE` list; it will
+  translate `PermissionDenied` into a JSON 403 response when
+  `request.content_type == "application/json"`.
+
 - **Smart Training System**  
   AI trainer automatically uses the best available data source:
   - **Primary**: Configured access log files (`AIWAF_ACCESS_LOG`)
@@ -524,6 +531,7 @@ AIWAF_GEO_BLOCK_ENABLED = True
 
 ```python
 MIDDLEWARE = [
+    "aiwaf.middleware.JsonExceptionMiddleware",   # Optional: JSON error responses for API clients
     "aiwaf.middleware.GeoBlockMiddleware",
     # ... other AI-WAF middleware ...
 ]
@@ -581,6 +589,7 @@ Add in **this** order to your `MIDDLEWARE` list:
 
 ```python
 MIDDLEWARE = [
+    "aiwaf.middleware.JsonExceptionMiddleware",   # Optional: JSON error responses for API clients
     "aiwaf.middleware.GeoBlockMiddleware",
     "aiwaf.middleware.IPAndKeywordBlockMiddleware",
     "aiwaf.middleware.RateLimitMiddleware", 
@@ -593,6 +602,7 @@ MIDDLEWARE = [
 ```
 
 > **⚠️ Order matters!** AI-WAF protection middleware should come early. The logger middleware should come near the end to capture final response data.
+> **JSON APIs:** If you want JSON error bodies on `PermissionDenied`, add `JsonExceptionMiddleware` near the top so it runs last during exception handling.
 
 **UUIDTamperMiddleware behavior:**
 - Only checks models in the view's app that have UUID primary keys or unique UUID fields.
@@ -635,12 +645,13 @@ MIDDLEWARE = [
 
 5. **Use minimal middleware setup if needed:**
    ```python
-   MIDDLEWARE = [
-       # ... your existing middleware ...
-       "aiwaf.middleware.IPAndKeywordBlockMiddleware",  # Core protection
-       "aiwaf.middleware.RateLimitMiddleware",          # Rate limiting  
-       "aiwaf.middleware.AIAnomalyMiddleware",          # AI detection
-   ]
+MIDDLEWARE = [
+    # ... your existing middleware ...
+    "aiwaf.middleware.JsonExceptionMiddleware",   # Optional: JSON error responses for API clients
+    "aiwaf.middleware.IPAndKeywordBlockMiddleware",  # Core protection
+    "aiwaf.middleware.RateLimitMiddleware",          # Rate limiting  
+    "aiwaf.middleware.AIAnomalyMiddleware",          # AI detection
+]
    ```
 
 **Common Issues:**
@@ -790,7 +801,7 @@ The **HoneypotTimingMiddleware** now includes advanced bot detection capabilitie
 #### 🚫 Smart POST Request Validation
 - **Analyzes Django views** to determine actual allowed HTTP methods
 - **Intelligent detection** of GET-only vs POST-capable views
-- **Example**: `POST` to view with `http_method_names = ['get']` → `403 Blocked`
+- **Example**: `POST` to view with `http_method_names = ['get']` → `PermissionDenied (403)`
 
 #### ⏰ Page Timeout with Smart Reload
 - **4-minute page expiration** prevents stale session attacks
