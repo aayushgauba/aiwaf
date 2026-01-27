@@ -48,7 +48,7 @@ from .utils import (
 )
 from .storage import get_keyword_store
 from .settings_compat import apply_legacy_settings
-from .model_store import load_model_data
+from .model_store import load_model_data, _normalize_storage_mode
 
 apply_legacy_settings()
 
@@ -97,6 +97,27 @@ def _get_uuid_model_fields(app_label):
     _UUID_MODEL_CACHE[app_label] = uuid_fields
     return uuid_fields
 
+def _describe_model_lookup():
+    storage_mode = _normalize_storage_mode(getattr(settings, "AIWAF_MODEL_STORAGE", "file"))
+    model_path = getattr(settings, "AIWAF_MODEL_PATH", None)
+    fallback = getattr(settings, "AIWAF_MODEL_STORAGE_FALLBACK", True)
+
+    if storage_mode == "db":
+        primary = "db table aiwaf_aimodelartifact (name='default')"
+        if fallback:
+            return f"{primary} (fallback file: {model_path})"
+        return primary
+
+    if storage_mode == "cache":
+        cache_key = getattr(settings, "AIWAF_MODEL_CACHE_KEY", "aiwaf:model")
+        primary = f"cache key '{cache_key}'"
+        if fallback:
+            return f"{primary} (fallback file: {model_path})"
+        return primary
+
+    return f"file path {model_path}"
+
+
 def load_model_safely():
     """Load the AI model with version compatibility checking."""
     import warnings
@@ -144,10 +165,10 @@ def load_model_safely():
                 return model_data
                 
     except Exception as e:
-        print(f"Warning: Could not load AI model from {MODEL_PATH}: {e}")
+        lookup = _describe_model_lookup()
+        print(f"Warning: Could not load AI model from {lookup}: {e}")
         print("AI anomaly detection will be disabled until model is retrained.")
         print("Run 'python manage.py detect_and_train' to regenerate the model.")
-        return None
         return None
 
 # Load model with safety checks
