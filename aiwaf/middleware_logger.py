@@ -9,7 +9,6 @@ from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
 from django.utils import timezone
 from .utils import get_ip
-from .rust_backend import rust_available, write_csv_log as rust_write_csv_log
 
 # Defer model imports to avoid AppRegistryNotReady during Django app loading
 RequestLog = None
@@ -57,13 +56,7 @@ class AIWAFLoggerMiddleware(MiddlewareMixin):
         response_time = time.time() - start_time
         
         if self.csv_enabled:
-            if self._should_use_rust():
-                headers, row = self._build_csv_row(request, response, response_time)
-                wrote = rust_write_csv_log(self._get_csv_path(), headers, row)
-                if not wrote:
-                    self._write_csv_log(request, response, response_time)
-            else:
-                self._write_csv_log(request, response, response_time)
+            self._write_csv_log(request, response, response_time)
 
         if self.log_to_db:
             _import_models()
@@ -85,13 +78,6 @@ class AIWAFLoggerMiddleware(MiddlewareMixin):
                     pass
             
         return response
-
-    def _should_use_rust(self) -> bool:
-        return (
-            getattr(settings, "AIWAF_USE_RUST", False)
-            and self.csv_enabled
-            and rust_available()
-        )
 
     def _get_csv_path(self) -> str:
         csv_file = self.log_file

@@ -1298,7 +1298,6 @@ class HeaderValidationMiddleware(MiddlewareMixin):
     def _should_use_rust(self) -> bool:
         return (
             getattr(settings, "AIWAF_USE_RUST", False)
-            and getattr(settings, "AIWAF_MIDDLEWARE_CSV", True)
             and rust_available()
         )
     

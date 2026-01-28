@@ -23,11 +23,3 @@ def validate_headers(headers) -> str | None:
     except Exception:
         return None
 
-
-def write_csv_log(csv_file: str, headers: list[str], row: dict) -> bool:
-    if aiwaf_rust is None:
-        return False
-    try:
-        return bool(aiwaf_rust.write_csv_log(csv_file, headers, row))
-    except Exception:
-        return False

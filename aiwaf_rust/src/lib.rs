@@ -1,8 +1,3 @@
-use std::fs::{self, OpenOptions};
-use std::path::Path;
-
-use csv::WriterBuilder;
-use fs2::FileExt;
 use once_cell::sync::Lazy;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -198,92 +193,9 @@ fn validate_headers(headers: Bound<'_, PyDict>) -> PyResult<Option<String>> {
     Ok(None)
 }
 
-#[pyfunction]
-fn write_csv_log(csv_file: &str, headers: Vec<String>, row: Bound<'_, PyDict>) -> PyResult<bool> {
-    if let Some(parent) = Path::new(csv_file).parent() {
-        if !parent.as_os_str().is_empty() {
-            let _ = fs::create_dir_all(parent);
-        }
-    }
-
-    let lock_path = format!("{}.lock", csv_file);
-
-    let lock_file = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .open(&lock_path);
-
-    let lock_file = match lock_file {
-        Ok(file) => file,
-        Err(_) => return Ok(false),
-    };
-
-    if lock_file.lock_exclusive().is_err() {
-        return Ok(false);
-    }
-
-    let wrote = (|| {
-        let needs_header = match fs::metadata(csv_file) {
-            Ok(meta) => meta.len() == 0,
-            Err(_) => true,
-        };
-
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(csv_file)
-            .or_else(|_| {
-                if let Some(parent) = Path::new(csv_file).parent() {
-                    if !parent.as_os_str().is_empty() {
-                        let _ = fs::create_dir_all(parent);
-                    }
-                }
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(csv_file)
-            })
-            .map_err(|_| ())?;
-
-        let mut writer = WriterBuilder::new()
-            .has_headers(false)
-            .from_writer(file);
-
-        if needs_header {
-            writer
-                .write_record(headers.iter())
-                .map_err(|_| ())?;
-        }
-
-        let mut row_values = Vec::with_capacity(headers.len());
-        for key in headers.iter() {
-            let value = row
-                .get_item(key)
-                .ok()
-                .flatten()
-                .and_then(|v| v.str().ok())
-                .and_then(|s| s.to_str().ok().map(|v| v.to_string()))
-                .unwrap_or_else(|| "".to_string());
-            row_values.push(value);
-        }
-
-        writer
-            .write_record(row_values.iter())
-            .map_err(|_| ())?;
-        writer.flush().map_err(|_| ())?;
-        Ok::<(), ()>(())
-    })()
-    .is_ok();
-
-    let _ = FileExt::unlock(&lock_file);
-    Ok(wrote)
-}
-
 #[pymodule]
 fn aiwaf_rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_headers, m)?)?;
-    m.add_function(wrap_pyfunction!(write_csv_log, m)?)?;
     Ok(())
 }
 
@@ -291,8 +203,6 @@ fn aiwaf_rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 mod tests {
     use super::*;
     use pyo3::types::PyDict;
-    use std::fs;
-    use std::path::PathBuf;
 
     fn dict_from_pairs(py: Python<'_>, pairs: &[(&str, &str)]) -> Bound<'_, PyDict> {
         let dict = PyDict::new_bound(py);
@@ -302,11 +212,6 @@ mod tests {
         dict
     }
 
-    fn temp_csv_path(name: &str) -> PathBuf {
-        let mut path = std::env::temp_dir();
-        path.push(format!("aiwaf_rust_test_{}_{}.csv", name, std::process::id()));
-        path
-    }
 
     #[test]
     fn validate_headers_blocks_missing_required() {
@@ -396,89 +301,4 @@ mod tests {
         });
     }
 
-    #[test]
-    fn write_csv_log_writes_header_and_row() {
-        Python::with_gil(|py| {
-            let path = temp_csv_path("write");
-            let headers = vec![
-                "timestamp".to_string(),
-                "ip".to_string(),
-                "method".to_string(),
-            ];
-            let row = PyDict::new_bound(py);
-            row.set_item("timestamp", "t").unwrap();
-            row.set_item("ip", "127.0.0.1").unwrap();
-            row.set_item("method", "GET").unwrap();
-
-            let ok = write_csv_log(path.to_str().unwrap(), headers.clone(), row).unwrap();
-            assert!(ok);
-
-            let content = fs::read_to_string(&path).unwrap();
-            assert!(content.lines().next().unwrap().contains("timestamp"));
-            assert!(content.lines().count() >= 2);
-
-            let _ = fs::remove_file(&path);
-            let _ = fs::remove_file(path.with_extension("csv.lock"));
-        });
-    }
-
-    #[test]
-    fn write_csv_log_appends_without_duplicate_header() {
-        Python::with_gil(|py| {
-            let path = temp_csv_path("append");
-            let headers = vec![
-                "timestamp".to_string(),
-                "ip".to_string(),
-                "method".to_string(),
-            ];
-            let row1 = PyDict::new_bound(py);
-            row1.set_item("timestamp", "t1").unwrap();
-            row1.set_item("ip", "127.0.0.1").unwrap();
-            row1.set_item("method", "GET").unwrap();
-            let ok1 = write_csv_log(path.to_str().unwrap(), headers.clone(), row1).unwrap();
-            assert!(ok1);
-
-            let row2 = PyDict::new_bound(py);
-            row2.set_item("timestamp", "t2").unwrap();
-            row2.set_item("ip", "127.0.0.2").unwrap();
-            row2.set_item("method", "POST").unwrap();
-            let ok2 = write_csv_log(path.to_str().unwrap(), headers.clone(), row2).unwrap();
-            assert!(ok2);
-
-            let content = fs::read_to_string(&path).unwrap();
-            let lines: Vec<&str> = content.lines().collect();
-            assert!(lines.len() >= 3);
-            assert_eq!(lines[0], "timestamp,ip,method");
-            assert_eq!(lines[1], "t1,127.0.0.1,GET");
-            assert_eq!(lines[2], "t2,127.0.0.2,POST");
-
-            let _ = fs::remove_file(&path);
-            let _ = fs::remove_file(path.with_extension("csv.lock"));
-        });
-    }
-
-    #[test]
-    fn write_csv_log_creates_directory_and_lock() {
-        Python::with_gil(|py| {
-            let mut dir = std::env::temp_dir();
-            dir.push(format!("aiwaf_rust_test_dir_{}", std::process::id()));
-            let mut path = dir.clone();
-            path.push("nested");
-            path.push("log.csv");
-
-            let headers = vec!["timestamp".to_string(), "ip".to_string()];
-            let row = PyDict::new_bound(py);
-            row.set_item("timestamp", "t").unwrap();
-            row.set_item("ip", "127.0.0.1").unwrap();
-
-            let ok = write_csv_log(path.to_str().unwrap(), headers, row).unwrap();
-            assert!(ok);
-            assert!(path.exists());
-            assert!(path.with_extension("csv.lock").exists());
-
-            let _ = fs::remove_file(&path);
-            let _ = fs::remove_file(path.with_extension("csv.lock"));
-            let _ = fs::remove_dir_all(dir);
-        });
-    }
 }

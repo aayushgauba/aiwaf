@@ -6,7 +6,6 @@ Skips if aiwaf_rust isn't available.
 
 import os
 import sys
-import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -79,52 +78,6 @@ class RustBackendIntegrationTests(TestCase):
         self.assertIsNotNone(result)
         self.assertIn("HTTP/1.0", result)
 
-    def test_write_csv_log_writes_header_and_row(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            csv_path = os.path.join(tmp, "aiwaf_rust_test.csv")
-            ok = aiwaf_rust.write_csv_log(
-                csv_path,
-                ["timestamp", "ip", "method"],
-                {"timestamp": "t", "ip": "127.0.0.1", "method": "GET"},
-            )
-            self.assertTrue(ok)
-            with open(csv_path, "r", encoding="utf-8") as f:
-                lines = [line.strip() for line in f.readlines() if line.strip()]
-            self.assertGreaterEqual(len(lines), 2)
-            self.assertIn("timestamp", lines[0])
-
-    def test_write_csv_log_appends_rows(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            csv_path = os.path.join(tmp, "aiwaf_rust_test.csv")
-            ok1 = aiwaf_rust.write_csv_log(
-                csv_path,
-                ["timestamp", "ip", "method"],
-                {"timestamp": "t1", "ip": "127.0.0.1", "method": "GET"},
-            )
-            ok2 = aiwaf_rust.write_csv_log(
-                csv_path,
-                ["timestamp", "ip", "method"],
-                {"timestamp": "t2", "ip": "127.0.0.2", "method": "POST"},
-            )
-            self.assertTrue(ok1)
-            self.assertTrue(ok2)
-            with open(csv_path, "r", encoding="utf-8") as f:
-                lines = [line.strip() for line in f.readlines() if line.strip()]
-            self.assertEqual(lines[0], "timestamp,ip,method")
-            self.assertEqual(lines[1], "t1,127.0.0.1,GET")
-            self.assertEqual(lines[2], "t2,127.0.0.2,POST")
-
-    def test_write_csv_log_creates_directory(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            nested_dir = os.path.join(tmp, "nested", "dir")
-            csv_path = os.path.join(nested_dir, "aiwaf_rust_test.csv")
-            ok = aiwaf_rust.write_csv_log(
-                csv_path,
-                ["timestamp", "ip"],
-                {"timestamp": "t", "ip": "127.0.0.1"},
-            )
-            self.assertTrue(ok)
-            self.assertTrue(os.path.exists(csv_path))
 
 
 if __name__ == "__main__":

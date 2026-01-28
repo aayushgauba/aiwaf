@@ -95,14 +95,7 @@ def main() -> int:
     py_csv_time = bench(lambda: logger._write_csv_log(request, response, 0.001), args.csv_iters)
     print(f"Python CSV logging:       {args.csv_iters / py_csv_time:.2f} ops/sec")
 
-    if aiwaf_rust is not None:
-        row_headers, row = logger._build_csv_row(request, response, 0.001)
-        rust_csv_time = bench(
-            lambda: aiwaf_rust.write_csv_log(csv_path, row_headers, row), args.csv_iters
-        )
-        print(f"Rust CSV logging:         {args.csv_iters / rust_csv_time:.2f} ops/sec")
-    else:
-        print("Rust CSV logging:         skipped (aiwaf_rust not available)")
+    print("Rust CSV logging:         not applicable (Python-only)")
 
     tmpdir.cleanup()
     return 0

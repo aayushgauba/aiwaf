@@ -44,7 +44,7 @@ class RustBackendToggleTests(AIWAFMiddlewareTestCase):
     @override_settings(
         AIWAF_USE_RUST=True, AIWAF_MIDDLEWARE_CSV=True, AIWAF_MIDDLEWARE_LOGGING=True
     )
-    def test_logger_uses_rust_when_enabled(self):
+    def test_logger_uses_python_csv_logging(self):
         request = self.create_request(
             "/blocked/",
             headers={"REMOTE_ADDR": "10.0.0.1"},
@@ -52,22 +52,19 @@ class RustBackendToggleTests(AIWAFMiddlewareTestCase):
         response = MagicMock(status_code=200)
         response.get.return_value = "-"
 
-        with patch("aiwaf.middleware_logger.rust_available", return_value=True), patch(
-            "aiwaf.middleware_logger.rust_write_csv_log", return_value=True
-        ) as rust_writer, patch.object(
+        with patch.object(
             AIWAFLoggerMiddleware, "_write_csv_log"
         ) as py_writer:
             middleware = AIWAFLoggerMiddleware(self.mock_get_response)
             middleware.process_request(request)
             middleware.process_response(request, response)
 
-        rust_writer.assert_called_once()
-        py_writer.assert_not_called()
+        py_writer.assert_called_once()
 
     @override_settings(
         AIWAF_USE_RUST=True, AIWAF_MIDDLEWARE_CSV=True, AIWAF_MIDDLEWARE_LOGGING=True
     )
-    def test_logger_falls_back_to_python_when_rust_fails(self):
+    def test_logger_uses_python_csv_logging_even_if_rust_enabled(self):
         request = self.create_request(
             "/blocked/",
             headers={"REMOTE_ADDR": "10.0.0.1"},
@@ -75,9 +72,7 @@ class RustBackendToggleTests(AIWAFMiddlewareTestCase):
         response = MagicMock(status_code=200)
         response.get.return_value = "-"
 
-        with patch("aiwaf.middleware_logger.rust_available", return_value=True), patch(
-            "aiwaf.middleware_logger.rust_write_csv_log", return_value=False
-        ), patch.object(
+        with patch.object(
             AIWAFLoggerMiddleware, "_write_csv_log"
         ) as py_writer:
             middleware = AIWAFLoggerMiddleware(self.mock_get_response)

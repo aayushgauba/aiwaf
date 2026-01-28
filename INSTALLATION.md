@@ -254,8 +254,8 @@ your_project/
 
 ## Optional Rust Backend (CSV + Header Validation)
 
-When both `AIWAF_MIDDLEWARE_CSV = True` and `AIWAF_USE_RUST = True`, AI-WAF uses a Rust
-backend (pyo3/maturin) for header validation and CSV logging. If the Rust module is not
+When `AIWAF_USE_RUST = True`, AI-WAF uses a Rust
+backend (pyo3/maturin) for header validation. If the Rust module is not
 available, it falls back to Python automatically.
 
 ```bash
