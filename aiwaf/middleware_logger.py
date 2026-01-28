@@ -9,6 +9,7 @@ from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
 from django.utils import timezone
 from .utils import get_ip
+from .rust_backend import rust_available, write_csv_log as rust_write_csv_log
 
 # Defer model imports to avoid AppRegistryNotReady during Django app loading
 RequestLog = None
@@ -56,7 +57,13 @@ class AIWAFLoggerMiddleware(MiddlewareMixin):
         response_time = time.time() - start_time
         
         if self.csv_enabled:
-            self._write_csv_log(request, response, response_time)
+            if self._should_use_rust():
+                headers, row = self._build_csv_row(request, response, response_time)
+                wrote = rust_write_csv_log(self._get_csv_path(), headers, row)
+                if not wrote:
+                    self._write_csv_log(request, response, response_time)
+            else:
+                self._write_csv_log(request, response, response_time)
 
         if self.log_to_db:
             _import_models()
@@ -79,14 +86,40 @@ class AIWAFLoggerMiddleware(MiddlewareMixin):
             
         return response
 
-    def _write_csv_log(self, request, response, response_time):
+    def _should_use_rust(self) -> bool:
+        return (
+            getattr(settings, "AIWAF_USE_RUST", False)
+            and self.csv_enabled
+            and rust_available()
+        )
+
+    def _get_csv_path(self) -> str:
         csv_file = self.log_file
         if not csv_file.endswith(".csv"):
             csv_file = csv_file.replace(".log", ".csv")
+        return csv_file
+
+    def _write_csv_log(self, request, response, response_time):
+        csv_file = self._get_csv_path()
         log_dir = os.path.dirname(csv_file)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
 
+        headers, row = self._build_csv_row(request, response, response_time)
+
+        try:
+            with _file_lock(csv_file):
+                needs_header = not os.path.exists(csv_file) or os.path.getsize(csv_file) == 0
+                with open(csv_file, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=headers)
+                    if needs_header:
+                        writer.writeheader()
+                    writer.writerow(row)
+        except Exception:
+            # Fail silently to avoid breaking the application
+            pass
+
+    def _build_csv_row(self, request, response, response_time):
         headers = [
             "timestamp",
             "ip",
@@ -109,18 +142,7 @@ class AIWAFLoggerMiddleware(MiddlewareMixin):
             "referer": request.META.get('HTTP_REFERER', '')[:500],
             "user_agent": request.META.get('HTTP_USER_AGENT', '')[:2000],
         }
-
-        try:
-            with _file_lock(csv_file):
-                needs_header = not os.path.exists(csv_file) or os.path.getsize(csv_file) == 0
-                with open(csv_file, "a", newline="", encoding="utf-8") as f:
-                    writer = csv.DictWriter(f, fieldnames=headers)
-                    if needs_header:
-                        writer.writeheader()
-                    writer.writerow(row)
-        except Exception:
-            # Fail silently to avoid breaking the application
-            pass
+        return headers, row
 
 
 @contextlib.contextmanager

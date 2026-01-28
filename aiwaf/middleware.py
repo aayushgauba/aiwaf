@@ -50,6 +50,7 @@ from .utils import (
 from .storage import get_keyword_store
 from .settings_compat import apply_legacy_settings
 from .model_store import load_model_data, _normalize_storage_mode
+from .rust_backend import rust_available, validate_headers as rust_validate_headers
 
 apply_legacy_settings()
 
@@ -1178,7 +1179,7 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         r'insomnia',
         r'^$',  # Empty user agent
         r'mozilla/4\.0$',  # Fake old browser
-        r'mozilla/5\.0$',  # Incomplete mozilla string
+        # Note: exact "Mozilla/5.0" is common; avoid flagging it as suspicious.
     ]
     
     # Known legitimate bot user agents to whitelist
@@ -1265,6 +1266,12 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         
         # Get headers from request.META
         headers = request.META
+
+        if self._should_use_rust():
+            reason = rust_validate_headers(headers)
+            if reason:
+                return self._block_request(request, ip, reason, request.path)
+            return None
         
         # Check for missing required headers
         missing_headers = self._check_missing_headers(headers)
@@ -1287,6 +1294,13 @@ class HeaderValidationMiddleware(MiddlewareMixin):
             return self._block_request(request, ip, f"Low header quality score: {quality_score}", request.path)
         
         return None
+
+    def _should_use_rust(self) -> bool:
+        return (
+            getattr(settings, "AIWAF_USE_RUST", False)
+            and getattr(settings, "AIWAF_MIDDLEWARE_CSV", True)
+            and rust_available()
+        )
     
     def _is_static_request(self, request):
         """Check if this is a request for static files"""

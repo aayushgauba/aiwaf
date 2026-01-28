@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'aiwaf',  # Our AIWAF app
+    'tests',  # Include tests package for discovery
 ]
 
 MIDDLEWARE = [

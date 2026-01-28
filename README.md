@@ -418,6 +418,7 @@ AIWAF_MIDDLEWARE_LOGGING = True                    # Enable/disable logging
 AIWAF_MIDDLEWARE_LOG = "aiwaf_requests.log"        # Optional log file name
 AIWAF_MIDDLEWARE_CSV = True                        # Write CSV log file (default: True)
 AIWAF_MIDDLEWARE_DB = True                         # Write RequestLog entries (default: True)
+AIWAF_USE_RUST = False                             # Use Rust backend when CSV logging is enabled
 ```
 
 **Then add middleware to MIDDLEWARE list:**
@@ -444,6 +445,26 @@ python manage.py aiwaf_logging --clear     # Clear log files
 - **Lightweight** - fails silently to avoid breaking your application
 
 If you want the trainer to use the CSV log file, point `AIWAF_ACCESS_LOG` at the CSV path (e.g., `aiwaf_requests.csv`).
+
+---
+
+### Optional Rust Backend (CSV + Header Validation)
+
+When both `AIWAF_MIDDLEWARE_CSV = True` and `AIWAF_USE_RUST = True`, AI-WAF uses a Rust
+backend (pyo3/maturin) for header validation and CSV logging. If the Rust module is not
+available, it automatically falls back to the Python implementation.
+
+**Build the Rust extension:**
+```bash
+pip install maturin
+maturin develop -m aiwaf_rust/Cargo.toml
+```
+
+**Enable in settings:**
+```python
+AIWAF_MIDDLEWARE_CSV = True
+AIWAF_USE_RUST = True
+```
 
 ---
 

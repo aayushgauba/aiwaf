@@ -1,6 +1,6 @@
 [project]
 name = "aiwaf"
-version = "0.1.9.4.8"
+version = "0.1.9.4.9"
 description = "AI-powered Web Application Firewall"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -28,3 +28,12 @@ geoblock = [
     "geoip2>=4.0"
 ]
 light = []
+
+[build-system]
+requires = ["maturin>=1.6,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+manifest-path = "aiwaf_rust/Cargo.toml"
+python-source = "."
+module-name = "aiwaf_rust"
