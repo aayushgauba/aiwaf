@@ -418,7 +418,7 @@ AIWAF_MIDDLEWARE_LOGGING = True                    # Enable/disable logging
 AIWAF_MIDDLEWARE_LOG = "aiwaf_requests.log"        # Optional log file name
 AIWAF_MIDDLEWARE_CSV = True                        # Write CSV log file (default: True)
 AIWAF_MIDDLEWARE_DB = True                         # Write RequestLog entries (default: True)
-AIWAF_USE_RUST = False                             # Use Rust backend when CSV logging is enabled
+AIWAF_USE_RUST = False                             # Use Rust backend for header validation
 ```
 
 **Then add middleware to MIDDLEWARE list:**
@@ -448,7 +448,7 @@ If you want the trainer to use the CSV log file, point `AIWAF_ACCESS_LOG` at the
 
 ---
 
-### Optional Rust Backend (CSV + Header Validation)
+### Optional Rust Backend (Header Validation)
 
 When `AIWAF_USE_RUST = True`, AI-WAF uses a Rust
 backend (pyo3/maturin) for header validation. If the Rust module is not
