@@ -457,7 +457,7 @@ available, it automatically falls back to the Python implementation.
 **Build the Rust extension:**
 ```bash
 pip install maturin
-maturin develop -m aiwaf_rust/Cargo.toml
+maturin develop -m Cargo.toml
 ```
 
 **Enable in settings:**

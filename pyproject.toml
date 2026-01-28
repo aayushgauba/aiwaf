@@ -1,6 +1,6 @@
 [project]
 name = "aiwaf"
-version = "0.1.9.5.6"
+version = "0.1.9.5.7"
 description = "AI-powered Web Application Firewall"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -34,7 +34,10 @@ requires = ["maturin>=1.6,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
-manifest-path = "aiwaf_rust/Cargo.toml"
+manifest-path = "Cargo.toml"
 python-source = "."
 module-name = "aiwaf_rust"
-include = ["LICENSE", "README.md", "aiwaf/**"]
+python-packages = ["aiwaf"]
+include = ["LICENSE", "README.md", "aiwaf/**", "src/**"]
+sdist-include = ["LICENSE", "README.md", "aiwaf/**", "src/**", "Cargo.toml", "Cargo.lock"]
+exclude = ["venv/**", ".venv/**"]

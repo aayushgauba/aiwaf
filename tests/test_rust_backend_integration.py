@@ -24,7 +24,7 @@ class RustBackendIntegrationTests(TestCase):
         if aiwaf_rust is None:
             raise AssertionError(
                 "aiwaf_rust extension not available. Build it with: "
-                "maturin develop -m aiwaf_rust/Cargo.toml"
+                "maturin develop -m Cargo.toml"
             )
 
     def test_validate_headers_blocks_missing(self):

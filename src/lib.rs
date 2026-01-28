@@ -212,7 +212,6 @@ mod tests {
         dict
     }
 
-
     #[test]
     fn validate_headers_blocks_missing_required() {
         Python::with_gil(|py| {
@@ -300,5 +299,4 @@ mod tests {
             assert!(matches!(result, Some(msg) if msg.contains("HTTP/1.0")));
         });
     }
-
 }

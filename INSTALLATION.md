@@ -260,7 +260,7 @@ available, it falls back to Python automatically.
 
 ```bash
 pip install maturin
-maturin develop -m aiwaf_rust/Cargo.toml
+maturin develop -m Cargo.toml
 ```
 
 ```python
