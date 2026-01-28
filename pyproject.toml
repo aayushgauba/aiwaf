@@ -37,3 +37,4 @@ build-backend = "maturin"
 manifest-path = "aiwaf_rust/Cargo.toml"
 python-source = "."
 module-name = "aiwaf_rust"
+include = ["LICENSE"]
