@@ -23,3 +23,11 @@ def validate_headers(headers) -> str | None:
     except Exception:
         return None
 
+
+def extract_features(records, static_keywords):
+    if aiwaf_rust is None:
+        return None
+    try:
+        return aiwaf_rust.extract_features(records, static_keywords)
+    except Exception:
+        return None

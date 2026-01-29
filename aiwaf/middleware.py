@@ -1140,6 +1140,12 @@ class HeaderValidationMiddleware(MiddlewareMixin):
     """
     Validates HTTP headers to detect bots and malicious requests
     """
+    def __init__(self, get_response):
+        super().__init__(get_response)
+        self.MAX_HEADER_BYTES = getattr(settings, "AIWAF_MAX_HEADER_BYTES", 32 * 1024)
+        self.MAX_HEADER_COUNT = getattr(settings, "AIWAF_MAX_HEADER_COUNT", 100)
+        self.MAX_USER_AGENT_LENGTH = getattr(settings, "AIWAF_MAX_USER_AGENT_LENGTH", 500)
+        self.MAX_ACCEPT_LENGTH = getattr(settings, "AIWAF_MAX_ACCEPT_LENGTH", 4096)
     
     # Standard browser headers that legitimate requests should have
     REQUIRED_HEADERS = [
@@ -1267,6 +1273,10 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         # Get headers from request.META
         headers = request.META
 
+        cap_reason = self._enforce_header_caps(headers)
+        if cap_reason:
+            return self._block_request(request, ip, cap_reason, request.path)
+
         if self._should_use_rust():
             reason = rust_validate_headers(headers)
             if reason:
@@ -1332,6 +1342,9 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         if not user_agent:
             return "Empty user agent"
             
+        if len(user_agent) > self.MAX_USER_AGENT_LENGTH:
+            return f"User-Agent longer than {self.MAX_USER_AGENT_LENGTH} chars"
+        
         user_agent_lower = user_agent.lower()
         
         # Check if it's a legitimate bot first
@@ -1349,10 +1362,42 @@ class HeaderValidationMiddleware(MiddlewareMixin):
             return "Too short"
             
         # Check for very long user agents (possibly malicious)
-        if len(user_agent) > 500:
-            return "Too long"
+        if len(user_agent) > self.MAX_USER_AGENT_LENGTH:
+            return f"Too long (> {self.MAX_USER_AGENT_LENGTH})"
             
         return None
+
+    def _enforce_header_caps(self, headers):
+        """Fail fast for oversized header floods and malformed clients."""
+        total_bytes = 0
+        header_count = 0
+
+        for key, value in headers.items():
+            if not self._is_http_meta_key(key):
+                continue
+
+            header_count += 1
+            value_str = value if isinstance(value, str) else str(value)
+            total_bytes += len(key) + len(value_str)
+
+            if total_bytes > self.MAX_HEADER_BYTES:
+                return f"Header bytes exceed {self.MAX_HEADER_BYTES}"
+
+        if header_count > self.MAX_HEADER_COUNT:
+            return f"Header count exceeds {self.MAX_HEADER_COUNT}"
+
+        user_agent = headers.get('HTTP_USER_AGENT', '')
+        if user_agent and len(user_agent) > self.MAX_USER_AGENT_LENGTH:
+            return f"User-Agent longer than {self.MAX_USER_AGENT_LENGTH} chars"
+
+        accept_header = headers.get('HTTP_ACCEPT', '')
+        if accept_header and len(accept_header) > self.MAX_ACCEPT_LENGTH:
+            return f"Accept header longer than {self.MAX_ACCEPT_LENGTH} chars"
+
+        return None
+
+    def _is_http_meta_key(self, key: str) -> bool:
+        return key.startswith('HTTP_') or key in {'CONTENT_TYPE', 'CONTENT_LENGTH'}
     
     def _check_header_combinations(self, headers):
         """Check for suspicious header combinations"""

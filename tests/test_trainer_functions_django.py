@@ -4,8 +4,12 @@ Django Unit Tests for AIWAF Trainer Module
 Tests the trainer module functions using Django test framework.
 """
 
+from datetime import datetime
+from unittest.mock import patch
+
+from django.test import override_settings
+
 from tests.base_test import AIWAFTestCase
-from unittest.mock import patch, MagicMock
 
 
 class TrainerFunctionsTestCase(AIWAFTestCase):
@@ -92,3 +96,54 @@ class TrainerFunctionsTestCase(AIWAFTestCase):
         
         logs = self.trainer_module._get_logs_from_model()
         self.assertIsInstance(logs, list)
+
+    @override_settings(AIWAF_USE_RUST=True)
+    def test_generate_feature_dicts_uses_rust_when_available(self):
+        parsed = [{
+            "ip": "1.1.1.1",
+            "timestamp": datetime.now(),
+            "path": "/test",
+            "status": "200",
+            "response_time": 0.2,
+        }]
+        ip_404 = {"1.1.1.1": 1}
+        ip_times = {"1.1.1.1": [parsed[0]["timestamp"]]}
+
+        with patch('aiwaf.trainer.path_exists_in_django', return_value=False), \
+             patch('aiwaf.trainer.is_exempt_path', return_value=False), \
+             patch('aiwaf.trainer.rust_available', return_value=True), \
+             patch('aiwaf.trainer.rust_extract_features', return_value=[{"ip": "1.1.1.1"}]) as mock_rust:
+            result = self.trainer_module._generate_feature_dicts(parsed, ip_404, ip_times)
+
+        self.assertEqual(result, [{"ip": "1.1.1.1"}])
+        mock_rust.assert_called_once()
+
+    @override_settings(AIWAF_USE_RUST=True)
+    def test_generate_feature_dicts_falls_back_when_rust_unavailable(self):
+        ts = datetime(2025, 1, 1, 0, 0, 0)
+        parsed = [{
+            "ip": "2.2.2.2",
+            "timestamp": ts,
+            "path": "/.env",
+            "status": "404",
+            "response_time": 0.5,
+        }]
+        ip_404 = {"2.2.2.2": 3}
+        ip_times = {"2.2.2.2": [ts]}
+
+        with patch('aiwaf.trainer.path_exists_in_django', return_value=False), \
+             patch('aiwaf.trainer.is_exempt_path', return_value=False), \
+             patch('aiwaf.trainer.rust_available', return_value=False), \
+             patch('aiwaf.trainer.rust_extract_features', return_value=None):
+            result = self.trainer_module._generate_feature_dicts(parsed, ip_404, ip_times)
+
+        expected = [{
+            "ip": "2.2.2.2",
+            "path_len": len('/.env'),
+            "kw_hits": 1,
+            "resp_time": 0.5,
+            "status_idx": 2,
+            "burst_count": 1,
+            "total_404": 3,
+        }]
+        self.assertEqual(result, expected)

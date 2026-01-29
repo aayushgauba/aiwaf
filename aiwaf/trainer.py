@@ -34,6 +34,7 @@ from .blacklist_manager import BlacklistManager
 from .settings_compat import apply_legacy_settings
 from .model_store import save_model_data
 from .geoip import lookup_country, lookup_country_name
+from .rust_backend import rust_available, extract_features as rust_extract_features
 
 apply_legacy_settings()
 
@@ -398,10 +399,76 @@ def _get_logs_from_model() -> list[str]:
         
         print(f"Loaded {len(log_lines)} log entries from RequestLog model")
         return log_lines
-        
     except Exception as e:
         print(f"Warning: Could not load logs from RequestLog model: {e}")
         return []
+
+
+def _should_use_rust_features() -> bool:
+    return getattr(settings, "AIWAF_USE_RUST", False) and rust_available()
+
+
+def _generate_feature_dicts(parsed, ip_404, ip_times):
+    records = []
+    for record in parsed:
+        path = record["path"]
+        known_path = path_exists_in_django(path)
+        kw_check = (not known_path) and (not is_exempt_path(path))
+        status_idx = STATUS_IDX.index(record["status"]) if record["status"] in STATUS_IDX else -1
+        records.append({
+            "ip": record["ip"],
+            "path_len": len(path),
+            "path_lower": path.lower(),
+            "resp_time": record["response_time"],
+            "status_idx": status_idx,
+            "timestamp": record["timestamp"],
+            "timestamp_epoch": record["timestamp"].timestamp(),
+            "kw_check": kw_check,
+            "total_404": ip_404.get(record["ip"], 0),
+        })
+
+    if records and _should_use_rust_features():
+        rust_payload = [
+            {
+                "ip": rec["ip"],
+                "path_lower": rec["path_lower"],
+                "path_len": rec["path_len"],
+                "timestamp": rec["timestamp_epoch"],
+                "response_time": rec["resp_time"],
+                "status_idx": rec["status_idx"],
+                "kw_check": rec["kw_check"],
+                "total_404": rec["total_404"],
+            }
+            for rec in records
+        ]
+        rust_features = rust_extract_features(rust_payload, STATIC_KW)
+        if rust_features is not None:
+            return rust_features
+
+    feature_dicts = []
+    for rec in records:
+        kw_hits = 0
+        if rec["kw_check"]:
+            path_lower = rec["path_lower"]
+            kw_hits = sum(1 for kw in STATIC_KW if kw in path_lower)
+
+        burst = 0
+        timestamps = ip_times.get(rec["ip"], [])
+        for ts in timestamps:
+            if (rec["timestamp"] - ts).total_seconds() <= 10:
+                burst += 1
+
+        feature_dicts.append({
+            "ip": rec["ip"],
+            "path_len": rec["path_len"],
+            "kw_hits": kw_hits,
+            "resp_time": rec["resp_time"],
+            "status_idx": rec["status_idx"],
+            "burst_count": burst,
+            "total_404": rec["total_404"],
+        })
+
+    return feature_dicts
 
 
 def _parse(line: str) -> dict | None:
@@ -572,30 +639,7 @@ def train(disable_ai=False, force_ai=False) -> None:
             if count > login_404s:  # More non-login 404s than login 404s
                 BlacklistManager.block(ip, f"Excessive 404s (≥6 non-login, {count}/{total_404s})")
 
-    feature_dicts = []
-    for r in parsed:
-        ip = r["ip"]
-        burst = sum(
-            1 for t in ip_times[ip]
-            if (r["timestamp"] - t).total_seconds() <= 10
-        )
-        total404   = ip_404[ip]
-        known_path = path_exists_in_django(r["path"])
-        kw_hits    = 0
-        if not known_path and not is_exempt_path(r["path"]):
-            kw_hits = sum(k in r["path"].lower() for k in STATIC_KW)
-
-        status_idx = STATUS_IDX.index(r["status"]) if r["status"] in STATUS_IDX else -1
-
-        feature_dicts.append({
-            "ip":           ip,
-            "path_len":     len(r["path"]),
-            "kw_hits":      kw_hits,
-            "resp_time":    r["response_time"],
-            "status_idx":   status_idx,
-            "burst_count":  burst,
-            "total_404":    total404,
-        })
+    feature_dicts = _generate_feature_dicts(parsed, ip_404, ip_times)
 
     if not feature_dicts:
         print(" Nothing to train on – no valid log entries.")

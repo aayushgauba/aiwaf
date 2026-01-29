@@ -1,7 +1,10 @@
 use once_cell::sync::Lazy;
+use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyAny, PyDict};
+use pyo3::FromPyObject;
 use regex::Regex;
+use std::collections::HashMap;
 
 static LEGITIMATE_BOTS: Lazy<Vec<Regex>> = Lazy::new(|| {
     vec![
@@ -193,9 +196,115 @@ fn validate_headers(headers: Bound<'_, PyDict>) -> PyResult<Option<String>> {
     Ok(None)
 }
 
+#[derive(Clone)]
+struct FeatureRecordInput {
+    ip: String,
+    path_lower: String,
+    path_len: usize,
+    timestamp: f64,
+    response_time: f64,
+    status_idx: i32,
+    kw_check: bool,
+    total_404: i32,
+}
+
+impl<'py> FromPyObject<'py> for FeatureRecordInput {
+    fn extract(ob: &'py PyAny) -> PyResult<Self> {
+        let dict: &PyDict = ob.downcast()?;
+
+        let get_required = |key: &str| -> PyResult<&PyAny> {
+            dict.get_item(key)?
+                .ok_or_else(|| PyErr::new::<PyKeyError, _>(key.to_string()))
+        };
+
+        Ok(Self {
+            ip: get_required("ip")?.extract()?,
+            path_lower: get_required("path_lower")?.extract()?,
+            path_len: get_required("path_len")?.extract()?,
+            timestamp: get_required("timestamp")?.extract()?,
+            response_time: get_required("response_time")?.extract()?,
+            status_idx: get_required("status_idx")?.extract()?,
+            kw_check: get_required("kw_check")?.extract()?,
+            total_404: get_required("total_404")?.extract()?,
+        })
+    }
+}
+
+fn build_timestamp_index(records: &[FeatureRecordInput]) -> HashMap<String, Vec<f64>> {
+    let mut map: HashMap<String, Vec<f64>> = HashMap::new();
+    for rec in records {
+        map.entry(rec.ip.clone())
+            .or_default()
+            .push(rec.timestamp);
+    }
+    for timestamps in map.values_mut() {
+        timestamps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    map
+}
+
+fn count_burst(timestamps: Option<&Vec<f64>>, current: f64) -> i32 {
+    if let Some(ts) = timestamps {
+        let min_ts = current - 10.0;
+        ts.iter()
+            .filter(|value| **value >= min_ts && **value <= current)
+            .count() as i32
+    } else {
+        0
+    }
+}
+
+fn keyword_hits(path_lower: &str, keywords: &[String], enabled: bool) -> i32 {
+    if !enabled {
+        return 0;
+    }
+    keywords
+        .iter()
+        .filter(|kw| path_lower.contains(kw.as_str()))
+        .count() as i32
+}
+
+#[pyfunction]
+fn extract_features<'py>(
+    py: Python<'py>,
+    records: Vec<FeatureRecordInput>,
+    static_keywords: Vec<String>,
+) -> PyResult<Vec<Py<PyDict>>> {
+    if records.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let keywords: Vec<String> = static_keywords
+        .into_iter()
+        .map(|kw| kw.to_lowercase())
+        .collect();
+
+    let timestamp_index = build_timestamp_index(&records);
+    let mut output = Vec::with_capacity(records.len());
+
+    for rec in records.into_iter() {
+        let timestamps = timestamp_index.get(&rec.ip);
+        let burst = count_burst(timestamps, rec.timestamp);
+        let kw = keyword_hits(&rec.path_lower, &keywords, rec.kw_check);
+
+        let feature = PyDict::new_bound(py);
+        feature.set_item("ip", rec.ip.clone())?;
+        feature.set_item("path_len", rec.path_len)?;
+        feature.set_item("kw_hits", kw)?;
+        feature.set_item("resp_time", rec.response_time)?;
+        feature.set_item("status_idx", rec.status_idx)?;
+        feature.set_item("burst_count", burst)?;
+        feature.set_item("total_404", rec.total_404)?;
+        output.push(feature.into());
+    }
+
+    Ok(output)
+}
+
 #[pymodule]
 fn aiwaf_rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_headers, m)?)?;
+    m.add_function(wrap_pyfunction!(extract_features, m)?)?;
     Ok(())
 }
 

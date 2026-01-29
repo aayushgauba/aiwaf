@@ -24,7 +24,10 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.test_settings')
 import django
 django.setup()
 
+from django.test import override_settings
+
 from tests.base_test import AIWAFMiddlewareTestCase
+from aiwaf.middleware import HeaderValidationMiddleware
 
 
 class HeaderValidationTestCase(AIWAFMiddlewareTestCase):
@@ -34,6 +37,71 @@ class HeaderValidationTestCase(AIWAFMiddlewareTestCase):
         super().setUp()
         # Import after Django setup
         # Add imports as needed
+    
+    def _run_and_capture_reason(self, request):
+        with patch.object(
+            HeaderValidationMiddleware,
+            "_block_request",
+            return_value=MagicMock(status_code=403)
+        ) as block:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+        
+        self.assertIsNotNone(response)
+        self.assertEqual(response.status_code, 403)
+        reason = block.call_args[0][2]
+        return reason
+
+    @override_settings(
+        AIWAF_MAX_HEADER_BYTES=60,
+        AIWAF_MAX_HEADER_COUNT=100,
+        AIWAF_MAX_USER_AGENT_LENGTH=500,
+        AIWAF_MAX_ACCEPT_LENGTH=4096,
+    )
+    def test_header_bytes_cap_blocks_early(self):
+        headers = {
+            'HTTP_USER_AGENT': 'Mozilla/5.0',
+            'HTTP_ACCEPT': 'text/html',
+            'HTTP_X_EXTRA': 'x' * 80,
+            'REMOTE_ADDR': '203.0.113.1',
+        }
+        request = self.factory.get('/caps/', **headers)
+        reason = self._run_and_capture_reason(request)
+        self.assertIn("Header bytes exceed", reason)
+
+    @override_settings(
+        AIWAF_MAX_HEADER_BYTES=4096,
+        AIWAF_MAX_HEADER_COUNT=2,
+        AIWAF_MAX_USER_AGENT_LENGTH=500,
+        AIWAF_MAX_ACCEPT_LENGTH=4096,
+    )
+    def test_header_count_cap_blocks_after_threshold(self):
+        headers = {
+            'HTTP_USER_AGENT': 'Mozilla/5.0',
+            'HTTP_ACCEPT': 'text/html',
+            'HTTP_X_ONE': '1',
+            'HTTP_X_TWO': '2',
+            'REMOTE_ADDR': '203.0.113.2',
+        }
+        request = self.factory.get('/caps/', **headers)
+        reason = self._run_and_capture_reason(request)
+        self.assertIn("Header count exceeds", reason)
+
+    @override_settings(
+        AIWAF_MAX_HEADER_BYTES=4096,
+        AIWAF_MAX_HEADER_COUNT=100,
+        AIWAF_MAX_USER_AGENT_LENGTH=500,
+        AIWAF_MAX_ACCEPT_LENGTH=10,
+    )
+    def test_accept_header_length_cap_triggers(self):
+        headers = {
+            'HTTP_USER_AGENT': 'Mozilla/5.0',
+            'HTTP_ACCEPT': 'text/html;q=0.9',
+            'REMOTE_ADDR': '203.0.113.3',
+        }
+        request = self.factory.get('/caps/', **headers)
+        reason = self._run_and_capture_reason(request)
+        self.assertIn("Accept header longer than", reason)
     
     def test_header_validation(self):
         """Test header validation"""
