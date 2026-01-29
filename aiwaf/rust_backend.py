@@ -31,3 +31,12 @@ def extract_features(records, static_keywords):
         return aiwaf_rust.extract_features(records, static_keywords)
     except Exception:
         return None
+
+
+def analyze_recent_behavior(entries, static_keywords):
+    if aiwaf_rust is None:
+        return None
+    try:
+        return aiwaf_rust.analyze_recent_behavior(entries, static_keywords)
+    except Exception:
+        return None

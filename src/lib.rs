@@ -230,6 +230,32 @@ impl<'py> FromPyObject<'py> for FeatureRecordInput {
     }
 }
 
+#[derive(Clone)]
+struct RecentEntryInput {
+    path_lower: String,
+    timestamp: f64,
+    status: i32,
+    kw_check: bool,
+}
+
+impl<'py> FromPyObject<'py> for RecentEntryInput {
+    fn extract(ob: &'py PyAny) -> PyResult<Self> {
+        let dict: &PyDict = ob.downcast()?;
+
+        let get_required = |key: &str| -> PyResult<&PyAny> {
+            dict.get_item(key)?
+                .ok_or_else(|| PyErr::new::<PyKeyError, _>(key.to_string()))
+        };
+
+        Ok(Self {
+            path_lower: get_required("path_lower")?.extract()?,
+            timestamp: get_required("timestamp")?.extract()?,
+            status: get_required("status")?.extract()?,
+            kw_check: get_required("kw_check")?.extract()?,
+        })
+    }
+}
+
 fn build_timestamp_index(records: &[FeatureRecordInput]) -> HashMap<String, Vec<f64>> {
     let mut map: HashMap<String, Vec<f64>> = HashMap::new();
     for rec in records {
@@ -262,6 +288,90 @@ fn keyword_hits(path_lower: &str, keywords: &[String], enabled: bool) -> i32 {
         .iter()
         .filter(|kw| path_lower.contains(kw.as_str()))
         .count() as i32
+}
+
+fn lower_bound(values: &[f64], target: f64) -> usize {
+    let mut left = 0usize;
+    let mut right = values.len();
+    while left < right {
+        let mid = (left + right) / 2;
+        if values[mid] < target {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+    left
+}
+
+fn upper_bound(values: &[f64], target: f64) -> usize {
+    let mut left = 0usize;
+    let mut right = values.len();
+    while left < right {
+        let mid = (left + right) / 2;
+        if values[mid] <= target {
+            left = mid + 1;
+        } else {
+            right = mid;
+        }
+    }
+    left
+}
+
+fn is_scanning_path(path_lower: &str) -> bool {
+    let scanning_patterns = [
+        "wp-admin",
+        "wp-content",
+        "wp-includes",
+        "wp-config",
+        "xmlrpc.php",
+        "admin",
+        "phpmyadmin",
+        "adminer",
+        "config",
+        "configuration",
+        "settings",
+        "setup",
+        "install",
+        "installer",
+        "backup",
+        "database",
+        "db",
+        "mysql",
+        "sql",
+        "dump",
+        ".env",
+        ".git",
+        ".htaccess",
+        ".htpasswd",
+        "passwd",
+        "shadow",
+        "robots.txt",
+        "sitemap.xml",
+        "cgi-bin",
+        "scripts",
+        "shell",
+        "cmd",
+        "exec",
+        ".php",
+        ".asp",
+        ".aspx",
+        ".jsp",
+        ".cgi",
+        ".pl",
+    ];
+
+    if scanning_patterns.iter().any(|pat| path_lower.contains(pat)) {
+        return true;
+    }
+    if path_lower.contains("../") || path_lower.contains("..\\") {
+        return true;
+    }
+    let encoded = ["%2e%2e", "%252e", "%c0%ae"];
+    if encoded.iter().any(|enc| path_lower.contains(enc)) {
+        return true;
+    }
+    false
 }
 
 #[pyfunction]
@@ -301,10 +411,86 @@ fn extract_features<'py>(
     Ok(output)
 }
 
+#[pyfunction]
+fn analyze_recent_behavior<'py>(
+    py: Python<'py>,
+    entries: Vec<RecentEntryInput>,
+    static_keywords: Vec<String>,
+) -> PyResult<Option<Py<PyDict>>> {
+    if entries.is_empty() {
+        return Ok(None);
+    }
+
+    let keywords: Vec<String> = static_keywords
+        .into_iter()
+        .map(|kw| kw.to_lowercase())
+        .collect();
+    let mut timestamps: Vec<f64> = entries.iter().map(|e| e.timestamp).collect();
+    timestamps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut total_kw_hits = 0f64;
+    let mut total_burst = 0f64;
+    let mut max_404s = 0i32;
+    let mut scanning_404s = 0i32;
+
+    for entry in entries.iter() {
+        if entry.status == 404 {
+            max_404s += 1;
+            if is_scanning_path(&entry.path_lower) {
+                scanning_404s += 1;
+            }
+        }
+        let kw = keyword_hits(&entry.path_lower, &keywords, entry.kw_check);
+        total_kw_hits += kw as f64;
+
+        let lower = lower_bound(&timestamps, entry.timestamp - 10.0);
+        let upper = upper_bound(&timestamps, entry.timestamp + 10.0);
+        let burst = (upper.saturating_sub(lower)) as i32;
+        total_burst += burst as f64;
+    }
+
+    let total_requests = entries.len() as i32;
+    let avg_kw_hits = if total_requests > 0 {
+        total_kw_hits / total_requests as f64
+    } else {
+        0.0
+    };
+    let avg_burst = if total_requests > 0 {
+        total_burst / total_requests as f64
+    } else {
+        0.0
+    };
+    let legitimate_404s = (max_404s - scanning_404s).max(0);
+
+    let mut should_block = true;
+    if max_404s == 0 && avg_kw_hits == 0.0 && scanning_404s == 0 {
+        should_block = false;
+    } else if avg_kw_hits < 3.0
+        && scanning_404s < 5
+        && legitimate_404s < 20
+        && avg_burst < 25.0
+        && total_requests < 150
+    {
+        should_block = false;
+    }
+
+    let result = PyDict::new_bound(py);
+    result.set_item("avg_kw_hits", avg_kw_hits)?;
+    result.set_item("max_404s", max_404s)?;
+    result.set_item("avg_burst", avg_burst)?;
+    result.set_item("total_requests", total_requests)?;
+    result.set_item("scanning_404s", scanning_404s)?;
+    result.set_item("legitimate_404s", legitimate_404s)?;
+    result.set_item("should_block", should_block)?;
+
+    Ok(Some(result.into()))
+}
+
 #[pymodule]
 fn aiwaf_rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_headers, m)?)?;
     m.add_function(wrap_pyfunction!(extract_features, m)?)?;
+    m.add_function(wrap_pyfunction!(analyze_recent_behavior, m)?)?;
     Ok(())
 }
 

@@ -50,7 +50,11 @@ from .utils import (
 from .storage import get_keyword_store
 from .settings_compat import apply_legacy_settings
 from .model_store import load_model_data, _normalize_storage_mode
-from .rust_backend import rust_available, validate_headers as rust_validate_headers
+from .rust_backend import (
+    rust_available,
+    validate_headers as rust_validate_headers,
+    analyze_recent_behavior as rust_analyze_recent_behavior,
+)
 
 apply_legacy_settings()
 
@@ -769,6 +773,79 @@ class AIAnomalyMiddleware(MiddlewareMixin):
             
         return False
 
+    def _analyze_recent_behavior_python(self, recent_data):
+        recent_kw_hits = []
+        recent_404s = 0
+        recent_burst_counts = []
+
+        for entry_time, entry_path, entry_status, _ in recent_data:
+            entry_known_path = path_exists_in_django(entry_path)
+            entry_kw_hits = 0
+            if not entry_known_path and not is_exempt_path(entry_path):
+                entry_kw_hits = sum(1 for kw in STATIC_KW if kw in entry_path.lower())
+            recent_kw_hits.append(entry_kw_hits)
+
+            if entry_status == 404:
+                recent_404s += 1
+
+            entry_burst = sum(1 for (t, _, _, _) in recent_data if abs(entry_time - t) <= 10)
+            recent_burst_counts.append(entry_burst)
+
+        avg_kw_hits = sum(recent_kw_hits) / len(recent_kw_hits) if recent_kw_hits else 0
+        max_404s = recent_404s
+        avg_burst = sum(recent_burst_counts) / len(recent_burst_counts) if recent_burst_counts else 0
+        total_requests = len(recent_data)
+        scanning_404s = sum(
+            1 for (_, path, status, _) in recent_data if status == 404 and self._is_scanning_path(path)
+        )
+        legitimate_404s = max_404s - scanning_404s
+
+        should_block = True
+        if max_404s == 0 and avg_kw_hits == 0 and scanning_404s == 0:
+            should_block = False
+        elif (
+            avg_kw_hits < 3
+            and scanning_404s < 5
+            and legitimate_404s < 20
+            and avg_burst < 25
+            and total_requests < 150
+        ):
+            should_block = False
+
+        return {
+            "avg_kw_hits": avg_kw_hits,
+            "max_404s": max_404s,
+            "avg_burst": avg_burst,
+            "total_requests": total_requests,
+            "scanning_404s": scanning_404s,
+            "legitimate_404s": legitimate_404s,
+            "should_block": should_block,
+        }
+
+    def _analyze_recent_behavior(self, recent_data):
+        if not recent_data:
+            return None
+
+        stats = None
+        if getattr(settings, "AIWAF_USE_RUST", False) and rust_available():
+            rust_payload = []
+            for entry_time, entry_path, entry_status, _ in recent_data:
+                entry_known_path = path_exists_in_django(entry_path)
+                rust_payload.append({
+                    "path_lower": entry_path.lower(),
+                    "timestamp": entry_time,
+                    "status": int(entry_status),
+                    "kw_check": (not entry_known_path and not is_exempt_path(entry_path)),
+                })
+            rust_stats = rust_analyze_recent_behavior(rust_payload, STATIC_KW)
+            if rust_stats:
+                stats = rust_stats
+
+        if stats is None:
+            stats = self._analyze_recent_behavior_python(recent_data)
+
+        return stats
+
     def process_request(self, request):
         if is_middleware_disabled(request, self.__class__):
             return None
@@ -828,56 +905,13 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                 
                 # Get recent behavior data for this IP to make intelligent blocking decision
                 recent_data = [d for d in data if now - d[0] <= 300]  # Last 5 minutes
-                
-                # Always initialize variables before use
-                recent_kw_hits = []
-                recent_404s = 0
-                recent_burst_counts = []
-                
-                if recent_data:
-                    for entry_time, entry_path, entry_status, entry_resp_time in recent_data:
-                        # Calculate keyword hits for this entry
-                        entry_known_path = path_exists_in_django(entry_path)
-                        entry_kw_hits = 0
-                        if not entry_known_path and not is_exempt_path(entry_path):
-                            entry_kw_hits = sum(1 for kw in STATIC_KW if kw in entry_path.lower())
-                        recent_kw_hits.append(entry_kw_hits)
-                        
-                        # Count 404s
-                        if entry_status == 404:
-                            recent_404s += 1
-                        
-                        # Calculate burst for this entry (requests within 10 seconds)
-                        entry_burst = sum(1 for (t, _, _, _) in recent_data if abs(entry_time - t) <= 10)
-                        recent_burst_counts.append(entry_burst)
-                
-                # Calculate averages and maximums
-                avg_kw_hits = sum(recent_kw_hits) / len(recent_kw_hits) if recent_kw_hits else 0
-                max_404s = recent_404s
-                avg_burst = sum(recent_burst_counts) / len(recent_burst_counts) if recent_burst_counts else 0
-                total_requests = len(recent_data)
-                
-                # Enhanced 404 analysis - focus on scanning patterns
-                scanning_404s = sum(1 for (_, path, status, _) in recent_data 
-                                  if status == 404 and self._is_scanning_path(path))
-                legitimate_404s = max_404s - scanning_404s
-                
-                # Don't block if it looks like legitimate behavior:
-                # 1) Pure burst traffic with no 404s/keywords (e.g., polling)
-                # 2) Mostly clean traffic within relaxed thresholds
-                should_block = True
-                if max_404s == 0 and avg_kw_hits == 0 and scanning_404s == 0:
-                    should_block = False
-                elif (
-                    avg_kw_hits < 3 and           # Allow some keyword hits (increased from 2)
-                    scanning_404s < 5 and        # Focus on scanning 404s, not all 404s  
-                    legitimate_404s < 20 and     # Allow more legitimate 404s (typos, old links)
-                    avg_burst < 25 and           # Allow higher burst (increased from 15)
-                    total_requests < 150         # Allow more total requests (increased from 100)
-                ):
-                    should_block = False
+                stats = self._analyze_recent_behavior(recent_data)
 
-                if should_block:
+                if stats and stats.get("should_block"):
+                    max_404s = stats.get("max_404s", 0)
+                    scanning_404s = stats.get("scanning_404s", 0)
+                    avg_kw_hits = stats.get("avg_kw_hits", 0)
+                    avg_burst = stats.get("avg_burst", 0)
                     # Double-check exemption before blocking
                     if not is_ip_exempted(ip):
                         BlacklistManager.block(ip, f"AI anomaly + scanning 404s (total:{max_404s}, scanning:{scanning_404s}, kw:{avg_kw_hits:.1f}, burst:{avg_burst:.1f})")

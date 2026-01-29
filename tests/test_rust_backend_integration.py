@@ -78,6 +78,30 @@ class RustBackendIntegrationTests(TestCase):
         self.assertIsNotNone(result)
         self.assertIn("HTTP/1.0", result)
 
+    def test_analyze_recent_behavior_basic_metrics(self):
+        entries = [
+            {"path_lower": "/wp-admin/install.php", "timestamp": 0.0, "status": 404, "kw_check": True},
+            {"path_lower": "/home", "timestamp": 5.0, "status": 200, "kw_check": False},
+        ]
+        result = aiwaf_rust.analyze_recent_behavior(entries, [".php", "wp-"])
+        self.assertIsNotNone(result)
+        self.assertEqual(result["max_404s"], 1)
+        self.assertGreaterEqual(result["avg_kw_hits"], 0)
+        self.assertFalse(result["should_block"])
+
+    def test_analyze_recent_behavior_triggers_block(self):
+        entries = []
+        for i in range(10):
+            entries.append({
+                "path_lower": f"/wp-admin/{i}.php",
+                "timestamp": float(i),
+                "status": 404,
+                "kw_check": True,
+            })
+        result = aiwaf_rust.analyze_recent_behavior(entries, ["wp-"])
+        self.assertIsNotNone(result)
+        self.assertTrue(result["should_block"])
+
 
 
 if __name__ == "__main__":
