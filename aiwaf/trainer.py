@@ -11,6 +11,7 @@ except ImportError:
     JOBLIB_AVAILABLE = False
 from datetime import datetime
 from collections import defaultdict, Counter
+import logging
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
@@ -27,6 +28,7 @@ except ImportError:
 from django.conf import settings
 from django.apps import apps
 from django.db.models import F
+from django.utils import timezone
 from .utils import is_exempt_path
 from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
 from .utils import get_exempt_paths
@@ -37,6 +39,8 @@ from .geoip import lookup_country, lookup_country_name
 from .rust_backend import rust_available, extract_features as rust_extract_features
 
 apply_legacy_settings()
+
+logger = logging.getLogger("aiwaf.trainer")
 
 # ─────────── Configuration ───────────
 LOG_PATH   = getattr(settings, 'AIWAF_ACCESS_LOG', None)
@@ -112,7 +116,7 @@ def remove_exempt_keywords() -> None:
         keyword_store.remove_keyword(token)
     
     if exempt_tokens:
-        print(f"🧹 Removed {len(exempt_tokens)} exempt keywords from learning: {list(exempt_tokens)[:10]}")
+        logger.info(f"🧹 Removed {len(exempt_tokens)} exempt keywords from learning: {list(exempt_tokens)[:10]}")
 
 
 def get_legitimate_keywords() -> set:
@@ -291,7 +295,7 @@ def _extract_django_route_keywords() -> set:
             extract_from_pattern(pattern)
             
     except Exception as e:
-        print(f"Warning: Could not extract Django route keywords: {e}")
+        logger.warning("Could not extract Django route keywords: %s", e, exc_info=True)
     
     # Filter out very common/generic words that might be suspicious
     # Expanded filter list
@@ -311,7 +315,7 @@ def _extract_django_route_keywords() -> set:
             filtered_keywords.add(keyword)
     
     if filtered_keywords:
-        print(f"🔗 Extracted {len(filtered_keywords)} legitimate keywords from Django routes and apps")
+        logger.info(f"🔗 Extracted {len(filtered_keywords)} legitimate keywords from Django routes and apps")
     
     return filtered_keywords
 
@@ -381,7 +385,7 @@ def _get_logs_from_model() -> list[str]:
         from datetime import datetime, timedelta
         
         # Get logs from the last 30 days
-        cutoff_date = datetime.now() - timedelta(days=30)
+        cutoff_date = timezone.now() - timedelta(days=30)
         request_logs = RequestLog.objects.filter(timestamp__gte=cutoff_date).order_by('timestamp')
         
         log_lines = []
@@ -397,10 +401,10 @@ def _get_logs_from_model() -> list[str]:
             )
             log_lines.append(log_line)
         
-        print(f"Loaded {len(log_lines)} log entries from RequestLog model")
+        logger.info(f"Loaded {len(log_lines)} log entries from RequestLog model")
         return log_lines
     except Exception as e:
-        print(f"Warning: Could not load logs from RequestLog model: {e}")
+        logger.warning("Could not load logs from RequestLog model: %s", e, exc_info=True)
         return []
 
 
@@ -542,7 +546,7 @@ def _print_geoip_summary(ips, title):
         os.path.join(os.path.dirname(__file__), "geolock", "ipinfo_lite.mmdb"),
     )
     if not db_path or not os.path.exists(db_path):
-        print("GeoIP summary skipped: AIWAF_GEOIP_DB_PATH not set or file missing.")
+        logger.info("GeoIP summary skipped: AIWAF_GEOIP_DB_PATH not set or file missing.")
         return
 
     counts = Counter()
@@ -558,11 +562,11 @@ def _print_geoip_summary(ips, title):
         return
 
     top = counts.most_common(10)
-    print(title)
+    logger.info(title)
     for code, cnt in top:
-        print(f"  - {code}: {cnt}")
+        logger.info(f"  - {code}: {cnt}")
     if unknown:
-        print(f"  - UNKNOWN: {unknown}")
+        logger.info(f"  - UNKNOWN: {unknown}")
 
 
 def _print_geoip_blocklist_summary():
@@ -585,10 +589,10 @@ def train(disable_ai=False, force_ai=False) -> None:
         disable_ai (bool): If True, skip AI model training and only do keyword learning
         force_ai (bool): If True, train AI model even with fewer than MIN_AI_LOGS
     """
-    print("Starting AIWAF enhanced training...")
+    logger.info("Starting AIWAF enhanced training...")
     
     if disable_ai:
-        print("AI model training disabled - keyword learning only")
+        logger.info("AI model training disabled - keyword learning only")
     
     # Remove exempt keywords first
     remove_exempt_keywords()
@@ -598,13 +602,13 @@ def train(disable_ai=False, force_ai=False) -> None:
     
     exempted_ips = [entry['ip_address'] for entry in exemption_store.get_all()]
     if exempted_ips:
-        print(f"Found {len(exempted_ips)} exempted IPs - clearing from blacklist")
+        logger.info(f"Found {len(exempted_ips)} exempted IPs - clearing from blacklist")
         for ip in exempted_ips:
             BlacklistManager.unblock(ip)
     
     raw_lines = _read_all_logs()
     if not raw_lines:
-        print("No log lines found – check AIWAF_ACCESS_LOG setting.")
+        logger.info("No log lines found – check AIWAF_ACCESS_LOG setting.")
         return
 
     parsed = []
@@ -625,7 +629,7 @@ def train(disable_ai=False, force_ai=False) -> None:
                 ip_404[rec["ip"]] += 1  # Non-login path 404s
 
     if len(parsed) < MIN_TRAIN_LOGS:
-        print(f"Not enough log lines ({len(parsed)}) for training. Need at least {MIN_TRAIN_LOGS}.")
+        logger.info(f"Not enough log lines ({len(parsed)}) for training. Need at least {MIN_TRAIN_LOGS}.")
         return
 
     # 3. Optional immediate 404‐flood blocking (only for non-login paths)
@@ -642,26 +646,26 @@ def train(disable_ai=False, force_ai=False) -> None:
     feature_dicts = _generate_feature_dicts(parsed, ip_404, ip_times)
 
     if not feature_dicts:
-        print(" Nothing to train on – no valid log entries.")
+        logger.info(" Nothing to train on – no valid log entries.")
         return
 
     # AI Model Training (optional)
     blocked_count = 0
     force_ai = force_ai or getattr(settings, "AIWAF_FORCE_AI_TRAINING", False)
     if not disable_ai and not force_ai and len(parsed) < MIN_AI_LOGS:
-        print(f"AI training skipped: {len(parsed)} log lines < {MIN_AI_LOGS}. Falling back to keyword-only.")
+        logger.info(f"AI training skipped: {len(parsed)} log lines < {MIN_AI_LOGS}. Falling back to keyword-only.")
         disable_ai = True
 
     if not disable_ai:
         if not JOBLIB_AVAILABLE:
-            print("AI model training skipped - joblib not available.")
+            logger.info("AI model training skipped - joblib not available.")
             disable_ai = True
         elif not PANDAS_AVAILABLE or not SKLEARN_AVAILABLE:
-            print("AI model training skipped - pandas or scikit-learn not available.")
+            logger.info("AI model training skipped - pandas or scikit-learn not available.")
             disable_ai = True
 
     if not disable_ai:
-        print(" Training AI anomaly detection model...")
+        logger.info(" Training AI anomaly detection model...")
         
         try:
             df = pd.DataFrame(feature_dicts)
@@ -691,23 +695,23 @@ def train(disable_ai=False, force_ai=False) -> None:
             # Save model with version metadata
             model_data = {"model": model, **metadata}
             if save_model_data(model_data, metadata=metadata):
-                print(f"Model trained on {len(X)} samples")
+                logger.info(f"Model trained on {len(X)} samples")
             else:
                 fallback = getattr(settings, "AIWAF_MODEL_STORAGE_FALLBACK", True)
                 if fallback:
                     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
                     joblib.dump(model_data, MODEL_PATH)
-                    print(f"Model trained on {len(X)} samples → {MODEL_PATH}")
+                    logger.info(f"Model trained on {len(X)} samples → {MODEL_PATH}")
                 else:
-                    print("Model trained, but saving failed (storage fallback disabled).")
-            print(f"Created with scikit-learn v{metadata['sklearn_version']}")
+                    logger.info("Model trained, but saving failed (storage fallback disabled).")
+            logger.info(f"Created with scikit-learn v{metadata['sklearn_version']}")
             
             # Check for anomalies and intelligently decide which IPs to block
             preds = model.predict(X)
             anomalous_ips = set(df.loc[preds == -1, "ip"])
             
             if anomalous_ips:
-                print(f"Detected {len(anomalous_ips)} potentially anomalous IPs during training")
+                logger.info(f"Detected {len(anomalous_ips)} potentially anomalous IPs during training")
                 _print_geoip_summary(anomalous_ips, "GeoIP summary for anomalous IPs (top 10):")
                 
                 exemption_store = get_exemption_store()
@@ -729,7 +733,7 @@ def train(disable_ai=False, force_ai=False) -> None:
                     
                     # Treat pure-burst traffic with no 404s/keywords as legitimate (e.g., polling)
                     if max_404s == 0 and avg_kw_hits == 0:
-                        print(f"   - {ip}: Anomalous but looks legitimate (no 404s/keywords, burst:{avg_burst:.1f}) - NOT blocking")
+                        logger.info(f"   - {ip}: Anomalous but looks legitimate (no 404s/keywords, burst:{avg_burst:.1f}) - NOT blocking")
                         continue
 
                     # Don't block if it looks like legitimate behavior:
@@ -739,24 +743,24 @@ def train(disable_ai=False, force_ai=False) -> None:
                         avg_burst < 15 and           # Not excessive burst activity
                         total_requests < 100         # Not excessive total requests
                     ):
-                        print(f"   - {ip}: Anomalous but looks legitimate (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f}) - NOT blocking")
+                        logger.info(f"   - {ip}: Anomalous but looks legitimate (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f}) - NOT blocking")
                         continue
                     
                     # Block if it shows clear signs of malicious behavior
                     BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
                     blocked_count += 1
-                    print(f"   - {ip}: Blocked for suspicious behavior (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
+                    logger.info(f"   - {ip}: Blocked for suspicious behavior (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
                 
-                print(f"   → Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs (others looked legitimate)")
+                logger.info(f"   → Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs (others looked legitimate)")
         
         except ImportError as e:
-            print(f"AI model training failed - missing dependencies: {e}")
-            print("   Continuing with keyword learning only...")
+            logger.info(f"AI model training failed - missing dependencies: {e}")
+            logger.info("   Continuing with keyword learning only...")
         except Exception as e:
-            print(f"AI model training failed: {e}")
-            print("   Continuing with keyword learning only...")
+            logger.info(f"AI model training failed: {e}")
+            logger.info("   Continuing with keyword learning only...")
     else:
-        print("AI model training skipped (disabled)")
+        logger.info("AI model training skipped (disabled)")
 
     keyword_learning_enabled = getattr(settings, "AIWAF_ENABLE_KEYWORD_LEARNING", True)
     filtered_tokens = []
@@ -764,7 +768,7 @@ def train(disable_ai=False, force_ai=False) -> None:
     if keyword_learning_enabled:
         tokens = Counter()
         
-        print(f"Learning keywords from {len(parsed)} parsed requests...")
+        logger.info(f"Learning keywords from {len(parsed)} parsed requests...")
         
         for r in parsed:
             # Only learn from suspicious requests (errors on non-existent paths)
@@ -804,39 +808,39 @@ def train(disable_ai=False, force_ai=False) -> None:
                 learned_from_paths.extend(example_paths[:2])  # Track first 2 example paths
         
         if filtered_tokens:
-            print(f"Added {len(filtered_tokens)} suspicious keywords: {[kw for kw, _ in filtered_tokens]}")
-            print(f"Example malicious paths learned from: {learned_from_paths[:5]}")  # Show first 5
+            logger.info(f"Added {len(filtered_tokens)} suspicious keywords: {[kw for kw, _ in filtered_tokens]}")
+            logger.info(f"Example malicious paths learned from: {learned_from_paths[:5]}")  # Show first 5
         else:
-            print("No new suspicious keywords learned (good sign!)")
+            logger.info("No new suspicious keywords learned (good sign!)")
         
-        print(f"Smart keyword learning complete. Excluded {len(legitimate_keywords)} legitimate keywords.")
-        print(f"Used malicious context analysis to filter out false positives.")
+        logger.info(f"Smart keyword learning complete. Excluded {len(legitimate_keywords)} legitimate keywords.")
+        logger.info(f"Used malicious context analysis to filter out false positives.")
     else:
-        print("Keyword learning disabled via AIWAF_ENABLE_KEYWORD_LEARNING.")
+        logger.info("Keyword learning disabled via AIWAF_ENABLE_KEYWORD_LEARNING.")
 
     _print_geoip_blocklist_summary()
 
     # Training summary
-    print("\n" + "="*60)
+    logger.info("\n" + "="*60)
     if disable_ai:
-        print("AIWAF KEYWORD-ONLY TRAINING COMPLETE")
+        logger.info("AIWAF KEYWORD-ONLY TRAINING COMPLETE")
     else:
-        print("AIWAF ENHANCED TRAINING COMPLETE")
-    print("="*60)
-    print(f"Training Data: {len(parsed)} log entries processed")
+        logger.info("AIWAF ENHANCED TRAINING COMPLETE")
+    logger.info("="*60)
+    logger.info(f"Training Data: {len(parsed)} log entries processed")
     
     if not disable_ai:
-        print(f"AI Model: Trained with {len(feature_cols) if 'feature_cols' in locals() else 'N/A'} features")
-        print(f"Blocked IPs: {blocked_count} suspicious IPs blocked")
+        logger.info(f"AI Model: Trained with {len(feature_cols) if 'feature_cols' in locals() else 'N/A'} features")
+        logger.info(f"Blocked IPs: {blocked_count} suspicious IPs blocked")
     else:
-        print(f"AI Model: Disabled (keyword learning only)")
-        print(f"Blocked IPs: 0 (AI blocking disabled)")
+        logger.info(f"AI Model: Disabled (keyword learning only)")
+        logger.info(f"Blocked IPs: 0 (AI blocking disabled)")
         
-    print(f"Keywords: {len(filtered_tokens)} new suspicious keywords learned")
-    print(f"Exemptions: {len(exempted_ips)} IPs protected from blocking")
+    logger.info(f"Keywords: {len(filtered_tokens)} new suspicious keywords learned")
+    logger.info(f"Exemptions: {len(exempted_ips)} IPs protected from blocking")
     
     if disable_ai:
-        print(f"Keyword-based protection now active with context-aware filtering!")
+        logger.info(f"Keyword-based protection now active with context-aware filtering!")
     else:
-        print(f"Enhanced protection now active with context-aware filtering!")
-    print("="*60)
+        logger.info(f"Enhanced protection now active with context-aware filtering!")
+    logger.info("="*60)

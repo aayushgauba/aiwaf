@@ -145,25 +145,24 @@ def _describe_model_lookup():
 
 def load_model_safely():
     """Load the AI model with version compatibility checking."""
-    import warnings
-    
+
     # Check if AI is disabled globally
     ai_disabled = getattr(settings, "AIWAF_DISABLE_AI", False)
     if ai_disabled:
-        print("ℹ️  AI functionality disabled via AIWAF_DISABLE_AI setting")
+        logger.info("AI functionality disabled via AIWAF_DISABLE_AI setting")
         return None
-    
+
     # Check if required dependencies are available
     if not JOBLIB_AVAILABLE:
-        print("ℹ️  joblib not available, AI functionality disabled")
+        logger.info("joblib not available, AI functionality disabled")
         return None
-    
+
     try:
         import sklearn
     except ImportError:
-        print("ℹ️  sklearn not available, AI functionality disabled")
+        logger.info("sklearn not available, AI functionality disabled")
         return None
-    
+
     try:
         # Suppress sklearn version warnings temporarily
         with warnings.catch_warnings():
@@ -171,29 +170,33 @@ def load_model_safely():
             model_data = load_model_data()
             if model_data is None:
                 raise ValueError("no model data available")
-            
+
             # Handle both old format (direct model) and new format (with metadata)
-            if isinstance(model_data, dict) and 'model' in model_data:
+            if isinstance(model_data, dict) and "model" in model_data:
                 # New format with metadata
-                model = model_data['model']
-                stored_version = model_data.get('sklearn_version', 'unknown')
+                model = model_data["model"]
+                stored_version = model_data.get("sklearn_version", "unknown")
                 current_version = sklearn.__version__
-                
+
                 if stored_version != current_version:
-                    print(f"ℹ️  Model was trained with sklearn v{stored_version}, current v{current_version}")
-                    print("   Run 'python manage.py detect_and_train' to update model if needed.")
-                
+                    logger.warning(
+                        "Model was trained with sklearn v%s, current v%s",
+                        stored_version,
+                        current_version,
+                    )
+                    logger.info("Run 'python manage.py detect_and_train' to update the model if needed.")
+
                 return model
             else:
                 # Old format - direct model object
-                print("ℹ️  Using legacy model format. Consider retraining for better compatibility.")
+                logger.info("Using legacy model format. Consider retraining for better compatibility.")
                 return model_data
-                
+
     except Exception as e:
         lookup = _describe_model_lookup()
-        print(f"Warning: Could not load AI model from {lookup}: {e}")
-        print("AI anomaly detection will be disabled until model is retrained.")
-        print("Run 'python manage.py detect_and_train' to regenerate the model.")
+        logger.warning("Could not load AI model from %s: %s", lookup, e)
+        logger.info("AI anomaly detection will remain disabled until a model is retrained.")
+        logger.info("Run 'python manage.py detect_and_train' to regenerate the model.")
         return None
 
 # Load model with safety checks

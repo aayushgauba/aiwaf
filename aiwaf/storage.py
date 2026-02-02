@@ -11,6 +11,7 @@ from django.conf import settings
 from django.utils import timezone
 import os
 import json
+import logging
 from collections import defaultdict
 
 # Defer model imports to avoid AppRegistryNotReady during Django app loading
@@ -19,6 +20,7 @@ FeatureSample = BlacklistEntry = IPExemption = ExemptPath = DynamicKeyword = Non
 # Fallback storage for when Django models are unavailable
 _fallback_keywords = defaultdict(int)
 _fallback_storage_path = os.path.join(os.path.dirname(__file__), 'fallback_keywords.json')
+logger = logging.getLogger("aiwaf.storage")
 
 def _import_models():
     """Import Django models only when needed and apps are ready."""
@@ -56,8 +58,7 @@ def _import_models():
                             continue
     except (ImportError, RuntimeError, Exception) as e:
         # Log the error for debugging but don't fail silently
-        import sys
-        print(f"Warning: Could not import AIWAF models: {e}", file=sys.stderr)
+        logger.warning("Could not import AIWAF models: %s", e, exc_info=True)
         # Keep models as None if can't import
         pass
 
@@ -67,7 +68,7 @@ class ModelFeatureStore:
         """Persist feature data to Django models"""
         _import_models()
         if FeatureSample is None:
-            print("Warning: Django models not available, skipping feature storage")
+            logger.warning("Django models not available, skipping feature storage")
             return
             
         for row in rows:
@@ -84,7 +85,7 @@ class ModelFeatureStore:
                     created_at=timezone.now()
                 )
             except Exception as e:
-                print(f"Error saving feature sample: {e}")
+                logger.error("Error saving feature sample: %s", e, exc_info=True)
 
     @staticmethod
     def get_all_data():
@@ -111,7 +112,7 @@ class ModelFeatureStore:
             
             return df
         except Exception as e:
-            print(f"Error loading feature data: {e}")
+            logger.error("Error loading feature data: %s", e, exc_info=True)
             return pd.DataFrame()
 
 class ModelBlacklistStore:
@@ -131,7 +132,7 @@ class ModelBlacklistStore:
         """Add IP to blacklist"""
         _import_models()
         if BlacklistEntry is None:
-            print(f"Warning: Cannot block IP {ip}, models not available")
+            logger.warning("Cannot block IP %s, models not available", ip)
             return
         try:
             BlacklistEntry.objects.get_or_create(
@@ -139,7 +140,7 @@ class ModelBlacklistStore:
                 defaults={'reason': reason, 'created_at': timezone.now()}
             )
         except Exception as e:
-            print(f"Error blocking IP {ip}: {e}")
+            logger.error("Error blocking IP %s: %s", ip, e, exc_info=True)
 
     @staticmethod
     def unblock_ip(ip):
@@ -150,7 +151,7 @@ class ModelBlacklistStore:
         try:
             BlacklistEntry.objects.filter(ip_address=ip).delete()
         except Exception as e:
-            print(f"Error unblocking IP {ip}: {e}")
+            logger.error("Error unblocking IP %s: %s", ip, e, exc_info=True)
 
     @staticmethod
     def remove_ip(ip):
@@ -195,7 +196,7 @@ class ModelBlacklistStore:
             BlacklistEntry.objects.all().delete()
             return count
         except Exception as e:
-            print(f"Error clearing all blacklist entries: {e}")
+            logger.error("Error clearing all blacklist entries: %s", e, exc_info=True)
             return 0
 
 class ModelExemptionStore:
@@ -215,7 +216,7 @@ class ModelExemptionStore:
         """Add IP to exemption list"""
         _import_models()
         if IPExemption is None:
-            print(f"Warning: Cannot exempt IP {ip}, models not available")
+            logger.warning("Cannot exempt IP %s, models not available", ip)
             return
         try:
             IPExemption.objects.get_or_create(
@@ -223,7 +224,7 @@ class ModelExemptionStore:
                 defaults={'reason': reason, 'created_at': timezone.now()}
             )
         except Exception as e:
-            print(f"Error exempting IP {ip}: {e}")
+            logger.error("Error exempting IP %s: %s", ip, e, exc_info=True)
 
     @staticmethod
     def remove_exemption(ip):
@@ -234,7 +235,7 @@ class ModelExemptionStore:
         try:
             IPExemption.objects.filter(ip_address=ip).delete()
         except Exception as e:
-            print(f"Error removing exemption for IP {ip}: {e}")
+            logger.error("Error removing exemption for IP %s: %s", ip, e, exc_info=True)
 
     @staticmethod
     def remove_ip(ip):
@@ -279,7 +280,7 @@ class ModelExemptionStore:
             IPExemption.objects.all().delete()
             return count
         except Exception as e:
-            print(f"Error clearing all exemption entries: {e}")
+            logger.error("Error clearing all exemption entries: %s", e, exc_info=True)
             return 0
 
 class ModelPathExemptionStore:
@@ -299,7 +300,7 @@ class ModelPathExemptionStore:
         """Add a path to the exemption list"""
         _import_models()
         if ExemptPath is None:
-            print(f"Warning: Cannot exempt path {path}, models not available")
+            logger.warning("Cannot exempt path %s, models not available", path)
             return
         try:
             ExemptPath.objects.update_or_create(
@@ -307,7 +308,7 @@ class ModelPathExemptionStore:
                 defaults={"reason": reason, "enabled": enabled},
             )
         except Exception as e:
-            print(f"Error exempting path {path}: {e}")
+            logger.error("Error exempting path %s: %s", path, e, exc_info=True)
 
     @staticmethod
     def remove_exemption(path):
@@ -318,7 +319,7 @@ class ModelPathExemptionStore:
         try:
             ExemptPath.objects.filter(path=path).delete()
         except Exception as e:
-            print(f"Error removing exemption for path {path}: {e}")
+            logger.error("Error removing exemption for path %s: %s", path, e, exc_info=True)
 
     @staticmethod
     def get_all_exempted_paths():
@@ -355,7 +356,7 @@ class ModelPathExemptionStore:
             ExemptPath.objects.all().delete()
             return count
         except Exception as e:
-            print(f"Error clearing all path exemptions: {e}")
+            logger.error("Error clearing all path exemptions: %s", e, exc_info=True)
             return 0
 
 class ModelKeywordStore:
@@ -369,8 +370,7 @@ class ModelKeywordStore:
                     data = json.load(f)
                     _fallback_keywords = defaultdict(int, data)
         except Exception as e:
-            import sys
-            print(f"Warning: Could not load fallback keywords: {e}", file=sys.stderr)
+            logger.warning("Could not load fallback keywords: %s", e, exc_info=True)
     
     @staticmethod
     def _save_fallback_keywords():
@@ -379,8 +379,7 @@ class ModelKeywordStore:
             with open(_fallback_storage_path, 'w') as f:
                 json.dump(dict(_fallback_keywords), f, indent=2)
         except Exception as e:
-            import sys
-            print(f"Warning: Could not save fallback keywords: {e}", file=sys.stderr)
+            logger.warning("Could not save fallback keywords: %s", e, exc_info=True)
     
     @staticmethod
     def add_keyword(keyword, count=1):
@@ -391,8 +390,7 @@ class ModelKeywordStore:
             ModelKeywordStore._load_fallback_keywords()
             _fallback_keywords[keyword] += count
             ModelKeywordStore._save_fallback_keywords()
-            import sys
-            print(f"Info: Using fallback storage for keyword '{keyword}' - Django models not available.", file=sys.stderr)
+            logger.info("Using fallback storage for keyword '%s' - Django models not available", keyword)
             return
         try:
             obj, created = DynamicKeyword.objects.get_or_create(keyword=keyword)
@@ -407,8 +405,7 @@ class ModelKeywordStore:
             ModelKeywordStore._load_fallback_keywords()
             _fallback_keywords[keyword] += count
             ModelKeywordStore._save_fallback_keywords()
-            import sys
-            print(f"Database error adding keyword {keyword}, using fallback storage: {e}", file=sys.stderr)
+            logger.error("Database error adding keyword %s, using fallback storage: %s", keyword, e, exc_info=True)
 
     @staticmethod
     def remove_keyword(keyword):
@@ -419,7 +416,7 @@ class ModelKeywordStore:
         try:
             DynamicKeyword.objects.filter(keyword=keyword).delete()
         except Exception as e:
-            print(f"Error removing keyword {keyword}: {e}")
+            logger.error("Error removing keyword %s: %s", keyword, e, exc_info=True)
 
     @staticmethod
     def get_top_keywords(n=10):
@@ -439,8 +436,7 @@ class ModelKeywordStore:
             # Fallback to file storage on database error
             ModelKeywordStore._load_fallback_keywords()
             sorted_keywords = sorted(_fallback_keywords.items(), key=lambda x: x[1], reverse=True)
-            import sys
-            print(f"Database error getting top keywords, using fallback storage: {e}", file=sys.stderr)
+            logger.error("Database error getting top keywords, using fallback storage: %s", e, exc_info=True)
             return [keyword for keyword, count in sorted_keywords[:n]]
 
     @staticmethod
@@ -465,7 +461,7 @@ class ModelKeywordStore:
         try:
             DynamicKeyword.objects.all().delete()
         except Exception as e:
-            print(f"Error resetting keywords: {e}")
+            logger.error("Error resetting keywords: %s", e, exc_info=True)
 
     def add_keyword_for_route(self, route, keyword, count=1):
         """Add a keyword for a specific route (fallback method)"""
