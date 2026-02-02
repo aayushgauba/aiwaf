@@ -10,6 +10,7 @@ import logging
 from datetime import datetime, timedelta
 from collections import defaultdict
 from django.utils.deprecation import MiddlewareMixin
+from django.utils import timezone
 from django.http import JsonResponse
 from django.core.exceptions import PermissionDenied
 from django.conf import settings
@@ -690,7 +691,7 @@ class AIAnomalyMiddleware(MiddlewareMixin):
 
         try:
             from .models import RequestLog
-            cutoff_date = datetime.now() - timedelta(days=30)
+            cutoff_date = timezone.now() - timedelta(days=30)
             db_count = RequestLog.objects.filter(timestamp__gte=cutoff_date).count()
             count = max(count, db_count)
         except Exception as exc:

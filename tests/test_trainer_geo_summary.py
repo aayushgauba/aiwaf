@@ -1,5 +1,3 @@
-import io
-from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from django.test import override_settings
@@ -19,14 +17,13 @@ class TestTrainerGeoSummary(AIWAFTestCase):
         def fake_lookup_country_name(ip, cache_prefix=None, cache_seconds=None):
             return "United States" if ip == "8.8.8.8" else "Australia"
 
-        buffer = io.StringIO()
-        with redirect_stdout(buffer), \
+        with self.assertLogs("aiwaf.trainer", level="INFO") as captured, \
              patch("aiwaf.trainer.os.path.exists", return_value=True), \
              patch("aiwaf.trainer.get_blacklist_store", return_value=FakeBlacklistStore()), \
              patch("aiwaf.trainer.lookup_country_name", side_effect=fake_lookup_country_name):
             trainer._print_geoip_blocklist_summary()
 
-        output = buffer.getvalue()
+        output = "\n".join(captured.output)
         assert "GeoIP summary for blocked IPs" in output
         assert "United States" in output
         assert "Australia" in output

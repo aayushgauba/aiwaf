@@ -1,5 +1,3 @@
-import contextlib
-import io
 import sys
 import types
 from django.conf import settings
@@ -59,10 +57,9 @@ class TestModelStorage(AIWAFTestCase):
             sys.modules["sklearn"] = types.SimpleNamespace(__version__="0.0")
         middleware.JOBLIB_AVAILABLE = True
 
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer):
+        with self.assertLogs("aiwaf.middleware", level="WARNING") as captured:
             middleware.load_model_safely()
 
-        output = buffer.getvalue()
+        output = "\n".join(captured.output)
         assert "aiwaf_aimodelartifact" in output
         assert "model.pkl" not in output
