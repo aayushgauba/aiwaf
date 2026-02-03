@@ -829,6 +829,11 @@ The **HoneypotTimingMiddleware** now includes advanced bot detection capabilitie
 - **HTTP 409 response** with reload instructions instead of immediate blocking
 - **CSRF protection** by forcing fresh page loads for old sessions
 
+#### 👥 Authenticated Session Exemption
+- **Skips timing checks** when the request belongs to an authenticated Django session
+- **Prevents false positives** for offices or VPNs where multiple users share an IP
+- **Still enforces** method validation and blacklist logic—only the timing rule is bypassed
+
 ```python
 # Configuration
 AIWAF_MIN_FORM_TIME = 1.0     # Minimum form submission time

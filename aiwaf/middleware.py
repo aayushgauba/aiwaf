@@ -968,6 +968,25 @@ class AIAnomalyMiddleware(MiddlewareMixin):
 class HoneypotTimingMiddleware(MiddlewareMixin):
     MIN_FORM_TIME = getattr(settings, "AIWAF_MIN_FORM_TIME", 1.0)  # seconds
     MAX_PAGE_TIME = getattr(settings, "AIWAF_MAX_PAGE_TIME", 240)  # 4 minutes default
+
+    def _is_authenticated_session(self, request):
+        """Best effort check that this request belongs to an authenticated session."""
+        user = getattr(request, "user", None)
+        if user is not None:
+            is_authenticated = getattr(user, "is_authenticated", False)
+            # Django's AnonymousUser.is_authenticated is a property returning False, but guard callable.
+            if callable(is_authenticated):
+                is_authenticated = is_authenticated()
+            if is_authenticated:
+                return True
+
+        session = getattr(request, "session", None)
+        if session is not None:
+            session_key = getattr(session, "session_key", None)
+            if session_key and bool(session.get("_auth_user_id")):
+                return True
+
+        return False
     
     def _view_accepts_method(self, request, method):
         """
@@ -1039,6 +1058,10 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
         
         # Additional IP-level exemption check
         if is_ip_exempted(ip):
+            return None
+
+        # Authenticated sessions already proved they loaded the form legitimately; skip timing checks
+        if self._is_authenticated_session(request):
             return None
             
         if request.method == "GET":
