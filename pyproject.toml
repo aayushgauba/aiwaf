@@ -1,6 +1,6 @@
 [project]
 name = "aiwaf"
-version = "0.1.9.5.9"
+version = "0.1.9.6.0"
 description = "AI-powered Web Application Firewall"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -14,7 +14,8 @@ dependencies = [
     "joblib>=1.1",
     "geoip2>=4.0",
     "packaging>=21.0",
-    "requests>=2.25.0"
+    "requests>=2.25.0",
+    "python-whois>=0.9.0"
 ]
 
 [project.optional-dependencies]

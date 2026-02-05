@@ -83,3 +83,49 @@ if __name__ == "__main__":
     import unittest
 
     unittest.main()
+
+class BlacklistExtendedInfoEdgeCaseTests(AIWAFStorageTestCase):
+    def test_extended_info_sets_if_missing_on_existing_entry(self):
+        store = get_blacklist_store()
+        store.block_ip("203.0.113.56", "First", extended_request_info={})
+
+        info = {"url": "https://example.com/x", "headers": {"User-Agent": "UA"}}
+        store.block_ip("203.0.113.56", "Second", extended_request_info=info)
+
+        entries = store.get_all()
+        entry = next(e for e in entries if e.get("ip_address") == "203.0.113.56")
+        self.assertEqual(entry.get("extended_request_info"), info)
+
+
+class BlacklistHeaderLimitsTests(AIWAFTestCase):
+    @override_settings(
+        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLACKLIST_MAX_HEADERS=2,
+    )
+    def test_max_header_count_limits_headers(self):
+        request = self.create_request(
+            "/test/",
+            headers={
+                "HTTP_USER_AGENT": "Mozilla/5.0",
+                "HTTP_ACCEPT": "text/html",
+                "HTTP_X_ONE": "1",
+                "HTTP_X_TWO": "2",
+            },
+        )
+        headers = _collect_request_headers(request)
+        self.assertLessEqual(len(headers), 2)
+
+    @override_settings(
+        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLACKLIST_REDACT_HEADERS=["authorization"],
+    )
+    def test_redact_headers_is_case_insensitive(self):
+        request = self.create_request(
+            "/test/",
+            headers={
+                "HTTP_AUTHORIZATION": "Bearer abc",
+                "HTTP_USER_AGENT": "Mozilla/5.0",
+            },
+        )
+        headers = _collect_request_headers(request)
+        self.assertEqual(headers.get("Authorization"), "[redacted]")

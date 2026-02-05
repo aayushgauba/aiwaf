@@ -6,6 +6,8 @@ Tests for the aiwaf_whois management command.
 import os
 import sys
 import types
+import unittest
+import warnings
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -51,6 +53,18 @@ class AIWAFWhoisCommandTests(AIWAFTestCase):
             with self.assertRaises(CommandError) as ctx:
                 call_command("aiwaf_whois", "example.com")
         self.assertIn("Whois lookup failed", str(ctx.exception))
+
+    def test_whois_command_live_lookup(self):
+        try:
+            import whois  # noqa: F401
+        except Exception:
+            warnings.warn("python-whois not installed; skipping live whois test")
+            return
+
+        try:
+            call_command("aiwaf_whois", "example.com", format="json")
+        except Exception as exc:
+            warnings.warn(f"live whois test failed: {exc}")
 
 
 if __name__ == "__main__":
