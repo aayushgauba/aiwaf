@@ -6,7 +6,7 @@ from .utils import is_ip_exempted
 
 class BlacklistManager:
     @staticmethod
-    def block(ip, reason):
+    def block(ip, reason, extended_request_info=None):
         """Add IP to blacklist, but only if it's not exempted"""
         if not getattr(settings, "AIWAF_ENABLE_IP_BLOCKING", True):
             return
@@ -15,7 +15,7 @@ class BlacklistManager:
             return  # Don't block exempted IPs
         
         store = get_blacklist_store()
-        store.block_ip(ip, reason)
+        store.block_ip(ip, reason, extended_request_info=extended_request_info)
 
     @staticmethod
     def is_blocked(ip):

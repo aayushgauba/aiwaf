@@ -128,17 +128,25 @@ class ModelBlacklistStore:
             return False
 
     @staticmethod
-    def block_ip(ip, reason="Automated block"):
+    def block_ip(ip, reason="Automated block", extended_request_info=None):
         """Add IP to blacklist"""
         _import_models()
         if BlacklistEntry is None:
             logger.warning("Cannot block IP %s, models not available", ip)
             return
         try:
-            BlacklistEntry.objects.get_or_create(
+            obj, created = BlacklistEntry.objects.get_or_create(
                 ip_address=ip,
-                defaults={'reason': reason, 'created_at': timezone.now()}
+                defaults={
+                    'reason': reason,
+                    'created_at': timezone.now(),
+                    'extended_request_info': extended_request_info or {},
+                }
             )
+            if (not created and extended_request_info
+                    and not getattr(obj, "extended_request_info", None)):
+                obj.extended_request_info = extended_request_info
+                obj.save(update_fields=["extended_request_info"])
         except Exception as e:
             logger.error("Error blocking IP %s: %s", ip, e, exc_info=True)
 
@@ -159,9 +167,9 @@ class ModelBlacklistStore:
         ModelBlacklistStore.unblock_ip(ip)
 
     @staticmethod
-    def add_ip(ip, reason="Automated block"):
+    def add_ip(ip, reason="Automated block", extended_request_info=None):
         """Add IP to blacklist (alias for block_ip)"""
-        ModelBlacklistStore.block_ip(ip, reason)
+        ModelBlacklistStore.block_ip(ip, reason, extended_request_info=extended_request_info)
 
     @staticmethod
     def get_all_blocked_ips():
@@ -181,7 +189,9 @@ class ModelBlacklistStore:
         if BlacklistEntry is None:
             return []
         try:
-            return list(BlacklistEntry.objects.values('ip_address', 'reason', 'created_at'))
+            return list(BlacklistEntry.objects.values(
+                'ip_address', 'reason', 'created_at', 'extended_request_info'
+            ))
         except Exception:
             return []
 

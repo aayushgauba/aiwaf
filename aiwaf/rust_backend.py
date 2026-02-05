@@ -15,10 +15,16 @@ def rust_available() -> bool:
     return aiwaf_rust is not None
 
 
-def validate_headers(headers) -> str | None:
+def validate_headers(headers, required_headers=None, min_score=None) -> str | None:
     if aiwaf_rust is None:
         return None
     try:
+        if hasattr(aiwaf_rust, "validate_headers_with_config"):
+            return aiwaf_rust.validate_headers_with_config(
+                headers,
+                required_headers,
+                min_score,
+            )
         return aiwaf_rust.validate_headers(headers)
     except Exception:
         return None

@@ -62,6 +62,20 @@ AIWAF_RATE_WINDOW = 10     # seconds
 AIWAF_RATE_MAX = 20        # soft limit (warnings)
 AIWAF_RATE_FLOOD = 40      # hard limit (immediate block)
 
+# Header validation overrides (optional)
+# Per-method example for email scanners that issue HEAD requests.
+AIWAF_REQUIRED_HEADERS = {
+    "GET": ["HTTP_USER_AGENT", "HTTP_ACCEPT"],
+    "HEAD": [],
+}
+AIWAF_HEADER_QUALITY_MIN_SCORE = 3
+
+# Blacklist extended request info (optional)
+AIWAF_BLACKLIST_STORE_EXTENDED_INFO = False
+AIWAF_BLACKLIST_REDACT_HEADERS = ["Authorization", "Cookie", "Set-Cookie"]
+AIWAF_BLACKLIST_MAX_HEADERS = 50
+AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH = 512
+
 # Honeypot timing threshold
 AIWAF_MIN_FORM_TIME = 1.0  # minimum seconds for form submission
 

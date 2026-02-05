@@ -218,6 +218,72 @@ def get_ip(request):
         return xff.split(",")[0].strip()
     return request.META.get("REMOTE_ADDR", "")
 
+
+def _normalize_header_name(meta_key):
+    if meta_key.startswith("HTTP_"):
+        return meta_key[5:].replace("_", "-").title()
+    if meta_key in {"CONTENT_TYPE", "CONTENT_LENGTH"}:
+        return meta_key.replace("_", "-").title()
+    return None
+
+
+def _collect_request_headers(request):
+    max_headers = getattr(settings, "AIWAF_BLACKLIST_MAX_HEADERS", 50)
+    max_value_len = getattr(settings, "AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH", 512)
+    redact = {
+        h.lower()
+        for h in getattr(
+            settings,
+            "AIWAF_BLACKLIST_REDACT_HEADERS",
+            ["Authorization", "Cookie", "Set-Cookie"],
+        )
+    }
+    headers = {}
+    for key, value in request.META.items():
+        name = _normalize_header_name(key)
+        if not name:
+            continue
+        if len(headers) >= max_headers:
+            break
+        value = str(value)
+        if name.lower() in redact:
+            headers[name] = "[redacted]"
+            continue
+        if max_value_len and len(value) > max_value_len:
+            value = value[:max_value_len] + "...(truncated)"
+        headers[name] = value
+    return headers
+
+
+def _get_blacklist_extended_info(request):
+    if not getattr(settings, "AIWAF_BLACKLIST_STORE_EXTENDED_INFO", False):
+        return None
+
+    cache_attr = "_aiwaf_blacklist_extended_info"
+    cached = getattr(request, cache_attr, None)
+    if cached is not None:
+        return cached
+
+    info = {
+        "method": getattr(request, "method", ""),
+        "path": getattr(request, "path", ""),
+    }
+    query_string = request.META.get("QUERY_STRING")
+    if query_string:
+        info["query_string"] = query_string
+    try:
+        info["url"] = request.build_absolute_uri()
+    except Exception:
+        info["url"] = info["path"]
+    try:
+        info["host"] = request.get_host()
+    except Exception:
+        pass
+    info["headers"] = _collect_request_headers(request)
+
+    setattr(request, cache_attr, info)
+    return info
+
 class IPAndKeywordBlockMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -528,7 +594,11 @@ class IPAndKeywordBlockMiddleware:
                 if self._is_malicious_context(request, seg) or not path_exists:
                     # Double-check exemption before blocking
                     if not is_ip_exempted(ip):
-                        BlacklistManager.block(ip, f"Keyword block: {block_reason}")
+                        BlacklistManager.block(
+                            ip,
+                            f"Keyword block: {block_reason}",
+                            extended_request_info=_get_blacklist_extended_info(request),
+                        )
                         # Check again after blocking attempt (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
                             _raise_blocked(request, f"Keyword block: {block_reason}", status_code=403)
@@ -571,7 +641,11 @@ class RateLimitMiddleware:
         if len(timestamps) > flood:
             # Double-check exemption before blocking
             if not is_ip_exempted(ip):
-                BlacklistManager.block(ip, "Flood pattern")
+                BlacklistManager.block(
+                    ip,
+                    "Flood pattern",
+                    extended_request_info=_get_blacklist_extended_info(request),
+                )
                 # Check if actually blocked (exempted IPs won't be blocked)
                 if BlacklistManager.is_blocked(ip):
                     _raise_blocked(request, "Flood pattern", status_code=403)
@@ -629,7 +703,11 @@ class GeoBlockMiddleware(MiddlewareMixin):
             should_block = country in (self.block_countries + dynamic_block)
 
         if should_block:
-            BlacklistManager.block(ip, f"Geo-blocked country: {country}")
+            BlacklistManager.block(
+                ip,
+                f"Geo-blocked country: {country}",
+                extended_request_info=_get_blacklist_extended_info(request),
+            )
             if BlacklistManager.is_blocked(ip):
                 _raise_blocked(request, f"Geo-blocked country: {country}", status_code=403)
         return None
@@ -918,7 +996,11 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                     avg_burst = stats.get("avg_burst", 0)
                     # Double-check exemption before blocking
                     if not is_ip_exempted(ip):
-                        BlacklistManager.block(ip, f"AI anomaly + scanning 404s (total:{max_404s}, scanning:{scanning_404s}, kw:{avg_kw_hits:.1f}, burst:{avg_burst:.1f})")
+                        BlacklistManager.block(
+                            ip,
+                            f"AI anomaly + scanning 404s (total:{max_404s}, scanning:{scanning_404s}, kw:{avg_kw_hits:.1f}, burst:{avg_burst:.1f})",
+                            extended_request_info=_get_blacklist_extended_info(request),
+                        )
                         # Check if actually blocked (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
                             _raise_blocked(
@@ -934,7 +1016,11 @@ class AIAnomalyMiddleware(MiddlewareMixin):
                 if kw_hits >= 3 and current_scanning:  # Require both high keywords AND scanning pattern
                     # Double-check exemption before blocking
                     if not is_ip_exempted(ip):
-                        BlacklistManager.block(ip, f"AI anomaly + scanning behavior (kw:{kw_hits}, scanning_path:{request.path})")
+                        BlacklistManager.block(
+                            ip,
+                            f"AI anomaly + scanning behavior (kw:{kw_hits}, scanning_path:{request.path})",
+                            extended_request_info=_get_blacklist_extended_info(request),
+                        )
                         if BlacklistManager.is_blocked(ip):
                             _raise_blocked(
                                 request,
@@ -1077,7 +1163,11 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 if obvious_post_only:
                     # This is very likely a POST-only endpoint getting a GET
                     if not is_ip_exempted(ip):
-                        BlacklistManager.block(ip, f"GET to obvious POST-only endpoint: {request.path}")
+                        BlacklistManager.block(
+                            ip,
+                            f"GET to obvious POST-only endpoint: {request.path}",
+                            extended_request_info=_get_blacklist_extended_info(request),
+                        )
                         if BlacklistManager.is_blocked(ip):
                             _log_block(request, f"GET to obvious POST-only endpoint: {request.path}", status_code=405)
                             return JsonResponse({
@@ -1095,7 +1185,11 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
             if not self._view_accepts_method(request, 'POST'):
                 # This view is GET-only, but received a POST - likely malicious
                 if not is_ip_exempted(ip):
-                    BlacklistManager.block(ip, f"POST to GET-only view: {request.path}")
+                    BlacklistManager.block(
+                        ip,
+                        f"POST to GET-only view: {request.path}",
+                        extended_request_info=_get_blacklist_extended_info(request),
+                    )
                     if BlacklistManager.is_blocked(ip):
                         _log_block(request, f"POST to GET-only view: {request.path}", status_code=405)
                         return JsonResponse({
@@ -1131,7 +1225,11 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 if time_diff < min_time:
                     # Double-check exemption before blocking
                     if not is_ip_exempted(ip):
-                        BlacklistManager.block(ip, f"Form submitted too quickly ({time_diff:.2f}s)")
+                        BlacklistManager.block(
+                            ip,
+                            f"Form submitted too quickly ({time_diff:.2f}s)",
+                            extended_request_info=_get_blacklist_extended_info(request),
+                        )
                         # Check if actually blocked (exempted IPs won't be blocked)
                         if BlacklistManager.is_blocked(ip):
                             _raise_blocked(request, f"Form submitted too quickly ({time_diff:.2f}s)", status_code=403)
@@ -1142,7 +1240,11 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 # Check if this view supports the requested method
                 if not self._view_accepts_method(request, request.method):
                     if not is_ip_exempted(ip):
-                        BlacklistManager.block(ip, f"{request.method} to view that doesn't support it: {request.path}")
+                        BlacklistManager.block(
+                            ip,
+                            f"{request.method} to view that doesn't support it: {request.path}",
+                            extended_request_info=_get_blacklist_extended_info(request),
+                        )
                         if BlacklistManager.is_blocked(ip):
                             _log_block(
                                 request,
@@ -1191,7 +1293,11 @@ class UUIDTamperMiddleware(MiddlewareMixin):
 
         # Double-check exemption before blocking
         if not is_ip_exempted(ip):
-            BlacklistManager.block(ip, "UUID tampering")
+            BlacklistManager.block(
+                ip,
+                "UUID tampering",
+                extended_request_info=_get_blacklist_extended_info(request),
+            )
             # Check if actually blocked (exempted IPs won't be blocked)
             if BlacklistManager.is_blocked(ip):
                 _raise_blocked(request, "UUID tampering", status_code=403)
@@ -1338,14 +1444,17 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         if cap_reason:
             return self._block_request(request, ip, cap_reason, request.path)
 
+        required_headers = self._get_required_headers(request)
+
         if self._should_use_rust():
-            reason = rust_validate_headers(headers)
+            min_score = self._get_min_quality_score(required_headers)
+            reason = rust_validate_headers(headers, required_headers, min_score)
             if reason:
                 return self._block_request(request, ip, reason, request.path)
             return None
         
         # Check for missing required headers
-        missing_headers = self._check_missing_headers(headers)
+        missing_headers = self._check_missing_headers(headers, required_headers)
         if missing_headers:
             return self._block_request(request, ip, f"Missing required headers: {', '.join(missing_headers)}", request.path)
         
@@ -1355,13 +1464,14 @@ class HeaderValidationMiddleware(MiddlewareMixin):
             return self._block_request(request, ip, f"Suspicious user agent: {suspicious_ua}", request.path)
         
         # Check for suspicious header combinations
-        suspicious_combo = self._check_header_combinations(headers)
+        suspicious_combo = self._check_header_combinations(headers, required_headers)
         if suspicious_combo:
             return self._block_request(request, ip, f"Suspicious headers: {suspicious_combo}", request.path)
         
         # Check header quality score
         quality_score = self._calculate_header_quality(headers)
-        if quality_score < 3:  # Threshold for suspicion
+        min_score = self._get_min_quality_score(required_headers)
+        if min_score and quality_score < min_score:  # Threshold for suspicion
             return self._block_request(request, ip, f"Low header quality score: {quality_score}", request.path)
         
         return None
@@ -1388,11 +1498,33 @@ class HeaderValidationMiddleware(MiddlewareMixin):
             
         return False
     
-    def _check_missing_headers(self, headers):
+    def _get_required_headers(self, request):
+        override = getattr(settings, "AIWAF_REQUIRED_HEADERS", None)
+        if override is None:
+            return list(self.REQUIRED_HEADERS)
+        if isinstance(override, (list, tuple)):
+            return list(override)
+        if isinstance(override, dict):
+            method = getattr(request, "method", "").upper()
+            headers = override.get(method)
+            if headers is None:
+                headers = override.get("DEFAULT")
+            if headers is None:
+                return list(self.REQUIRED_HEADERS)
+            return list(headers)
+        return list(self.REQUIRED_HEADERS)
+
+    def _get_min_quality_score(self, required_headers):
+        default_min = getattr(settings, "AIWAF_HEADER_QUALITY_MIN_SCORE", 3)
+        if not required_headers:
+            return 0
+        return default_min
+
+    def _check_missing_headers(self, headers, required_headers):
         """Check for missing required headers"""
         missing = []
         
-        for header in self.REQUIRED_HEADERS:
+        for header in required_headers:
             if not headers.get(header):
                 missing.append(header.replace('HTTP_', '').replace('_', '-').lower())
                 
@@ -1460,10 +1592,15 @@ class HeaderValidationMiddleware(MiddlewareMixin):
     def _is_http_meta_key(self, key: str) -> bool:
         return key.startswith('HTTP_') or key in {'CONTENT_TYPE', 'CONTENT_LENGTH'}
     
-    def _check_header_combinations(self, headers):
+    def _check_header_combinations(self, headers, required_headers):
         """Check for suspicious header combinations"""
+        if not required_headers:
+            return None
+        required = set(required_headers)
         for combo in self.SUSPICIOUS_COMBINATIONS:
             try:
+                if combo.get('reason') == 'User-Agent present but no Accept header' and 'HTTP_ACCEPT' not in required:
+                    continue
                 if combo['condition'](headers):
                     return combo['reason']
             except Exception:
@@ -1505,7 +1642,11 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         """Block the request and raise PermissionDenied"""
         # Double-check exemption before blocking
         if not is_ip_exempted(ip):
-            BlacklistManager.block(ip, f"Header validation: {reason}")
+            BlacklistManager.block(
+                ip,
+                f"Header validation: {reason}",
+                extended_request_info=_get_blacklist_extended_info(request),
+            )
             
             # Check if actually blocked (exempted IPs won't be blocked)
             if BlacklistManager.is_blocked(ip):

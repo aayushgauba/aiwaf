@@ -102,6 +102,65 @@ class HeaderValidationTestCase(AIWAFMiddlewareTestCase):
         request = self.factory.get('/caps/', **headers)
         reason = self._run_and_capture_reason(request)
         self.assertIn("Accept header longer than", reason)
+
+    @override_settings(
+        AIWAF_REQUIRED_HEADERS={"GET": ["HTTP_USER_AGENT", "HTTP_ACCEPT"], "HEAD": []},
+        AIWAF_HEADER_QUALITY_MIN_SCORE=3,
+    )
+    def test_head_allows_missing_required_headers(self):
+        headers = {
+            'HTTP_USER_AGENT': 'EmailScanner/1.0',
+            'REMOTE_ADDR': '203.0.113.10',
+        }
+        request = self.factory.head('/magic-link/', **headers)
+        with patch.object(
+            HeaderValidationMiddleware,
+            "_block_request",
+            return_value=MagicMock(status_code=403)
+        ) as block:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+        self.assertIsNone(response)
+        block.assert_not_called()
+
+    @override_settings(AIWAF_REQUIRED_HEADERS=["HTTP_USER_AGENT"])
+    def test_required_headers_list_applies_to_all_methods(self):
+        headers = {
+            'REMOTE_ADDR': '203.0.113.11',
+        }
+        request = self.factory.get('/list/', **headers)
+        reason = self._run_and_capture_reason(request)
+        self.assertIn("Missing required headers", reason)
+        self.assertIn("user-agent", reason)
+
+    @override_settings(AIWAF_REQUIRED_HEADERS={"DEFAULT": ["HTTP_USER_AGENT"]})
+    def test_required_headers_default_fallback(self):
+        headers = {
+            'REMOTE_ADDR': '203.0.113.12',
+        }
+        request = self.factory.post('/default/', **headers)
+        reason = self._run_and_capture_reason(request)
+        self.assertIn("Missing required headers", reason)
+
+    @override_settings(
+        AIWAF_REQUIRED_HEADERS={"HEAD": []},
+        AIWAF_HEADER_QUALITY_MIN_SCORE=3,
+    )
+    def test_empty_required_headers_disables_quality_threshold(self):
+        headers = {
+            'HTTP_USER_AGENT': 'Mozilla/5.0',
+            'REMOTE_ADDR': '203.0.113.13',
+        }
+        request = self.factory.head('/no-score/', **headers)
+        with patch.object(
+            HeaderValidationMiddleware,
+            "_block_request",
+            return_value=MagicMock(status_code=403)
+        ) as block:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+        self.assertIsNone(response)
+        block.assert_not_called()
     
     def test_header_validation(self):
         """Test header validation"""

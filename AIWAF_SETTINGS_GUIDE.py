@@ -50,6 +50,22 @@ AIWAF_ENABLE_KEYWORD_LEARNING = True
 AIWAF_ENABLE_IP_BLOCKING = True
 AIWAF_ENABLE_ANOMALY_DETECTION = True  # Ignored if AIWAF_DISABLE_AI is True
 
+# Header validation overrides (optional)
+# Can be a list (all methods) or a dict per HTTP method.
+# Example: AIWAF_REQUIRED_HEADERS = {"GET": ["HTTP_USER_AGENT", "HTTP_ACCEPT"], "HEAD": []}
+AIWAF_REQUIRED_HEADERS = None
+# Minimum header quality score (0 disables score blocking when required headers are empty).
+AIWAF_HEADER_QUALITY_MIN_SCORE = 3
+
+# Blacklist extended request info (optional)
+# Stores URL + headers alongside blacklist entries for later analysis.
+AIWAF_BLACKLIST_STORE_EXTENDED_INFO = False
+# Redact sensitive headers before storing.
+AIWAF_BLACKLIST_REDACT_HEADERS = ["Authorization", "Cookie", "Set-Cookie"]
+# Limit the number and size of stored headers to avoid bloating the DB.
+AIWAF_BLACKLIST_MAX_HEADERS = 50
+AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH = 512
+
 # Learning thresholds
 AIWAF_KEYWORD_THRESHOLD = 3
 AIWAF_ANOMALY_THRESHOLD = -0.5

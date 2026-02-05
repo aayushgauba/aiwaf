@@ -6,6 +6,7 @@ Tests for Rust backend toggling in middleware.
 import os
 import sys
 import time
+import unittest
 from unittest.mock import MagicMock, patch
 
 from django.test import override_settings
@@ -23,9 +24,16 @@ from aiwaf.middleware import HeaderValidationMiddleware, AIAnomalyMiddleware
 from aiwaf.middleware_logger import AIWAFLoggerMiddleware
 from aiwaf.utils import get_ip
 from aiwaf.middleware_logger import AIWAFLoggerMiddleware
+from aiwaf.rust_backend import rust_available
 
 
+@unittest.skipUnless(rust_available(), "aiwaf_rust extension not available")
 class RustBackendToggleTests(AIWAFMiddlewareTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        print("Rust tests enabled: aiwaf_rust extension detected")
+
     @override_settings(AIWAF_USE_RUST=True, AIWAF_MIDDLEWARE_CSV=True)
     def test_header_validation_uses_rust_when_enabled(self):
         request = self.create_request(
@@ -44,6 +52,73 @@ class RustBackendToggleTests(AIWAFMiddlewareTestCase):
         self.assertIsNotNone(response)
         self.assertEqual(response.status_code, 403)
         block.assert_called_once()
+
+class RustFallbackTests(AIWAFMiddlewareTestCase):
+    @override_settings(AIWAF_USE_RUST=False)
+    def test_header_validation_falls_back_when_rust_disabled(self):
+        request = self.create_request(
+            "/ok/",
+            headers={
+                "REMOTE_ADDR": "10.0.0.3",
+                "HTTP_USER_AGENT": "Mozilla/5.0",
+                "HTTP_ACCEPT": "text/html",
+                "HTTP_ACCEPT_LANGUAGE": "en-US,en;q=0.9",
+                "HTTP_ACCEPT_ENCODING": "gzip, deflate",
+                "HTTP_CONNECTION": "keep-alive",
+            },
+        )
+
+        with patch("aiwaf.middleware.rust_validate_headers") as rust_fn:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+
+        self.assertIsNone(response)
+        rust_fn.assert_not_called()
+
+    @override_settings(AIWAF_USE_RUST=True)
+    def test_header_validation_falls_back_when_rust_unavailable(self):
+        request = self.create_request(
+            "/ok/",
+            headers={
+                "REMOTE_ADDR": "10.0.0.4",
+                "HTTP_USER_AGENT": "Mozilla/5.0",
+                "HTTP_ACCEPT": "text/html",
+                "HTTP_ACCEPT_LANGUAGE": "en-US,en;q=0.9",
+                "HTTP_ACCEPT_ENCODING": "gzip, deflate",
+                "HTTP_CONNECTION": "keep-alive",
+            },
+        )
+
+        with patch("aiwaf.middleware.rust_available", return_value=False), \
+             patch("aiwaf.middleware.rust_validate_headers") as rust_fn:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+
+        self.assertIsNone(response)
+        rust_fn.assert_not_called()
+
+    @override_settings(
+        AIWAF_USE_RUST=True,
+        AIWAF_REQUIRED_HEADERS={"GET": ["HTTP_USER_AGENT", "HTTP_ACCEPT"], "HEAD": []},
+        AIWAF_HEADER_QUALITY_MIN_SCORE=3,
+    )
+    def test_header_validation_rust_receives_required_headers(self):
+        request = self.create_request(
+            "/ok/",
+            headers={"REMOTE_ADDR": "10.0.0.2"},
+        )
+
+        with patch("aiwaf.middleware.rust_available", return_value=True), patch(
+            "aiwaf.middleware.rust_validate_headers", return_value=None
+        ) as rust_fn:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+
+        self.assertIsNone(response)
+        rust_fn.assert_called_once()
+        args = rust_fn.call_args[0]
+        self.assertEqual(set(args[1]), {"HTTP_USER_AGENT", "HTTP_ACCEPT"})
+        self.assertEqual(args[2], 3)
 
     @override_settings(
         AIWAF_USE_RUST=True, AIWAF_MIDDLEWARE_CSV=True, AIWAF_MIDDLEWARE_LOGGING=True

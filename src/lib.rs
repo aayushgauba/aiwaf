@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict};
 use pyo3::FromPyObject;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 static LEGITIMATE_BOTS: Lazy<Vec<Regex>> = Lazy::new(|| {
     vec![
@@ -101,12 +101,29 @@ fn check_user_agent(user_agent: &str) -> Option<String> {
 
 #[pyfunction]
 fn validate_headers(headers: Bound<'_, PyDict>) -> PyResult<Option<String>> {
+    validate_headers_with_config(headers, None, None)
+}
+
+#[pyfunction]
+fn validate_headers_with_config(
+    headers: Bound<'_, PyDict>,
+    required_headers: Option<Vec<String>>,
+    min_score: Option<i32>,
+) -> PyResult<Option<String>> {
+    let required = required_headers.unwrap_or_else(|| {
+        vec!["HTTP_USER_AGENT".to_string(), "HTTP_ACCEPT".to_string()]
+    });
+    let required_set: HashSet<String> = required.iter().cloned().collect();
+    let check_required = !required.is_empty();
+
     let mut missing = Vec::new();
-    if !has_header(&headers, "HTTP_USER_AGENT") {
-        missing.push("user-agent".to_string());
-    }
-    if !has_header(&headers, "HTTP_ACCEPT") {
-        missing.push("accept".to_string());
+    if check_required {
+        if required_set.contains("HTTP_USER_AGENT") && !has_header(&headers, "HTTP_USER_AGENT") {
+            missing.push("user-agent".to_string());
+        }
+        if required_set.contains("HTTP_ACCEPT") && !has_header(&headers, "HTTP_ACCEPT") {
+            missing.push("accept".to_string());
+        }
     }
 
     if !missing.is_empty() {
@@ -127,37 +144,44 @@ fn validate_headers(headers: Bound<'_, PyDict>) -> PyResult<Option<String>> {
     let accept_encoding = get_header(&headers, "HTTP_ACCEPT_ENCODING").unwrap_or_default();
     let connection = get_header(&headers, "HTTP_CONNECTION").unwrap_or_default();
 
-    if server_protocol.starts_with("HTTP/2") && user_agent.to_lowercase().contains("mozilla/4.0") {
-        return Ok(Some(
-            "Suspicious headers: HTTP/2 with old browser user agent".to_string(),
-        ));
-    }
-    if !user_agent.is_empty() && accept.is_empty() {
-        return Ok(Some(
-            "Suspicious headers: User-Agent present but no Accept header".to_string(),
-        ));
-    }
-    if accept == "*/*" && accept_language.is_empty() && accept_encoding.is_empty() {
-        return Ok(Some(
-            "Suspicious headers: Generic Accept header without language/encoding".to_string(),
-        ));
-    }
-    if !user_agent.is_empty()
-        && accept_language.is_empty()
-        && accept_encoding.is_empty()
-        && connection.is_empty()
-    {
-        return Ok(Some(
-            "Suspicious headers: Missing all browser-standard headers".to_string(),
-        ));
-    }
-    if !user_agent.is_empty()
-        && server_protocol == "HTTP/1.0"
-        && user_agent.to_lowercase().contains("chrome")
-    {
-        return Ok(Some(
-            "Suspicious headers: Modern browser with HTTP/1.0".to_string(),
-        ));
+    if check_required {
+        if server_protocol.starts_with("HTTP/2")
+            && user_agent.to_lowercase().contains("mozilla/4.0")
+        {
+            return Ok(Some(
+                "Suspicious headers: HTTP/2 with old browser user agent".to_string(),
+            ));
+        }
+        if !user_agent.is_empty()
+            && accept.is_empty()
+            && required_set.contains("HTTP_ACCEPT")
+        {
+            return Ok(Some(
+                "Suspicious headers: User-Agent present but no Accept header".to_string(),
+            ));
+        }
+        if accept == "*/*" && accept_language.is_empty() && accept_encoding.is_empty() {
+            return Ok(Some(
+                "Suspicious headers: Generic Accept header without language/encoding".to_string(),
+            ));
+        }
+        if !user_agent.is_empty()
+            && accept_language.is_empty()
+            && accept_encoding.is_empty()
+            && connection.is_empty()
+        {
+            return Ok(Some(
+                "Suspicious headers: Missing all browser-standard headers".to_string(),
+            ));
+        }
+        if !user_agent.is_empty()
+            && server_protocol == "HTTP/1.0"
+            && user_agent.to_lowercase().contains("chrome")
+        {
+            return Ok(Some(
+                "Suspicious headers: Modern browser with HTTP/1.0".to_string(),
+            ));
+        }
     }
 
     let mut score = 0;
@@ -189,7 +213,8 @@ fn validate_headers(headers: Bound<'_, PyDict>) -> PyResult<Option<String>> {
         score += 1;
     }
 
-    if score < 3 {
+    let min_score = min_score.unwrap_or(3);
+    if min_score > 0 && score < min_score {
         return Ok(Some(format!("Low header quality score: {}", score)));
     }
 
@@ -489,6 +514,7 @@ fn analyze_recent_behavior<'py>(
 #[pymodule]
 fn aiwaf_rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(validate_headers, m)?)?;
+    m.add_function(wrap_pyfunction!(validate_headers_with_config, m)?)?;
     m.add_function(wrap_pyfunction!(extract_features, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_recent_behavior, m)?)?;
     Ok(())
@@ -499,7 +525,10 @@ mod tests {
     use super::*;
     use pyo3::types::PyDict;
 
-    fn dict_from_pairs(py: Python<'_>, pairs: &[(&str, &str)]) -> Bound<'_, PyDict> {
+    fn dict_from_pairs<'a>(
+        py: Python<'a>,
+        pairs: &'a [(&'a str, &'a str)],
+    ) -> Bound<'a, PyDict> {
         let dict = PyDict::new_bound(py);
         for (k, v) in pairs {
             dict.set_item(*k, *v).unwrap();
@@ -512,6 +541,25 @@ mod tests {
         Python::with_gil(|py| {
             let headers = dict_from_pairs(py, &[("HTTP_USER_AGENT", "Mozilla/5.0")]);
             let result = validate_headers(headers).unwrap();
+            assert!(matches!(result, Some(msg) if msg.contains("Missing required headers")));
+        });
+    }
+
+    #[test]
+    fn validate_headers_with_config_allows_empty_required() {
+        Python::with_gil(|py| {
+            let headers = dict_from_pairs(py, &[("HTTP_USER_AGENT", "EmailScanner/1.0")]);
+            let result = validate_headers_with_config(headers, Some(vec![]), Some(0)).unwrap();
+            assert!(result.is_none());
+        });
+    }
+
+    #[test]
+    fn validate_headers_with_config_respects_required() {
+        Python::with_gil(|py| {
+            let headers = dict_from_pairs(py, &[("HTTP_USER_AGENT", "Mozilla/5.0")]);
+            let required = vec!["HTTP_USER_AGENT".to_string(), "HTTP_ACCEPT".to_string()];
+            let result = validate_headers_with_config(headers, Some(required), Some(3)).unwrap();
             assert!(matches!(result, Some(msg) if msg.contains("Missing required headers")));
         });
     }

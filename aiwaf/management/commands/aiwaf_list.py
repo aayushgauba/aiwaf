@@ -49,7 +49,7 @@ class Command(BaseCommand):
         payload = {}
 
         if options["all"] or options["ips_blocked"]:
-            data = get_blacklist_store().get_all()  # [{ip_address, reason, created_at}]
+            data = get_blacklist_store().get_all()  # includes extended_request_info when available
             data = _filter_since(data, options.get("since"))
             data = _sort(data, options["order"])[: options["limit"]]
             payload["ips_blocked"] = data
