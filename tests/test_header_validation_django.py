@@ -106,8 +106,9 @@ class HeaderValidationTestCase(AIWAFMiddlewareTestCase):
     @override_settings(
         AIWAF_REQUIRED_HEADERS={"GET": ["HTTP_USER_AGENT", "HTTP_ACCEPT"], "HEAD": []},
         AIWAF_HEADER_QUALITY_MIN_SCORE=3,
+        AIWAF_USE_RUST=False,
     )
-    def test_head_allows_missing_required_headers(self):
+    def test_head_allows_missing_required_headers_python(self):
         headers = {
             'HTTP_USER_AGENT': 'EmailScanner/1.0',
             'REMOTE_ADDR': '203.0.113.10',
@@ -118,6 +119,29 @@ class HeaderValidationTestCase(AIWAFMiddlewareTestCase):
             "_block_request",
             return_value=MagicMock(status_code=403)
         ) as block:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+        self.assertIsNone(response)
+        block.assert_not_called()
+
+    @override_settings(
+        AIWAF_REQUIRED_HEADERS={"GET": ["HTTP_USER_AGENT", "HTTP_ACCEPT"], "HEAD": []},
+        AIWAF_HEADER_QUALITY_MIN_SCORE=3,
+        AIWAF_USE_RUST=True,
+    )
+    def test_head_allows_missing_required_headers_rust(self):
+        headers = {
+            'HTTP_USER_AGENT': 'EmailScanner/1.0',
+            'REMOTE_ADDR': '203.0.113.16',
+        }
+        request = self.factory.head('/magic-link/', **headers)
+        with patch("aiwaf.middleware.rust_available", return_value=True), \
+             patch("aiwaf.middleware.rust_validate_headers", return_value=None), \
+             patch.object(
+                 HeaderValidationMiddleware,
+                 "_block_request",
+                 return_value=MagicMock(status_code=403)
+             ) as block:
             middleware = HeaderValidationMiddleware(self.mock_get_response)
             response = middleware.process_request(request)
         self.assertIsNone(response)
@@ -161,6 +185,40 @@ class HeaderValidationTestCase(AIWAFMiddlewareTestCase):
             response = middleware.process_request(request)
         self.assertIsNone(response)
         block.assert_not_called()
+
+    @override_settings(
+        AIWAF_REQUIRED_HEADERS=["HTTP_USER_AGENT", "HTTP_ACCEPT"],
+        AIWAF_HEADER_QUALITY_MIN_SCORE=0,
+    )
+    def test_min_score_zero_disables_quality_blocking(self):
+        headers = {
+            'HTTP_USER_AGENT': 'Mozilla/5.0',
+            'HTTP_ACCEPT': 'text/html',
+            'HTTP_ACCEPT_LANGUAGE': 'en-US,en;q=0.9',
+            'HTTP_ACCEPT_ENCODING': 'gzip, deflate',
+            'HTTP_CONNECTION': 'keep-alive',
+            'REMOTE_ADDR': '203.0.113.14',
+        }
+        request = self.factory.get('/no-quality/', **headers)
+        with patch.object(
+            HeaderValidationMiddleware,
+            "_block_request",
+            return_value=MagicMock(status_code=403)
+        ) as block:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+        self.assertIsNone(response)
+        block.assert_not_called()
+
+    @override_settings(AIWAF_REQUIRED_HEADERS=object())
+    def test_invalid_required_headers_type_falls_back_to_default(self):
+        headers = {
+            'HTTP_USER_AGENT': 'Mozilla/5.0',
+            'REMOTE_ADDR': '203.0.113.15',
+        }
+        request = self.factory.get('/invalid/', **headers)
+        reason = self._run_and_capture_reason(request)
+        self.assertIn("Missing required headers", reason)
     
     def test_header_validation(self):
         """Test header validation"""
