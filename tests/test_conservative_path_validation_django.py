@@ -7,7 +7,6 @@ Test the conservative path validation approach
 
 import os
 import sys
-from unittest.mock import patch, MagicMock
 
 # Setup Django
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,6 +16,7 @@ import django
 django.setup()
 
 from tests.base_test import AIWAFTestCase
+from aiwaf.trainer import path_exists_in_django
 
 
 class ConservativePathValidationTestCase(AIWAFTestCase):
@@ -24,21 +24,18 @@ class ConservativePathValidationTestCase(AIWAFTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # Add imports as needed
     
     def test_conservative_path_validation(self):
-        """Test conservative path validation"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_conservative_path_validation
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
-        
-        # Example patterns:
-        # request = self.create_request('/test/path/')
-        # response = self.process_request_through_middleware(MiddlewareClass, request)
-        # self.assertEqual(response.status_code, 200)
+        """Recognizes real Django routes exactly, including slash variants."""
+        self.assertTrue(path_exists_in_django("/test/"))
+        self.assertTrue(path_exists_in_django("/test"))
+        self.assertTrue(path_exists_in_django("test/"))
+        self.assertTrue(path_exists_in_django("/admin/login/"))
+    
+    def test_unknown_include_prefix_not_treated_as_valid(self):
+        """Does not assume arbitrary prefixes from include() patterns exist."""
+        self.assertFalse(path_exists_in_django("/school/"))
+        self.assertFalse(path_exists_in_django("/school/grades/"))
     
 
 

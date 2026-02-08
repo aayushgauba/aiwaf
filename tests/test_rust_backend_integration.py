@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from django.test import TestCase
+import unittest
 
 try:
     import aiwaf_rust
@@ -22,9 +23,9 @@ class RustBackendIntegrationTests(TestCase):
     def setUpClass(cls):
         super().setUpClass()
         if aiwaf_rust is None:
-            raise AssertionError(
-                "aiwaf_rust extension not available. Build it with: "
-                "maturin develop -m Cargo.toml"
+            raise unittest.SkipTest(
+                "aiwaf_rust extension not available (skip Rust integration tests). "
+                "Build it with: maturin develop -m Cargo.toml"
             )
 
     def test_validate_headers_blocks_missing(self):

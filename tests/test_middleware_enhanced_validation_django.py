@@ -17,6 +17,8 @@ import django
 django.setup()
 
 from tests.base_test import AIWAFMiddlewareTestCase
+from django.test import override_settings
+from aiwaf.middleware import IPAndKeywordBlockMiddleware
 
 
 class MiddlewareEnhancedValidationTestCase(AIWAFMiddlewareTestCase):
@@ -24,16 +26,26 @@ class MiddlewareEnhancedValidationTestCase(AIWAFMiddlewareTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # from aiwaf.middleware import MiddlewareClass
     
     def test_middleware_with_improved_path_validation(self):
-        """Test middleware with improved path validation"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_middleware_with_improved_path_validation
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Valid paths avoid blocking on static keywords without strong indicators."""
+        middleware = IPAndKeywordBlockMiddleware(self.mock_get_response)
+        middleware.safe_prefixes = set()
+
+        request = self.factory.get("/api/users/")
+        request.META["REMOTE_ADDR"] = "203.0.113.142"
+
+        with override_settings(AIWAF_ENABLE_KEYWORD_LEARNING=True), \
+             patch("aiwaf.middleware.is_middleware_disabled", return_value=False), \
+             patch("aiwaf.middleware.is_exempt", return_value=False), \
+             patch("aiwaf.middleware.is_ip_exempted", return_value=False), \
+             patch("aiwaf.middleware.BlacklistManager.is_blocked", return_value=False), \
+             patch("aiwaf.middleware.path_exists_in_django", return_value=True), \
+             patch("aiwaf.middleware.BlacklistManager.block") as mock_block:
+            response = middleware(request)
+
+        self.assertIsNotNone(response)
+        mock_block.assert_not_called()
         
         # Example patterns:
         # request = self.create_request('/test/path/')

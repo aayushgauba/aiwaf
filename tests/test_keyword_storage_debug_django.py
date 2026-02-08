@@ -18,6 +18,8 @@ import django
 django.setup()
 
 from tests.base_test import AIWAFStorageTestCase
+from aiwaf.storage import get_keyword_store
+from aiwaf.middleware import IPAndKeywordBlockMiddleware
 
 
 class KeywordStorageDebugTestCase(AIWAFStorageTestCase):
@@ -25,16 +27,16 @@ class KeywordStorageDebugTestCase(AIWAFStorageTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # from aiwaf.storage import Storage
+        store = get_keyword_store()
+        for kw in store.get_all_keywords():
+            store.remove_keyword(kw)
     
     def test_keyword_storage_access(self):
-        """Test keyword storage access"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_keyword_storage_access
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Keyword store is available and DB-backed in Django tests."""
+        store = get_keyword_store()
+        store.add_keyword("debugkw", 1)
+        self.assertIn("debugkw", list(store.get_all_keywords()))
+        self.assertIn("debugkw", store.get_top_keywords(5))
         
         # Example patterns:
         # request = self.create_request('/test/path/')
@@ -42,12 +44,23 @@ class KeywordStorageDebugTestCase(AIWAFStorageTestCase):
         # self.assertEqual(response.status_code, 200)
     
     def test_middleware_learning_conditions(self):
-        """Test middleware learning conditions"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_middleware_learning_conditions
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Middleware learning happens in __call__ path when conditions are met."""
+        store = get_keyword_store()
+        middleware = IPAndKeywordBlockMiddleware(MagicMock(return_value=MagicMock(status_code=200)))
+        middleware.safe_prefixes = set()
+
+        request = self.factory.get("/nope/evilzebra.php")
+        request.META["REMOTE_ADDR"] = "203.0.113.232"
+
+        with patch("aiwaf.middleware.is_middleware_disabled", return_value=False), \
+             patch("aiwaf.middleware.is_exempt", return_value=False), \
+             patch("aiwaf.middleware.is_ip_exempted", return_value=False), \
+             patch("aiwaf.middleware.BlacklistManager.is_blocked", return_value=False), \
+             patch("aiwaf.middleware.path_exists_in_django", return_value=False), \
+             patch.object(IPAndKeywordBlockMiddleware, "_is_malicious_context", return_value=True):
+            middleware(request)
+
+        self.assertTrue(list(store.get_all_keywords()))
         
         # Example patterns:
         # request = self.create_request('/test/path/')

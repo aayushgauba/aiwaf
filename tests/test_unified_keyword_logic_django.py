@@ -7,7 +7,7 @@ Test that trainer and middleware use unified keyword detection logic
 
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 # Setup Django
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,6 +17,8 @@ import django
 django.setup()
 
 from tests.base_test import AIWAFTrainerTestCase
+from aiwaf.middleware import AIAnomalyMiddleware
+from aiwaf.trainer import _is_malicious_context_trainer
 
 
 class UnifiedKeywordLogicTestCase(AIWAFTrainerTestCase):
@@ -24,16 +26,17 @@ class UnifiedKeywordLogicTestCase(AIWAFTrainerTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # Add imports as needed
     
     def test_unified_keyword_logic(self):
-        """Test unified keyword logic"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_unified_keyword_logic
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Trainer and middleware agree on malicious context for obvious attack paths."""
+        path = "/wp-admin/install.php"
+        self.assertTrue(_is_malicious_context_trainer(path, "wp-admin", status="404"))
+
+        mw = AIAnomalyMiddleware(lambda r: None)
+        req = self.create_request(path)
+        req.META["REMOTE_ADDR"] = "203.0.113.199"
+        with patch("aiwaf.middleware.path_exists_in_django", return_value=False):
+            self.assertTrue(mw._is_malicious_context(req, "wp-admin"))
         
         # Example patterns:
         # request = self.create_request('/test/path/')
@@ -41,12 +44,9 @@ class UnifiedKeywordLogicTestCase(AIWAFTrainerTestCase):
         # self.assertEqual(response.status_code, 200)
     
     def test_trainer_logic(self):
-        """Test trainer logic"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_trainer_logic
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Trainer does not mark valid Django routes as malicious context."""
+        with patch("aiwaf.trainer.path_exists_in_django", return_value=True):
+            self.assertFalse(_is_malicious_context_trainer("/api/users/", "users", status="404"))
         
         # Example patterns:
         # request = self.create_request('/test/path/')
@@ -54,12 +54,12 @@ class UnifiedKeywordLogicTestCase(AIWAFTrainerTestCase):
         # self.assertEqual(response.status_code, 200)
     
     def test_middleware_logic(self):
-        """Test middleware logic"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_middleware_logic
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Middleware is conservative on valid paths (won't call it malicious)."""
+        mw = AIAnomalyMiddleware(lambda r: None)
+        req = self.create_request("/api/users/")
+        req.META["REMOTE_ADDR"] = "203.0.113.198"
+        with patch("aiwaf.middleware.path_exists_in_django", return_value=True):
+            self.assertFalse(mw._is_malicious_context(req, "users"))
         
         # Example patterns:
         # request = self.create_request('/test/path/')
@@ -67,12 +67,19 @@ class UnifiedKeywordLogicTestCase(AIWAFTrainerTestCase):
         # self.assertEqual(response.status_code, 200)
     
     def test_consistency(self):
-        """Test consistency"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_consistency
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Both implementations return booleans and match for a few sample paths."""
+        samples = [
+            ("/.env", "env", "404", True),
+            ("/static/app.js", "static", "200", False),
+        ]
+        mw = AIAnomalyMiddleware(lambda r: None)
+        for path, kw, status, expected in samples:
+            req = self.create_request(path)
+            req.META["REMOTE_ADDR"] = "203.0.113.197"
+            with patch("aiwaf.middleware.path_exists_in_django", return_value=False), \
+                 patch("aiwaf.trainer.path_exists_in_django", return_value=False):
+                self.assertEqual(_is_malicious_context_trainer(path, kw, status=status), expected)
+                self.assertEqual(mw._is_malicious_context(req, kw), expected)
         
         # Example patterns:
         # request = self.create_request('/test/path/')

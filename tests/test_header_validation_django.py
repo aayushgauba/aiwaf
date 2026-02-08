@@ -220,31 +220,97 @@ class HeaderValidationTestCase(AIWAFMiddlewareTestCase):
         reason = self._run_and_capture_reason(request)
         self.assertIn("Missing required headers", reason)
     
+    @override_settings(
+        AIWAF_USE_RUST=False,
+        AIWAF_REQUIRED_HEADERS=["HTTP_USER_AGENT", "HTTP_ACCEPT"],
+    )
     def test_header_validation(self):
-        """Test header validation"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_header_validation
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
-        
-        # Example patterns:
-        # request = self.create_request('/test/path/')
-        # response = self.process_request_through_middleware(MiddlewareClass, request)
-        # self.assertEqual(response.status_code, 200)
+        """Blocks suspicious user agents even when required headers exist."""
+        headers = {
+            "HTTP_USER_AGENT": "curl/7.88.1",
+            "HTTP_ACCEPT": "*/*",
+            "REMOTE_ADDR": "203.0.113.30",
+        }
+        request = self.factory.get("/ua-check/", **headers)
+        reason = self._run_and_capture_reason(request)
+        self.assertIn("Suspicious user agent", reason)
+        self.assertIn("curl", reason)
     
+    @override_settings(
+        AIWAF_USE_RUST=True,
+        AIWAF_REQUIRED_HEADERS=["HTTP_USER_AGENT", "HTTP_ACCEPT"],
+    )
+    def test_header_validation_rust(self):
+        """Blocks suspicious user agents via the Rust validator."""
+        headers = {
+            "HTTP_USER_AGENT": "curl/8.0",
+            "HTTP_ACCEPT": "*/*",
+            "REMOTE_ADDR": "203.0.113.32",
+        }
+        request = self.factory.get("/ua-check-rust/", **headers)
+        rust_reason = "Suspicious user agent: Pattern: curl"
+        with patch("aiwaf.middleware.rust_available", return_value=True), \
+             patch("aiwaf.middleware.rust_validate_headers", return_value=rust_reason) as rust_validate, \
+             patch.object(
+                 HeaderValidationMiddleware,
+                 "_block_request",
+                 return_value=MagicMock(status_code=403)
+             ) as block:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+        self.assertIsNotNone(response)
+        block.assert_called_once()
+        rust_validate.assert_called_once()
+        reason = block.call_args[0][2]
+        self.assertIn("Suspicious user agent", reason)
+        self.assertIn("curl", reason)
+    
+    @override_settings(
+        AIWAF_USE_RUST=False,
+        AIWAF_REQUIRED_HEADERS=["HTTP_USER_AGENT"],
+        AIWAF_HEADER_QUALITY_MIN_SCORE=6,
+    )
     def test_quality_scoring(self):
-        """Test quality scoring"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_quality_scoring
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
-        
-        # Example patterns:
-        # request = self.create_request('/test/path/')
-        # response = self.process_request_through_middleware(MiddlewareClass, request)
-        # self.assertEqual(response.status_code, 200)
+        """Enforces the minimum header quality score when headers are sparse."""
+        headers = {
+            "HTTP_USER_AGENT": "Mozilla/5.0",
+            "HTTP_ACCEPT": "text/plain",
+            "HTTP_ACCEPT_LANGUAGE": "en-US",
+            "REMOTE_ADDR": "203.0.113.31",
+        }
+        request = self.factory.get("/quality/", **headers)
+        reason = self._run_and_capture_reason(request)
+        self.assertIn("Low header quality score", reason)
+    
+    @override_settings(
+        AIWAF_USE_RUST=True,
+        AIWAF_REQUIRED_HEADERS=["HTTP_USER_AGENT"],
+        AIWAF_HEADER_QUALITY_MIN_SCORE=6,
+    )
+    def test_quality_scoring_rust(self):
+        """Rust validator enforces header quality thresholds."""
+        headers = {
+            "HTTP_USER_AGENT": "Mozilla/5.0",
+            "HTTP_ACCEPT": "text/plain",
+            "HTTP_ACCEPT_LANGUAGE": "en-US",
+            "REMOTE_ADDR": "203.0.113.33",
+        }
+        request = self.factory.get("/quality-rust/", **headers)
+        rust_reason = "Low header quality score: 5"
+        with patch("aiwaf.middleware.rust_available", return_value=True), \
+             patch("aiwaf.middleware.rust_validate_headers", return_value=rust_reason) as rust_validate, \
+             patch.object(
+                 HeaderValidationMiddleware,
+                 "_block_request",
+                 return_value=MagicMock(status_code=403)
+             ) as block:
+            middleware = HeaderValidationMiddleware(self.mock_get_response)
+            response = middleware.process_request(request)
+        self.assertIsNotNone(response)
+        block.assert_called_once()
+        rust_validate.assert_called_once()
+        reason = block.call_args[0][2]
+        self.assertIn("Low header quality score", reason)
     
 
 

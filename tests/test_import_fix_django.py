@@ -8,7 +8,7 @@ This script tests that AI-WAF can be imported without AppRegistryNotReady errors
 
 import os
 import sys
-from unittest.mock import patch, MagicMock
+import importlib
 
 # Setup Django
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -25,16 +25,19 @@ class ImportFixTestCase(AIWAFTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # Add imports as needed
     
     def test_aiwaf_import(self):
-        """Test aiwaf import"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_aiwaf_import
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Importing aiwaf modules should not raise AppRegistryNotReady."""
+        # Import a representative set of modules that historically can trigger registry timing issues.
+        for mod in [
+            "aiwaf",
+            "aiwaf.middleware",
+            "aiwaf.middleware_logger",
+            "aiwaf.storage",
+            "aiwaf.trainer",
+        ]:
+            imported = importlib.import_module(mod)
+            self.assertIsNotNone(imported)
         
         # Example patterns:
         # request = self.create_request('/test/path/')

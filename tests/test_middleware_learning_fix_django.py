@@ -16,7 +16,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.test_settings')
 import django
 django.setup()
 
+from django.test import override_settings
 from tests.base_test import AIWAFMiddlewareTestCase
+from aiwaf.middleware import IPAndKeywordBlockMiddleware
 
 
 class MiddlewareLearningFixTestCase(AIWAFMiddlewareTestCase):
@@ -24,16 +26,28 @@ class MiddlewareLearningFixTestCase(AIWAFMiddlewareTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # from aiwaf.middleware import MiddlewareClass
     
     def test_middleware_learning_logic(self):
-        """Test middleware learning logic"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_middleware_learning_logic
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Learns only from non-existent paths in malicious context."""
+        store = MagicMock()
+        store.get_top_keywords.return_value = []
+        store.add_keyword = MagicMock()
+
+        with override_settings(AIWAF_ENABLE_KEYWORD_LEARNING=True):
+            middleware = IPAndKeywordBlockMiddleware(self.mock_get_response)
+            middleware.safe_prefixes = set()
+            request = self.factory.get("/nope/evilzebra.php")
+            request.META["REMOTE_ADDR"] = "203.0.113.140"
+            with patch("aiwaf.middleware.get_keyword_store", return_value=store), \
+                 patch("aiwaf.middleware.is_middleware_disabled", return_value=False), \
+                 patch("aiwaf.middleware.is_exempt", return_value=False), \
+                 patch("aiwaf.middleware.is_ip_exempted", return_value=False), \
+                 patch("aiwaf.middleware.BlacklistManager.is_blocked", return_value=False), \
+                 patch("aiwaf.middleware.path_exists_in_django", return_value=False), \
+                 patch.object(IPAndKeywordBlockMiddleware, "_is_malicious_context", return_value=True):
+                middleware(request)
+
+        store.add_keyword.assert_called()
         
         # Example patterns:
         # request = self.create_request('/test/path/')
@@ -41,12 +55,26 @@ class MiddlewareLearningFixTestCase(AIWAFMiddlewareTestCase):
         # self.assertEqual(response.status_code, 200)
     
     def test_specific_learning_cases(self):
-        """Test specific learning cases"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_specific_learning_cases
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Does not learn from valid Django paths even if context looks malicious."""
+        store = MagicMock()
+        store.get_top_keywords.return_value = []
+        store.add_keyword = MagicMock()
+
+        with override_settings(AIWAF_ENABLE_KEYWORD_LEARNING=True):
+            middleware = IPAndKeywordBlockMiddleware(self.mock_get_response)
+            middleware.safe_prefixes = set()
+            request = self.factory.get("/api/users/")
+            request.META["REMOTE_ADDR"] = "203.0.113.141"
+            with patch("aiwaf.middleware.get_keyword_store", return_value=store), \
+                 patch("aiwaf.middleware.is_middleware_disabled", return_value=False), \
+                 patch("aiwaf.middleware.is_exempt", return_value=False), \
+                 patch("aiwaf.middleware.is_ip_exempted", return_value=False), \
+                 patch("aiwaf.middleware.BlacklistManager.is_blocked", return_value=False), \
+                 patch("aiwaf.middleware.path_exists_in_django", return_value=True), \
+                 patch.object(IPAndKeywordBlockMiddleware, "_is_malicious_context", return_value=True):
+                middleware(request)
+
+        store.add_keyword.assert_not_called()
         
         # Example patterns:
         # request = self.create_request('/test/path/')

@@ -10,7 +10,7 @@ that it can clear blacklist, exemptions, and keywords separately or together.
 
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from io import StringIO
 
 # Setup Django
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,7 +19,10 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tests.test_settings')
 import django
 django.setup()
 
+from django.core.management import call_command
 from tests.base_test import AIWAFTestCase
+from aiwaf.storage import get_blacklist_store, get_exemption_store, get_keyword_store
+from aiwaf.management.commands.aiwaf_reset import Command
 
 
 class AiwafResetTestCase(AIWAFTestCase):
@@ -27,47 +30,49 @@ class AiwafResetTestCase(AIWAFTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # Add imports as needed
+        self.blacklist_store = get_blacklist_store()
+        self.exemption_store = get_exemption_store()
+        self.keyword_store = get_keyword_store()
+    
+    def _seed_stores(self):
+        self.blacklist_store.block_ip("203.0.113.1", "testing")
+        self.exemption_store.add_exemption("203.0.113.2", "testing")
+        self.keyword_store.add_keyword("login")
     
     def test_aiwaf_reset_enhancements(self):
-        """Test aiwaf reset enhancements"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_aiwaf_reset_enhancements
+        """Resets all stores when run without explicit flags."""
+        self._seed_stores()
+        out = StringIO()
+        call_command("aiwaf_reset", "--confirm", stdout=out)
         
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
-        
-        # Example patterns:
-        # request = self.create_request('/test/path/')
-        # response = self.process_request_through_middleware(MiddlewareClass, request)
-        # self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.blacklist_store.get_all(), [])
+        self.assertEqual(self.exemption_store.get_all(), [])
+        self.assertEqual(list(self.keyword_store.get_all_keywords()), [])
     
     def test_command_line_examples(self):
-        """Test command line examples"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_command_line_examples
+        """Selective flags only clear targeted stores."""
+        self._seed_stores()
+        out = StringIO()
+        call_command("aiwaf_reset", "--blacklist", "--confirm", stdout=out)
         
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        self.assertEqual(self.blacklist_store.get_all(), [])
+        # Other stores remain untouched
+        self.assertNotEqual(self.exemption_store.get_all(), [])
+        self.assertNotEqual(list(self.keyword_store.get_all_keywords()), [])
         
-        # Example patterns:
-        # request = self.create_request('/test/path/')
-        # response = self.process_request_through_middleware(MiddlewareClass, request)
-        # self.assertEqual(response.status_code, 200)
+        # Legacy flag still works
+        self.blacklist_store.block_ip("203.0.113.3", "legacy")
+        out = StringIO()
+        call_command("aiwaf_reset", "--blacklist-only", "--confirm", stdout=out)
+        self.assertEqual(self.blacklist_store.get_all(), [])
     
     def test_help_output(self):
-        """Test help output"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_help_output
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
-        
-        # Example patterns:
-        # request = self.create_request('/test/path/')
-        # response = self.process_request_through_middleware(MiddlewareClass, request)
-        # self.assertEqual(response.status_code, 200)
+        """Help text lists the new and legacy flags."""
+        parser = Command().create_parser("manage.py", "aiwaf_reset")
+        help_text = parser.format_help()
+        self.assertIn("--blacklist", help_text)
+        self.assertIn("--exemptions-only", help_text)
+        self.assertIn("--confirm", help_text)
     
 
 

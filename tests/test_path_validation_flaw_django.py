@@ -7,7 +7,6 @@ Test the path validation flaw scenario
 
 import os
 import sys
-from unittest.mock import patch, MagicMock
 
 # Setup Django
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,6 +16,7 @@ import django
 django.setup()
 
 from tests.base_test import AIWAFTestCase
+from aiwaf.trainer import path_exists_in_django
 
 
 class PathValidationFlawTestCase(AIWAFTestCase):
@@ -24,21 +24,20 @@ class PathValidationFlawTestCase(AIWAFTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # Add imports as needed
     
     def test_path_validation_flaw(self):
-        """Test path validation flaw"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_path_validation_flaw
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
-        
-        # Example patterns:
-        # request = self.create_request('/test/path/')
-        # response = self.process_request_through_middleware(MiddlewareClass, request)
-        # self.assertEqual(response.status_code, 200)
+        """
+        Avoid false positives where a valid prefix is treated as if all subpaths exist.
+
+        In tests.test_urls we have an exact route for /api/users/ but not for /api/users/<id>/.
+        `path_exists_in_django` must return False for the subpath so security logic can treat
+        it as unknown/non-existent rather than "known safe".
+        """
+        self.assertTrue(path_exists_in_django("/api/users/"))
+        self.assertTrue(path_exists_in_django("/api/users/?page=1"))
+
+        self.assertFalse(path_exists_in_django("/api/users/123/"))
+        self.assertFalse(path_exists_in_django("/api/users/123/?page=1"))
     
 
 

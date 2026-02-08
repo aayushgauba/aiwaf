@@ -17,6 +17,7 @@ import django
 django.setup()
 
 from tests.base_test import AIWAFTestCase
+from aiwaf.trainer import path_exists_in_django
 
 
 class ImprovedPathValidationTestCase(AIWAFTestCase):
@@ -24,16 +25,20 @@ class ImprovedPathValidationTestCase(AIWAFTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # Add imports as needed
     
     def test_improved_path_validation(self):
-        """Test improved path validation"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_improved_path_validation
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Exact URLconf resolution works; unknown subpaths stay false."""
+        # Existing routes from tests.test_urls
+        self.assertTrue(path_exists_in_django("/test/"))
+        self.assertTrue(path_exists_in_django("/protected/"))
+        self.assertTrue(path_exists_in_django("/api/users/"))
+
+        # Trailing slash variants for existing routes
+        self.assertTrue(path_exists_in_django("/api/users"))
+
+        # Unknown path should be false (no prefix matching).
+        self.assertFalse(path_exists_in_django("/api/users/123/"))
+        self.assertFalse(path_exists_in_django("/static/does-not-exist.js"))
         
         # Example patterns:
         # request = self.create_request('/test/path/')

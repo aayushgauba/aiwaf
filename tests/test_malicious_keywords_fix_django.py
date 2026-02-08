@@ -17,6 +17,7 @@ import django
 django.setup()
 
 from tests.base_test import AIWAFTrainerTestCase
+from aiwaf.middleware import IPAndKeywordBlockMiddleware
 
 
 class MaliciousKeywordsFixTestCase(AIWAFTrainerTestCase):
@@ -24,16 +25,12 @@ class MaliciousKeywordsFixTestCase(AIWAFTrainerTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # Add imports as needed
     
     def test_middleware_initialization(self):
-        """Test middleware initialization"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_middleware_initialization
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """IPAndKeywordBlockMiddleware initializes malicious_keywords set."""
+        mw = IPAndKeywordBlockMiddleware(lambda r: None)
+        self.assertTrue(hasattr(mw, "malicious_keywords"))
+        self.assertIsInstance(mw.malicious_keywords, set)
         
         # Example patterns:
         # request = self.create_request('/test/path/')

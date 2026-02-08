@@ -18,6 +18,8 @@ import django
 django.setup()
 
 from tests.base_test import AIWAFTrainerTestCase
+from aiwaf.storage import get_keyword_store
+from aiwaf.models import DynamicKeyword
 
 
 class KeywordPersistenceTestCase(AIWAFTrainerTestCase):
@@ -25,16 +27,20 @@ class KeywordPersistenceTestCase(AIWAFTrainerTestCase):
     
     def setUp(self):
         super().setUp()
-        # Import after Django setup
-        # Add imports as needed
+        # Ensure clean keyword table
+        DynamicKeyword.objects.all().delete()
     
     def test_keyword_storage_diagnosis(self):
-        """Test keyword storage diagnosis"""
-        # TODO: Convert original test logic to Django test
-        # Original test: test_keyword_storage_diagnosis
-        
-        # Placeholder test - replace with actual logic
-        self.assertTrue(True, "Test needs implementation")
+        """Learned keywords persist in DB and survive store re-instantiation."""
+        store = get_keyword_store()
+        store.add_keyword("persistme", 2)
+
+        self.assertTrue(DynamicKeyword.objects.filter(keyword="persistme").exists())
+        self.assertIn("persistme", list(store.get_all_keywords()))
+
+        # New store instance should still see it (DB-backed).
+        store2 = get_keyword_store()
+        self.assertIn("persistme", list(store2.get_all_keywords()))
         
         # Example patterns:
         # request = self.create_request('/test/path/')
