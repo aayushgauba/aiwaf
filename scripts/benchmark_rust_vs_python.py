@@ -34,18 +34,23 @@ from aiwaf import trainer as trainer_module
 from django.conf import settings
 
 
-def python_validate_headers(mw: HeaderValidationMiddleware, headers: dict):
-    missing = mw._check_missing_headers(headers)
+def python_validate_headers(
+    mw: HeaderValidationMiddleware,
+    headers: dict,
+    required_headers,
+    min_score: int,
+):
+    missing = mw._check_missing_headers(headers, required_headers)
     if missing:
         return f"Missing required headers: {', '.join(missing)}"
     suspicious_ua = mw._check_user_agent(headers.get("HTTP_USER_AGENT", ""))
     if suspicious_ua:
         return f"Suspicious user agent: {suspicious_ua}"
-    suspicious_combo = mw._check_header_combinations(headers)
+    suspicious_combo = mw._check_header_combinations(headers, required_headers)
     if suspicious_combo:
         return f"Suspicious headers: {suspicious_combo}"
     quality_score = mw._calculate_header_quality(headers)
-    if quality_score < 3:
+    if quality_score < min_score:
         return f"Low header quality score: {quality_score}"
     return None
 
@@ -77,6 +82,9 @@ def main() -> int:
     }
 
     mw = HeaderValidationMiddleware(lambda r: None)
+    bench_request = SimpleNamespace(method="GET", path="/bench")
+    required_headers = mw._get_required_headers(bench_request)
+    min_score = mw._get_min_quality_score(required_headers)
 
     tmp_access_log = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
     tmp_access_log_path = tmp_access_log.name
@@ -118,7 +126,10 @@ def main() -> int:
     settings.AIWAF_ACCESS_LOG = tmp_access_log_path
     settings.AIWAF_MIN_AI_LOGS = min(original_min_logs, max(1000, args.feature_size // 2))
 
-    py_time = bench(lambda: python_validate_headers(mw, headers), args.iters)
+    py_time = bench(
+        lambda: python_validate_headers(mw, headers, required_headers, min_score),
+        args.iters,
+    )
     print(f"Python header validation: {args.iters / py_time:.2f} ops/sec")
 
     if aiwaf_rust is not None:

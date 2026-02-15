@@ -25,7 +25,7 @@ class RustFeatureExtractionTests(TestCase):
         if aiwaf_rust is None:
             raise unittest.SkipTest(
                 "aiwaf_rust extension not available (skip Rust feature extraction tests). "
-                "Build it with: maturin develop -m Cargo.toml"
+                "Install it with: pip install aiwaf-rust"
             )
 
     def test_extract_features_basic_fields(self):

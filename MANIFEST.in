@@ -1,11 +1,6 @@
 include README.md
 include LICENSE
-include Cargo.toml
-include Cargo.lock
 recursive-include aiwaf *.py
-recursive-include src *
-recursive-include src *.rs
-recursive-include aiwaf_rust *.rs
 prune venv
 prune .venv
 recursive-exclude venv *

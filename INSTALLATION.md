@@ -266,12 +266,7 @@ pip install aiwaf
 pip install "aiwaf[rust]"
 ```
 
-If a prebuilt wheel is available for your platform, no extra build step is needed.
-
-Only if you are installing from source (or no wheel is available):
-```bash
-maturin develop -m Cargo.toml
-```
+This pulls the separately-released Rust extension package (`aiwaf-rust`).
 
 ```python
 AIWAF_MIDDLEWARE_CSV = True

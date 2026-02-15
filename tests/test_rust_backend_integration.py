@@ -25,7 +25,7 @@ class RustBackendIntegrationTests(TestCase):
         if aiwaf_rust is None:
             raise unittest.SkipTest(
                 "aiwaf_rust extension not available (skip Rust integration tests). "
-                "Build it with: maturin develop -m Cargo.toml"
+                "Install it with: pip install aiwaf-rust"
             )
 
     def test_validate_headers_blocks_missing(self):

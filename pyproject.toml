@@ -1,6 +1,6 @@
 [project]
 name = "aiwaf"
-version = "0.1.9.6.1"
+version = "0.1.9.6.2"
 description = "AI-powered Web Application Firewall"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -29,10 +29,13 @@ geoblock = [
     "geoip2>=4.0"
 ]
 rust = [
-    "maturin>=1.6,<2.0"
+    "aiwaf-rust>=0.1.0"
 ]
 light = []
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["aiwaf*"]
