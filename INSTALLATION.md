@@ -259,7 +259,17 @@ backend (pyo3/maturin) for header validation. If the Rust module is not
 available, it falls back to Python automatically.
 
 ```bash
-pip install maturin
+pip install aiwaf
+```
+
+```bash
+pip install "aiwaf[rust]"
+```
+
+If a prebuilt wheel is available for your platform, no extra build step is needed.
+
+Only if you are installing from source (or no wheel is available):
+```bash
 maturin develop -m Cargo.toml
 ```
 

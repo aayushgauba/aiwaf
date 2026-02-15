@@ -454,9 +454,20 @@ When `AIWAF_USE_RUST = True`, AI-WAF uses a Rust
 backend (pyo3/maturin) for header validation. If the Rust module is not
 available, it automatically falls back to the Python implementation.
 
-**Build the Rust extension:**
+Default install does not require Rust:
 ```bash
-pip install maturin
+pip install aiwaf
+```
+
+Install Rust build tooling only when you want the Rust backend:
+```bash
+pip install "aiwaf[rust]"
+```
+
+If a prebuilt wheel is available for your platform, no extra build step is needed.
+
+Only if you are installing from source (or no wheel is available):
+```bash
 maturin develop -m Cargo.toml
 ```
 
@@ -866,4 +877,3 @@ This project is proudly supported by:
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 ---
-
