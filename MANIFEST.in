@@ -1,4 +1,6 @@
 include README.md
 include LICENSE
+include NOTICE
+recursive-include licenses *.txt
 recursive-include py/aiwaf *.py
 recursive-include py/aiwaf/core/geolock *

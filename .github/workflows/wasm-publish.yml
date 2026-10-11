@@ -71,7 +71,6 @@ jobs:
         working-directory: rust
         run: |
           python3 scripts/patch_wasm_pkg.py
-          cp ../LICENSE crates/aiwaf_wasm/pkg/LICENSE
 
       - name: Verify package metadata and files
         working-directory: rust
@@ -86,8 +85,11 @@ jobs:
           package = json.loads((package_dir / "package.json").read_text())
           assert package["name"] == "aiwaf-wasm"
           assert package["version"] == crate["version"]
+          assert package["license"] == "Elastic-2.0"
           assert package["repository"]["url"] == "git+https://github.com/aiwaf-project/aiwaf.git"
           assert (package_dir / "LICENSE").read_bytes() == Path("../LICENSE").read_bytes()
+          assert (package_dir / "NOTICE").read_bytes() == Path("../NOTICE").read_bytes()
+          assert (package_dir / "licenses/MIT.txt").read_bytes() == Path("../licenses/MIT.txt").read_bytes()
           for filename in ("README.md", "aiwaf_wasm.js", "aiwaf_wasm_bg.js", "aiwaf_wasm_bg.wasm"):
               assert (package_dir / filename).is_file(), filename
           PY
@@ -104,7 +106,7 @@ jobs:
             throw new Error(`npm pack returned no file list for aiwaf-wasm: ${JSON.stringify(result)}`);
           }
           const files = new Set(pack.files.map(file => file.path));
-          const required = ["LICENSE", "README.md", "aiwaf_wasm.js", "aiwaf_wasm_bg.js", "aiwaf_wasm_bg.wasm"];
+          const required = ["LICENSE", "NOTICE", "licenses/MIT.txt", "README.md", "aiwaf_wasm.js", "aiwaf_wasm_bg.js", "aiwaf_wasm_bg.wasm"];
           const missing = required.filter(file => !files.has(file));
           if (pack.name !== "aiwaf-wasm" || missing.length) {
             throw new Error(`Invalid npm package: ${pack.name}; missing ${missing.join(", ")}`);

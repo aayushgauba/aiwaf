@@ -1,14 +1,15 @@
 [build-system]
-requires = ["maturin>=1.6,<2.0"]
+requires = ["maturin>=1.9.3,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "aiwaf-rust"
-version = "0.2.1"
+version = "0.2.2"
 description = "Rust-powered WAF heuristics exposed to Python via PyO3"
 readme = "README.md"
 requires-python = ">=3.8"
-license = { file = "LICENSE" }
+license = "Elastic-2.0"
+license-files = ["LICENSE", "NOTICE", "licenses/*.txt"]
 authors = [
   { name = "AIWAF maintainers" }
 ]
@@ -16,7 +17,6 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Rust",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent"
 ]
 
@@ -28,5 +28,7 @@ manifest-path = "Cargo.toml"
 module-name = "aiwaf_rust"
 include = [
   { path = "README.md", format = "sdist" },
-  { path = "LICENSE", format = "sdist" }
+  { path = "LICENSE", format = "sdist" },
+  { path = "NOTICE", format = "sdist" },
+  { path = "licenses/*.txt", format = "sdist" }
 ]

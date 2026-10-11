@@ -1,2 +1,4 @@
 include LICENSE
+include NOTICE
+recursive-include licenses *.txt
 include README.md

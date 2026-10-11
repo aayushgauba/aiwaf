@@ -90,6 +90,8 @@ jobs:
         run: |
           cp README.md rust/README.md
           cp LICENSE rust/LICENSE
+          cp NOTICE rust/NOTICE
+          cp -R licenses rust/
 
       - id: python
         uses: actions/setup-python@v6
@@ -149,6 +151,8 @@ jobs:
         run: |
           cp README.md rust/README.md
           cp LICENSE rust/LICENSE
+          cp NOTICE rust/NOTICE
+          cp -R licenses rust/
 
       - name: Build sdist
         uses: PyO3/maturin-action@v1

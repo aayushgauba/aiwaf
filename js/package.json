@@ -1,6 +1,6 @@
 {
     "name": "aiwaf",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "description": "AIWAF Web Application Firewall for JavaScript applications and major Node.js frameworks",
     "main": "index.js",
     "files": [
@@ -12,7 +12,9 @@
         "utils/",
         "train.js",
         "README.md",
-        "LICENSE"
+        "LICENSE",
+        "NOTICE",
+        "licenses/"
     ],
     "bin": {
         "aiwaf": "bin/aiwaf.js"
@@ -105,5 +107,5 @@
         "directory": "js"
     },
     "author": "Aayush Gauba",
-    "license": "MIT"
+    "license": "Elastic-2.0 AND MIT AND CC-BY-SA-4.0"
 }

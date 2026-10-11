@@ -2,6 +2,10 @@
 
 AIWAF is a monorepo containing independently published Python, JavaScript, Rust, WebAssembly, and Java packages.
 
+## Licensing
+
+New contributions to ELv2-covered code are submitted under the Elastic License 2.0 in LICENSE unless another applicable license is explicitly documented and accepted. Contributors retain their copyrights; submission is not a copyright assignment. Identify third-party material and preserve its license and attribution. Existing MIT contributions and the IPinfo Lite database retain the terms in NOTICE. Release artifacts must include LICENSE, NOTICE, and licenses/. Do not replace previously published MIT artifacts with differently licensed copies at the same version.
+
 ## Repository layout
 
 - `py/aiwaf/`: Python package source (imported as `aiwaf`)

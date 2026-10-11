@@ -2,7 +2,7 @@
 
 AIWAF is a multi-runtime web application firewall toolkit for Python, Node.js, WebAssembly, and Java applications. It combines deterministic request controls with route-aware policies, reputation tracking, request logging, training pipelines, and optional Isolation Forest anomaly detection.
 
-This is the single authoritative README for the monorepo and every published AIWAF package. Release workflows stage this file and the root `LICENSE` into package artifacts when a registry requires package-local copies.
+This is the single authoritative README for the monorepo and every published AIWAF package. Release workflows stage this file, the root `LICENSE`, `NOTICE`, and `licenses/` into package artifacts when a registry requires package-local copies.
 
 AIWAF is a defense-in-depth component. It does not replace secure application code, authentication and authorization, dependency patching, TLS, a reverse proxy, or a managed edge WAF.
 
@@ -40,16 +40,16 @@ the supported Redis backends when sharing limits across workers.
 
 Each package is versioned and released independently.
 
-Python and Node.js 1.1.1 and Java 1.3.2 are local release candidates; see the
-[upgrade notes](docs/releases/2026-10-request-inspection.md).
+Python and Node.js 1.1.2, Rust/Python and WASM 0.2.2, and Java 1.3.3 are local release candidates; see the
+[upgrade notes](docs/releases/2026-10-elv2.md).
 
 | Runtime | Package | Repository version | Primary use |
 | --- | --- | ---: | --- |
-| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.1` | Django, Flask, and FastAPI protection |
-| Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.1` | Express and Node framework middleware |
-| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.1` | Native Python acceleration and JSON model inference |
-| WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.1` | Rust detection and model primitives for JavaScript |
-| Java | `io.github.aiwaf-project:aiwaf-java` | `1.3.2` | Spring MVC and Jakarta Servlet protection |
+| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.2` | Django, Flask, and FastAPI protection |
+| Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.2` | Express and Node framework middleware |
+| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.2` | Native Python acceleration and JSON model inference |
+| WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.2` | Rust detection and model primitives for JavaScript |
+| Java | `io.github.aiwaf-project:aiwaf-java` | `1.3.3` | Spring MVC and Jakarta Servlet protection |
 
 Supported framework integrations include Django, Flask, FastAPI, Express, Fastify, Hapi, Koa, NestJS, Next.js API routes, AdonisJS, Sails.js, Spring MVC, and Jakarta Servlet.
 
@@ -84,7 +84,7 @@ The runtimes share policy intent and training feature names, but their framework
 ├── examples/                       Focused Python examples
 ├── .github/workflows/              Tests, security checks, and releases
 ├── README.md                       Canonical project documentation
-└── LICENSE                         Canonical MIT license
+└── LICENSE                         Canonical Elastic License 2.0 (see NOTICE)
 ```
 
 ## Quick installation
@@ -108,13 +108,13 @@ npm install aiwaf
 npm install aiwaf-wasm
 ```
 
-Java 1.3.2, after it is published to Maven Central:
+Java 1.3.3, after it is published to Maven Central:
 
 ```xml
 <dependency>
   <groupId>io.github.aiwaf-project</groupId>
   <artifactId>aiwaf-java</artifactId>
-  <version>1.3.2</version>
+  <version>1.3.3</version>
 </dependency>
 ```
 
@@ -441,6 +441,8 @@ For a local native build, stage the two canonical repository assets and run matu
 ```bash
 cp README.md rust/README.md
 cp LICENSE rust/LICENSE
+cp NOTICE rust/NOTICE
+cp -R licenses rust/
 python -m pip install maturin
 cd rust
 maturin develop
@@ -491,11 +493,13 @@ wasm-pack build --release --target bundler
 cd ../..
 python scripts/patch_wasm_pkg.py
 cp ../LICENSE crates/aiwaf_wasm/pkg/LICENSE
+cp ../NOTICE crates/aiwaf_wasm/pkg/NOTICE
+cp -R ../licenses crates/aiwaf_wasm/pkg/
 ```
 
 ## Java package
 
-AIWAF Java 1.3.2 targets Java 17, Spring Framework 7.0, and Jakarta Servlet 6.1. It is a native Java implementation and does not load the Rust library.
+AIWAF Java 1.3.3 targets Java 17, Spring Framework 7.0, and Jakarta Servlet 6.1. It is a native Java implementation and does not load the Rust library.
 
 ### Core engine
 
@@ -584,7 +588,7 @@ UUID protection uses Python-compatible weighted signals: malformed input, valid 
 Generate a route manifest from the live Spring application rather than supplying controller methods manually:
 
 ```bash
-java -cp "your-app.jar:aiwaf-java-1.3.2.jar" \
+java -cp "your-app.jar:aiwaf-java-1.3.3.jar" \
   com.aiwaf.cli.AiwafConsole init \
   --app com.example.Application \
   --output .aiwaf/paths.json
@@ -757,11 +761,11 @@ Release versions and tags must match the relevant manifest.
 
 | Package | Manifest | Tag | Workflow |
 | --- | --- | --- | --- |
-| Python `aiwaf` | `pyproject.toml` | `python-v1.1.1` | `python-publish.yml` |
-| npm `aiwaf` | `js/package.json` | `js-v1.1.1` | `npm-publish.yml` |
-| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.1` | `rust-publish.yml` |
-| npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.1` | `wasm-publish.yml` |
-| Maven `aiwaf-java` | `java/pom.xml` | `java-v1.3.2` | `java-publish.yml` |
+| Python `aiwaf` | `pyproject.toml` | `python-v1.1.2` | `python-publish.yml` |
+| npm `aiwaf` | `js/package.json` | `js-v1.1.2` | `npm-publish.yml` |
+| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.2` | `rust-publish.yml` |
+| npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.2` | `wasm-publish.yml` |
+| Maven `aiwaf-java` | `java/pom.xml` | `java-v1.3.3` | `java-publish.yml` |
 
 Python and Rust publish to PyPI with trusted publishing. The npm workflows use npm trusted publishing and stage packages for approval. Configure the trusted publisher with organization `aiwaf-project`, repository `aiwaf`, the exact workflow filename, and the environment used by that workflow.
 
@@ -787,4 +791,10 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contributor setup and expectations,
 
 ## License
 
-AIWAF is distributed under the repository's single [`MIT License`](LICENSE). Published artifacts may contain a generated copy of this canonical file as required by their package registry.
+Original AIWAF project code in this checkout uses the unmodified [Elastic License 2.0](LICENSE), with separately licensed material identified in [NOTICE](NOTICE). AIWAF is the business offering these terms. ELv2 permits commercial use, modification, redistribution, and consulting, subject to its conditions. It restricts providing substantial AIWAF functionality as a hosted or managed service, bypassing license-key functionality, and removing required notices. ELv2-covered code is source available.
+
+This migration applies to this checkout and future releases expressly distributed under ELv2. Previously distributed MIT copies retain their permissions; version numbers do not retroactively change their license. Do not republish an existing version with new licensing terms. Independently versioned packages record their license in their release artifacts.
+
+Retained MIT contributions keep their rights and notices in [licenses/MIT.txt](licenses/MIT.txt). The bundled IPinfo Lite database is provided by [IPinfo](https://ipinfo.io/) under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); ELv2 restrictions do not apply to that data. Package metadata uses an `AND` expression where separately licensed components are included; this does not offer a choice to license the entire package under MIT. Dependencies retain their respective terms.
+
+Redistributions must include the applicable LICENSE, NOTICE, and licenses/ files. See [NOTICE](NOTICE) for historical rights, contributor notices, and attribution.

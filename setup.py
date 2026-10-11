@@ -7,7 +7,7 @@ README_PATH = HERE / "README.md"
 
 setup(
     name="aiwaf",
-    version="1.1.1",
+    version="1.1.2",
     description="AI-driven, self-learning Web Application Firewall for Python web applications",
     long_description=README_PATH.read_text(encoding="utf-8") if README_PATH.exists() else "AIWAF",
     long_description_content_type="text/markdown",

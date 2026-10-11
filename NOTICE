@@ -1,0 +1,58 @@
+AIWAF licensing and third-party notices
+
+Copyright (c) 2025 Aayush Gauba
+Copyright (c) 2026 AIWAF
+
+AIWAF offers original project material in this checkout under the unmodified
+Elastic License 2.0 in LICENSE (SPDX: Elastic-2.0), with the separate licenses
+below. AIWAF is the business name; these terms license only rights held by or
+licensed to its operator.
+
+Historical MIT rights
+---------------------
+Previously distributed MIT copies retain their MIT permissions. This change
+does not retroactively change existing releases. The previous copyright and
+MIT text is preserved in licenses/MIT.txt. Its inclusion preserves historical
+rights and the contributions below, rather than offering all new material
+under MIT. Use a previously unpublished version for any ELv2 package release.
+
+Retained MIT contributions
+-------------------------
+Retained portions of contributions originally supplied under MIT remain MIT
+licensed. Copyright in those contributions remains with their authors.
+William Touzalin (also credited as Skel - William Touzalin) contributed:
+* Django list command: commits 715d5d26fcf3b85b4603238445c1d2a7f950745a and
+  f67fa2995fb472a25e420e342aae1c4d59836e57, retained in
+  py/aiwaf/django/management/commands/aiwaf_list.py.
+* IPv6 log parsing: commit 76f5b191598487d79f4d4db81a9373bac0d7477e,
+  retained in py/aiwaf/core/logs.py.
+* Django RequestLog persistence: commit
+  2e866c1b701409ed5f729b3a7c225f667a57e8c5, retained in
+  py/aiwaf/django/middleware.py.
+Brady Endres contributed test organization (1a9c16b) and .gitignore changes
+(766d252). Any retained copyrightable portions retain MIT permissions. Moving
+a file does not transfer its copyright. The MIT text in licenses/MIT.txt
+accompanies these portions. ELv2 does not restrict independent MIT rights.
+
+IPinfo Lite database
+--------------------
+This product includes IPinfo Lite data provided by IPinfo (https://ipinfo.io/).
+Source: https://ipinfo.io/developers/ipinfo-lite
+License: Creative Commons Attribution-ShareAlike 4.0 International
+(SPDX: CC-BY-SA-4.0).
+Terms: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+The database is py/aiwaf/core/geolock/ipinfo_lite.mmdb in the repository and
+geolock/ipinfo_lite.mmdb in JavaScript and Java artifacts. AIWAF copies it
+without modifying its data. ELv2 restrictions do not apply to this separately
+licensed database. Preserve attribution and the applicable terms when
+redistributing it; adaptations remain subject to ShareAlike requirements.
+
+Other third-party material
+--------------------------
+Dependencies retain their licenses and notices and are not relicensed by
+LICENSE. Bundled distributions must preserve their notices and satisfy the
+conditions of the actual versions included, including native libraries.
+CODE_OF_CONDUCT.md is adapted from Contributor Covenant 2.1 and retains its
+attribution and separate CC-BY-4.0 license:
+https://www.contributor-covenant.org/version/2/1/code_of_conduct/
+https://creativecommons.org/licenses/by/4.0/

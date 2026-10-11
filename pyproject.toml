@@ -1,10 +1,11 @@
 [project]
 name = "aiwaf"
-version = "1.1.1"
+version = "1.1.2"
 description = "AI-driven, self-learning Web Application Firewall for Python web applications"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
-license = "MIT"
+license = "Elastic-2.0 AND MIT AND CC-BY-SA-4.0"
+license-files = ["LICENSE", "NOTICE", "licenses/*.txt"]
 authors = [{ name = "Aayush Gauba", email = "gauba.aayush@gmail.com" }]
 classifiers = [
     "Framework :: Django",
@@ -48,7 +49,7 @@ aiwaf-detect = "aiwaf.cli:aiwaf_detect"
 aiwaf-fast = "aiwaf.fast.cli:main"
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

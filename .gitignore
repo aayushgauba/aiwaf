@@ -242,8 +242,12 @@ js/aiwaf.sqlite
 # Canonical package assets staged from the repository root during release builds
 /js/README.md
 /js/LICENSE
+/js/NOTICE
+/js/licenses/
 /rust/README.md
 /rust/LICENSE
+/rust/NOTICE
+/rust/licenses/
 
 # Java package build, tooling, and runtime artifacts
 /java/target/

@@ -1,5 +1,20 @@
 # Changelog
 
+## Next releases — ELv2 migration (unreleased)
+
+- Python and Node.js 1.1.2, Rust/Python and WASM 0.2.2, and Java 1.3.3 adopt
+  standard Elastic License 2.0 for original project code, with retained MIT
+  contributions and separately licensed IPinfo Lite data identified in NOTICE.
+- Preserve the earlier MIT permissions and notices; do not retroactively
+  replace licenses on previously distributed releases.
+- Include LICENSE, NOTICE, and licenses/ in release packaging, and align
+  package license metadata and WASM generation with the new terms.
+- Synchronize the Python runtime version with its package metadata. The
+  internal Rust core crate advances to 0.2.1.
+
+See [release notes](docs/releases/2026-10-elv2.md) for version boundaries and
+release validation. These candidates have not been published.
+
 ## Java 1.3.0
 
 - Hardened Redis operation with fail-open/fail-closed policies, bounded

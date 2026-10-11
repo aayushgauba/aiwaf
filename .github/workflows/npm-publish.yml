@@ -46,6 +46,8 @@ jobs:
         run: |
           cp ../README.md README.md
           cp ../LICENSE LICENSE
+          cp ../NOTICE NOTICE
+          cp -R ../licenses .
           mkdir -p geolock
           cp ../py/aiwaf/core/geolock/ipinfo_lite.mmdb geolock/ipinfo_lite.mmdb
 
@@ -60,7 +62,7 @@ jobs:
             throw new Error(`npm pack returned no file list for aiwaf: ${JSON.stringify(result)}`);
           }
           const files = new Set(pack.files.map(file => file.path));
-          const required = ["LICENSE", "README.md", "geolock/ipinfo_lite.mmdb", "index.js", "package.json", "lib/sqlInjection.js"];
+          const required = ["LICENSE", "NOTICE", "licenses/MIT.txt", "README.md", "geolock/ipinfo_lite.mmdb", "index.js", "package.json", "lib/sqlInjection.js"];
           const missing = required.filter(file => !files.has(file));
           if (pack.name !== "aiwaf" || missing.length || files.has("INSTALLATION.md")) {
             throw new Error(`Invalid npm package: ${pack.name}; missing ${missing.join(", ")}`);

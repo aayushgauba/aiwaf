@@ -5,7 +5,7 @@
 
   <groupId>io.github.aiwaf-project</groupId>
   <artifactId>aiwaf-java</artifactId>
-  <version>1.3.2</version>
+  <version>1.3.3</version>
   <packaging>jar</packaging>
 
   <name>AIWAF Java</name>
@@ -14,8 +14,18 @@
 
   <licenses>
     <license>
-      <name>MIT License</name>
+      <name>Elastic License 2.0</name>
+      <url>https://www.elastic.co/licensing/elastic-license</url>
+      <distribution>repo</distribution>
+    </license>
+    <license>
+      <name>MIT License (retained contributions; see NOTICE)</name>
       <url>https://opensource.org/licenses/MIT</url>
+      <distribution>repo</distribution>
+    </license>
+    <license>
+      <name>CC BY-SA 4.0 (IPinfo Lite database)</name>
+      <url>https://creativecommons.org/licenses/by-sa/4.0/</url>
       <distribution>repo</distribution>
     </license>
   </licenses>
@@ -138,6 +148,8 @@
         <targetPath>META-INF</targetPath>
         <includes>
           <include>LICENSE</include>
+          <include>NOTICE</include>
+          <include>licenses/*.txt</include>
         </includes>
       </resource>
     </resources>
