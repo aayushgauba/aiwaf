@@ -496,3 +496,15 @@ def test_disable_and_old_extension_fallback(native, monkeypatch, tmp_path):
     assert storage_csv_impl.read_keywords(tmp_path) == {'python'}
     monkeypatch.setattr(rust_backend, 'aiwaf_rust', object())
     assert csv_function('csv_read') is None
+
+
+def test_csv_rate_cache_administrative_lifecycle(native, tmp_path):
+    from aiwaf.core.cache_backend import CSVRateCache
+    from aiwaf.core.native_runtime import native_override
+    cache = CSVRateCache(tmp_path / 'rates.csv')
+    cache.set('bucket', [1, 2], ttl_seconds=60)
+    assert cache.get('bucket') == [1, 2]
+    cache.clear()
+    assert cache.get('bucket') is None
+    with native_override(False), pytest.raises(RuntimeError, match='requires the native'):
+        cache.clear()

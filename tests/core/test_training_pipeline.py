@@ -118,10 +118,11 @@ def test_anomaly_statistics_parity_all_requests_of_selected_ips(native, monkeypa
     predictions = [-1 if i == 2 else 1 for i in range(100)]
     actual = anomaly_statistics(rows, predictions)
     assert set(actual) == {'2'}
-    monkeypatch.setenv('AIWAF_RUST_CSV', 'false')
-    assert anomaly_statistics(rows, predictions) == actual
-    with pytest.raises(ValueError):
-        anomaly_statistics(rows, predictions[:-1])
+    from aiwaf.core.native_runtime import native_override
+    with native_override(False):
+        assert anomaly_statistics(rows, predictions) == actual
+        with pytest.raises(ValueError):
+            anomaly_statistics(rows, predictions[:-1])
 
 
 def test_streaming_batches_do_not_materialize_whole_input(native):
