@@ -59,6 +59,11 @@ class AIWAFLoggingMiddleware:
         g.aiwaf_start_time = time.time()
         g.aiwaf_blocked = False
         g.aiwaf_block_reason = None
+
+    def close(self):
+        """Release the native writer handle after request processing has stopped."""
+        from aiwaf.core.native_runtime import close_csv_logs
+        close_csv_logs(str(self.access_log_file))
     
     def after_request(self, response):
         """Log request in web server format after processing."""
@@ -153,6 +158,19 @@ class AIWAFLoggingMiddleware:
             'block_reason': getattr(g, 'aiwaf_block_reason', ''),
         }
         row.pop("path_with_query", None)
+
+        from aiwaf.core.native_runtime import csv_function, csv_values
+        native_log = csv_function('csv_log_append')
+        if native_log is not None:
+            native_log(str(self.access_log_file), headers,
+                       csv_values([row.get(key, '') for key in headers]),
+                       bool(self.app.config.get('AIWAF_CSV_LOG_FSYNC', False)))
+            return
+        native = csv_function('csv_write')
+        if native is not None:
+            native(str(self.access_log_file), headers,
+                   [csv_values([row.get(key, '') for key in headers])], True)
+            return
 
         # Python fallback
         if not self.access_log_file.exists():

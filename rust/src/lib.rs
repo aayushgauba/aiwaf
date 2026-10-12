@@ -1,4 +1,9 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+mod csv_runtime;
+mod exemption_policy;
+mod runtime_policy;
+mod training_dates;
+mod training_pipeline;
 use aiwaf_core::{
     BehaviorAnalysis, BuiltFeatureRecord, Contamination, FeatureBatchResult, FeatureRecordInput,
     FeatureRecordOutput, FeatureState, IsolationForest as CoreForest, IsolationForestState,
@@ -482,6 +487,135 @@ struct IsolationForest {
     inner: CoreForest,
 }
 
+#[pyclass]
+struct NativeTrainingBatch {
+    features: Vec<FeatureRecordOutput>,
+}
+
+#[pymethods]
+impl NativeTrainingBatch {
+    fn __len__(&self) -> usize {
+        self.features.len()
+    }
+    fn feature_columns(&self) -> Vec<&'static str> {
+        vec![
+            "path_len",
+            "kw_hits",
+            "resp_time",
+            "status_idx",
+            "burst_count",
+            "total_404",
+        ]
+    }
+    fn to_dicts(&self, py: Python<'_>) -> PyResult<Vec<Py<PyDict>>> {
+        self.features
+            .iter()
+            .map(|r| feature_output_to_pydict(py, r))
+            .collect()
+    }
+    fn fit_predict(
+        &self,
+        py: Python<'_>,
+        mut model: PyRefMut<'_, IsolationForest>,
+    ) -> HashMap<String, (f64, f64, f64, usize)> {
+        let inner = &mut model.inner;
+        py.allow_threads(|| {
+            let matrix: Vec<Vec<f64>> = self
+                .features
+                .iter()
+                .map(|r| {
+                    vec![
+                        r.path_len as f64,
+                        r.kw_hits as f64,
+                        r.resp_time,
+                        r.status_idx as f64,
+                        r.burst_count as f64,
+                        r.total_404 as f64,
+                    ]
+                })
+                .collect();
+            inner.fit(matrix.clone());
+            let predictions = inner.predict(&matrix);
+            let mut groups = HashMap::<String, (f64, f64, f64, usize, bool)>::new();
+            for (r, prediction) in self.features.iter().zip(predictions) {
+                let g = groups
+                    .entry(r.ip.clone())
+                    .or_insert((0.0, 0.0, 0.0, 0, false));
+                g.0 += r.kw_hits as f64;
+                g.1 = g.1.max(r.total_404 as f64);
+                g.2 += r.burst_count as f64;
+                g.3 += 1;
+                g.4 |= prediction == -1;
+            }
+            groups
+                .into_iter()
+                .filter(|(_, g)| g.4)
+                .map(|(ip, g)| (ip, (g.0 / g.3 as f64, g.1, g.2 / g.3 as f64, g.3)))
+                .collect()
+        })
+    }
+}
+
+#[pyfunction]
+fn extract_native_training_features(
+    py: Python<'_>,
+    records: Vec<PyRawFeatureRecord>,
+    eligible_paths: HashMap<String, bool>,
+    ip_404: HashMap<String, i32>,
+    status_indices: Vec<String>,
+    static_keywords: Vec<String>,
+) -> NativeTrainingBatch {
+    let records = records.into_iter().map(|r| r.0).collect();
+    NativeTrainingBatch {
+        features: py.allow_threads(|| {
+            core_extract_raw_features(
+                records,
+                static_keywords,
+                &status_indices,
+                &eligible_paths,
+                Some(&ip_404),
+                false,
+            )
+        }),
+    }
+}
+
+#[pyclass]
+struct NativeTrainingBuilder {
+    features: Vec<FeatureRecordOutput>,
+    state: Option<FeatureState>,
+}
+
+#[pymethods]
+impl NativeTrainingBuilder {
+    #[new]
+    fn new() -> Self {
+        Self {
+            features: Vec::new(),
+            state: None,
+        }
+    }
+    fn add_batch(
+        &mut self,
+        py: Python<'_>,
+        records: Vec<PyFeatureRecordInput>,
+        keywords: Vec<String>,
+    ) {
+        let records = records.into_iter().map(|r| r.0).collect();
+        let result = py.allow_threads(|| {
+            core_extract_features_batch_with_state(records, keywords, self.state.take())
+        });
+        self.features.extend(result.features);
+        self.state = Some(result.state);
+    }
+    fn finish(&mut self) -> NativeTrainingBatch {
+        self.state = None;
+        NativeTrainingBatch {
+            features: std::mem::take(&mut self.features),
+        }
+    }
+}
+
 #[pymethods]
 impl IsolationForest {
     #[new]
@@ -918,6 +1052,11 @@ fn contamination_to_py<'py>(py: Python<'py>, value: &Contamination) -> PyObject 
 
 #[pymodule]
 fn aiwaf_rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    csv_runtime::register(m)?;
+    runtime_policy::register(m)?;
+    exemption_policy::register(m)?;
+    training_pipeline::register(m)?;
+    training_dates::register(m)?;
     m.add_function(wrap_pyfunction!(validate_headers, m)?)?;
     m.add_function(wrap_pyfunction!(validate_headers_full_default, m)?)?;
     m.add_function(wrap_pyfunction!(validate_headers_with_config, m)?)?;
@@ -932,6 +1071,9 @@ fn aiwaf_rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(finalize_feature_state, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_recent_behavior, m)?)?;
     m.add_class::<IsolationForest>()?;
+    m.add_class::<NativeTrainingBatch>()?;
+    m.add_class::<NativeTrainingBuilder>()?;
+    m.add_function(wrap_pyfunction!(extract_native_training_features, m)?)?;
     m.add_class::<KeywordMatcher>()?;
     m.add_class::<RouteMatcher>()?;
     Ok(())

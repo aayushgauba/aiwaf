@@ -40,7 +40,7 @@ setup(
             "uvicorn>=0.20",
         ],
         "rust": [
-            "aiwaf-rust>=0.2.1",
+        "aiwaf-rust>=0.2.2",
         ],
     },
     include_package_data=True,

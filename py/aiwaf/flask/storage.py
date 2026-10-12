@@ -5,6 +5,7 @@ import logging
 import time
 from pathlib import Path
 from aiwaf.core import storage_csv_impl as csv_impl
+from aiwaf.core.native_runtime import csv_function
 from aiwaf.core.reputation import FIRST_BLOCK_SECONDS, evaluate_reputation, format_block_reason
 from aiwaf.core.storage_interfaces import ExemptionStore as ExemptionStoreProtocol, KeywordStore as KeywordStoreProtocol
 from aiwaf.core.storage_schema import (
@@ -311,6 +312,20 @@ def get_exemption_store() -> ExemptionStoreProtocol:
     return ExemptionStore()
 
 class KeywordStore:
+    def update_keywords(self, added=(), removed=()):
+        native = csv_function('csv_keywords_update') if _get_storage_mode() == 'csv' else None
+        if native is not None:
+            from aiwaf.core.storage_ops import now_iso
+            from aiwaf.core.storage_schema import KEYWORDS_CSV
+            data_dir = Path(_get_data_dir())
+            csv_impl.ensure_all(data_dir)
+            native(str(data_dir / KEYWORDS_CSV), now_iso(), list(added), set(removed))
+            return
+        for keyword in removed:
+            self.remove_keyword(keyword)
+        for keyword in added:
+            self.add_keyword(keyword)
+
     def add_keyword(self, kw, count=1):
         # Note: Current implementation doesn't store count, just presence
         add_keyword(kw)
@@ -340,8 +355,9 @@ def is_ip_whitelisted(ip):
             storage_mode = 'csv'
     
     if storage_mode == 'csv':
-        whitelist = _read_csv_whitelist()
-        return ip in whitelist
+        if csv_function('csv_contains') is not None:
+            return csv_impl.contains_whitelist(Path(_get_data_dir()), ip)
+        return ip in _read_csv_whitelist()
     else:
         return ip in _memory_whitelist
 
@@ -380,6 +396,9 @@ def remove_ip_whitelist(ip):
             _memory_whitelist.discard(ip)
     elif storage_mode == 'csv':
         # For CSV, we need to rewrite the file without the IP
+        if csv_impl.native_policy_list_update(Path(_get_data_dir()), csv_impl.WHITELIST_CSV,
+                                             ip, [], True):
+            return
         whitelist = _read_csv_whitelist()
         whitelist.discard(ip)
         _rewrite_csv_whitelist(whitelist)
@@ -418,6 +437,9 @@ def is_ip_blacklisted(ip):
             storage_mode = 'csv'
     
     if storage_mode == 'csv':
+        native_result = csv_impl.native_check_blacklist(Path(_get_data_dir()), ip, now)
+        if native_result is not None:
+            return native_result
         blacklist = _read_csv_blacklist()
         entry = blacklist.get(ip)
         if _is_blacklist_entry_expired(entry, now=now):
@@ -470,6 +492,9 @@ def add_ip_blacklist(ip, reason=None, extended_request_info=None, duration=None)
             storage_mode = 'csv'
     
     if storage_mode == 'csv':
+        if csv_impl.native_block_blacklist(Path(_get_data_dir()), ip, reason,
+                                           extended_request_info, duration):
+            return
         blacklist = _read_csv_blacklist()
         existing = blacklist.get(ip) or {}
         if _is_blacklist_entry_expired(existing):
@@ -512,6 +537,8 @@ def remove_ip_blacklist(ip):
             storage_mode = 'csv'
     
     if storage_mode == 'csv':
+        if csv_impl.native_remove_blacklist(Path(_get_data_dir()), ip):
+            return
         # For CSV, we need to rewrite the file without the IP
         blacklist = _read_csv_blacklist()
         if ip in blacklist:
@@ -605,6 +632,9 @@ def remove_geo_blocked_country(country_code):
             storage_mode = 'csv'
 
     if storage_mode == 'csv':
+        if csv_impl.native_policy_list_update(Path(_get_data_dir()), csv_impl.GEO_BLOCKED_COUNTRIES_CSV,
+                                             normalized, [], True, 'upper'):
+            return
         countries = _read_csv_geo_blocked_countries()
         if normalized in countries:
             countries.discard(normalized)
@@ -664,6 +694,9 @@ def remove_path_exemption(path):
         return
 
     if storage_mode == 'csv':
+        if csv_impl.native_policy_list_update(Path(_get_data_dir()), csv_impl.PATH_EXEMPTIONS_CSV,
+                                             key, [], True, 'lower'):
+            return
         exemptions = _read_csv_path_exemptions()
         if key in exemptions:
             exemptions.pop(key, None)
@@ -706,6 +739,8 @@ def remove_keyword(keyword):
             _memory_keywords.discard(keyword)
     elif storage_mode == 'csv':
         # For CSV, we need to rewrite the file without the keyword
+        if csv_impl.native_remove_keyword(Path(_get_data_dir()), keyword):
+            return
         keywords = _read_csv_keywords()
         keywords.discard(keyword)
         _rewrite_csv_keywords(keywords)

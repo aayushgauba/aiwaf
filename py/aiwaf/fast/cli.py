@@ -70,6 +70,10 @@ def _migrate_blacklist(argv) -> None:
 
 def main() -> None:
     argv = list(sys.argv[1:])
+    # Accept the established global --data-dir position before `train`.
+    if argv and (argv[0] == 'train' or (len(argv) >= 3 and argv[0] == '--data-dir' and argv[2] == 'train')):
+        _train(argv[1:] if argv[0] == 'train' else ['--data-dir', argv[1], *argv[3:]])
+        return
     if argv and argv[0] == "init":
         _init(argv[1:])
         return
@@ -77,6 +81,30 @@ def main() -> None:
         _migrate_blacklist(argv[2:])
         return
     _flask_cli_main()
+
+
+def _train(argv):
+    parser = argparse.ArgumentParser(description='Train FastAPI AIWAF using its routes and runtime storage')
+    parser.add_argument('--app', required=True, help='FastAPI application import path (module:app)')
+    parser.add_argument('--log-dir')
+    parser.add_argument('--data-dir', help='Override runtime CSV directory (runtime_store.csv)')
+    parser.add_argument('--disable-ai', action='store_true')
+    parser.add_argument('--force-ai', action='store_true')
+    parser.add_argument('--min-ai-logs', type=int, default=10000)
+    parser.add_argument('--model-path', help='Destination for the Rust JSON model artifact')
+    parser.add_argument('--verbose', '-v', action='store_true')
+    args = parser.parse_args(argv)
+    if args.min_ai_logs < 1:
+        parser.error('--min-ai-logs must be positive')
+    app = _load_fastapi_app(args.app)
+    if args.data_dir:
+        from aiwaf.core.runtime_storage import initialize_storage
+        initialize_storage('csv', file_path=str(Path(args.data_dir) / 'runtime_store.csv'))
+    from aiwaf.fast.trainer import train_from_logs
+    import json
+    result = train_from_logs(app, log_dir=args.log_dir, disable_ai=args.disable_ai,
+        force_ai=args.force_ai, min_ai_logs=args.min_ai_logs, model_path=args.model_path)
+    print(json.dumps({key: value for key, value in result.items() if key != 'model'}, indent=2))
 
 
 if __name__ == "__main__":

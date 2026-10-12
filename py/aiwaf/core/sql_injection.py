@@ -7,6 +7,7 @@ import logging
 import os
 import re
 from urllib.parse import unquote_plus
+from .native_runtime import function as native_function
 
 LOGGER = logging.getLogger("aiwaf.payload")
 RULES = tuple((name, re.compile(pattern, re.I)) for name, pattern in (
@@ -77,6 +78,12 @@ class SQLInjectionPolicy:
                         stack.append((json.loads(value), depth + 1))
                     except (ValueError, RecursionError):
                         pass
+                native = native_function('policy_sql_signature')
+                if native is not None and value.isascii():
+                    rule = native(value)
+                    if rule:
+                        return Finding(rule)
+                    continue
                 value = re.sub(r"/\*[\s\S]*?\*/", " ", value)
                 for name, pattern in RULES:
                     if pattern.search(value):

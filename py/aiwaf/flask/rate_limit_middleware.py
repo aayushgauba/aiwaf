@@ -6,7 +6,7 @@ from .blacklist_manager import BlacklistManager
 from .exemption_decorators import should_apply_middleware, get_path_rule_overrides
 from aiwaf.core.exemptions import get_path_rule_for_path as core_get_path_rule_for_path
 from aiwaf.core.block_responses import blocked_response, throttle_response
-from aiwaf.core.cache_backend import CacheBackendConfig, DictCacheBackend, make_cache_backend
+from aiwaf.core.cache_backend import CacheBackendConfig, DictCacheBackend, CSVRateCache, make_cache_backend
 from aiwaf.core.rate_limit import (
     THROTTLE,
     FLOOD_BLOCK,
@@ -119,6 +119,12 @@ def _resolve_rate_cache_backend(app):
     backend = (app.config.get("AIWAF_RATE_CACHE_BACKEND") or "memory").strip().lower()
     if backend == "memory":
         return _default_cache_backend
+    if backend == "csv":
+        from pathlib import Path
+        from .storage import _get_data_dir
+        with app.app_context():
+            path = app.config.get('AIWAF_RATE_CSV_PATH') or str(Path(_get_data_dir()) / 'rate_buckets.csv')
+        return CSVRateCache(path)
     if backend == "redis":
         redis_url = app.config.get("AIWAF_REDIS_URL")
         key_prefix = app.config.get("AIWAF_RATE_CACHE_KEY_PREFIX", "aiwaf:rate:")

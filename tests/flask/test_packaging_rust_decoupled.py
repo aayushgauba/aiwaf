@@ -21,13 +21,13 @@ def test_pyproject_uses_setuptools_not_maturin():
 def test_rust_extra_defined_in_pyproject():
     content = _read("pyproject.toml")
     assert "rust = [" in content
-    assert '"aiwaf-rust>=0.2.1"' in content
+    assert '"aiwaf-rust>=0.2.2"' in content
 
 
 def test_rust_extra_defined_in_setup():
     content = _read("setup.py")
     assert '"rust": [' in content
-    assert '"aiwaf-rust>=0.2.1"' in content
+    assert '"aiwaf-rust>=0.2.2"' in content
 
 
 def test_manifest_has_no_local_rust_sources():

@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from typing import Any, Iterable, List, Mapping, Optional
+from .native_runtime import function as native_function
 
 
 REASON_WEIGHTS = {
@@ -91,6 +92,13 @@ def evaluate_reputation(
     previous_reasons = existing.get("reasons") or existing.get("reason") or []
     if isinstance(previous_reasons, str):
         previous_reasons = [previous_reasons]
+    native = native_function('policy_reputation')
+    if native is not None:
+        score, offenses, reasons, blocked, duration = native(
+            previous_score, previous_offenses,
+            [normalize_reason(item) for item in previous_reasons], normalize_reason(reason))
+        return ReputationDecision(score, offenses, reasons, blocked, duration,
+                                  current_time + duration if duration else None)
     reasons = _unique_reasons([*previous_reasons, normalize_reason(reason)])
     offenses = previous_offenses + 1
     score = min(100, previous_score + reason_weight(reason))

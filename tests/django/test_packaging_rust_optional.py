@@ -9,21 +9,21 @@ class PackagingRustOptionalTests(unittest.TestCase):
     def test_pyproject_uses_setuptools_backend(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('build-backend = "setuptools.build_meta"', pyproject)
-        self.assertIn('requires = ["setuptools>=68", "wheel"]', pyproject)
+        self.assertIn('requires = ["setuptools>=77", "wheel"]', pyproject)
         self.assertNotIn('build-backend = "maturin"', pyproject)
 
     def test_pyproject_rust_extra_points_to_aiwaf_rust(self):
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn("[project.optional-dependencies]", pyproject)
         self.assertIn("rust = [", pyproject)
-        self.assertIn('"aiwaf-rust>=0.2.1"', pyproject)
+        self.assertIn('"aiwaf-rust>=0.2.2"', pyproject)
         self.assertNotIn('"maturin>=1.6,<2.0"', pyproject)
 
     def test_setup_rust_extra_points_to_aiwaf_rust(self):
         setup_py = (ROOT / "setup.py").read_text(encoding="utf-8")
         self.assertIn("extras_require={", setup_py)
         self.assertIn('"rust": [', setup_py)
-        self.assertIn('"aiwaf-rust>=0.2.1"', setup_py)
+        self.assertIn('"aiwaf-rust>=0.2.2"', setup_py)
         self.assertNotIn('"maturin>=1.6,<2.0"', setup_py)
 
     def test_readme_explains_rust_extra_install(self):

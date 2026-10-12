@@ -104,6 +104,43 @@ class DictCacheBackend(CacheBackend):
         return False
 
 
+class CSVRateCache(CacheBackend):
+    """Persistent cross-worker rate buckets processed atomically by Rust.
+
+    Explicitly selected: persisting every request is costlier than memory/Redis.
+    Missing native support is an error rather than a non-atomic fallback.
+    """
+    def __init__(self, file_path):
+        from .runtime_storage import CSVStorage
+        self.storage = CSVStorage(str(file_path))
+
+    def get(self, key):
+        return self.storage.get(key)
+
+    def set(self, key, value, ttl_seconds=None):
+        return self.storage.set(key, value, ttl=ttl_seconds)
+
+    def clear(self):
+        from .native_runtime import csv_function
+        native = csv_function('csv_write')
+        if native is None:
+            raise RuntimeError('CSV rate cache requires the native CSV runtime')
+        native(str(self.storage.file_path), ['key', 'value', 'expires_at'], [], False)
+
+    @property
+    def is_shared(self):
+        return True
+
+    def consume_rate_limit(self, key, *, now, window_seconds, max_requests, flood_threshold):
+        from .native_runtime import csv_function
+        from .rate_limit import RateLimitDecision
+        native = csv_function('csv_rate_consume')
+        if native is None:
+            raise RuntimeError('CSV rate cache requires the native CSV runtime')
+        return RateLimitDecision(*native(str(self.storage.file_path), key, float(now),
+            float(window_seconds), int(max_requests), int(flood_threshold)))
+
+
 class RedisJSONCache(CacheBackend):
     """Redis JSON cache with atomic sliding-window rate-limit updates."""
 

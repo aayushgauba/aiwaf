@@ -125,7 +125,7 @@ def test_csv_storage_real_round_trip_expiration_and_patterns(tmp_path):
     assert CSVStorage(str(path)).get("user:1") == {"name": "a"}
     assert backend.exists("other")
     assert backend.get_all_keys("user:*") == ["user:1"]
-    backend._data["other"]["expires_at"] = time.time() - 1
+    backend.set("other", [1, 2], ttl=-1)
     assert backend.get("other") is None
     assert backend.delete("user:1") is True
     assert backend.delete("missing") is False

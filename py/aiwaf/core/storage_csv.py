@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import random
+import os
 import time
 from contextlib import contextmanager
 from threading import Lock
@@ -49,6 +50,16 @@ def file_lock(file_path, mode="r", max_retries=3, retry_delay=0.1):
         last_exc = None
         for attempt in range(max_retries):
             try:
+                if 'w' in open_mode:
+                    # Acquire the inode lock before truncating; Rust readers and
+                    # writers use the same flock on Unix.
+                    descriptor = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, 'O_BINARY', 0), 0o666)
+                    try:
+                        return os.fdopen(descriptor, 'r+b' if 'b' in open_mode else 'r+',
+                                         newline='' if 'b' not in open_mode else None)
+                    except Exception:
+                        os.close(descriptor)
+                        raise
                 return open(path, open_mode, newline='' if 'b' not in open_mode else None)
             except (PermissionError, OSError) as e:
                 last_exc = e
@@ -64,20 +75,25 @@ def file_lock(file_path, mode="r", max_retries=3, retry_delay=0.1):
         if FCNTL_AVAILABLE and file_obj:
             try:
                 if 'w' in mode or 'a' in mode:
-                    fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX)
                 else:
-                    fcntl.flock(file_obj.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+                    fcntl.flock(file_obj.fileno(), fcntl.LOCK_SH)
                 lock_acquired = True
             except (IOError, OSError):
-                lock_acquired = False
+                raise  # Never access shared security state without the requested lock.
         elif MSVCRT_AVAILABLE:
             # Windows locking is unreliable across threads/processes; rely on thread locks.
             lock_acquired = False
 
+        if 'w' in mode:
+            file_obj.seek(0)
+            file_obj.truncate()
         yield file_obj
+        file_obj.flush()
     finally:
         if file_obj:
             try:
+                file_obj.flush()
                 if lock_acquired and FCNTL_AVAILABLE:
                     fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
                 file_obj.close()

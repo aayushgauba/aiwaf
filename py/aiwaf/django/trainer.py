@@ -34,6 +34,9 @@ from .model_store import save_model_data
 from .geoip import lookup_country, lookup_country_name
 from ..core.constants import STATUS_IDX as CORE_STATUS_IDX
 from ..core.logs import parse_log_line as core_parse_log_line, read_rotated_logs as core_read_rotated_logs
+from ..core.training_pipeline import iter_training_batches, iter_csv_training_batches, aggregate_training_records, count_training_keywords, anomaly_statistics
+from ..core.native_runtime import function as native_function
+from .storage import _is_csv_mode
 from concurrent.futures import ThreadPoolExecutor
 from ..core.training import iter_batches as core_iter_batches, extract_rust_features_parallel as core_extract_rust_features_parallel
 from ..core.training_features import (
@@ -126,8 +129,11 @@ def remove_exempt_keywords() -> None:
     exempt_tokens.update(allowed_path_keywords)
     
     # Remove exempt tokens from keyword storage
-    for token in exempt_tokens:
-        keyword_store.remove_keyword(token)
+    if exempt_tokens and _is_csv_mode() and hasattr(keyword_store, 'update_keywords'):
+        keyword_store.update_keywords(removed=exempt_tokens)
+    else:
+        for token in exempt_tokens:
+            keyword_store.remove_keyword(token)
     
     if exempt_tokens:
         logger.info(f" Removed {len(exempt_tokens)} exempt keywords from learning: {list(exempt_tokens)[:10]}")
@@ -330,6 +336,35 @@ def _iter_all_logs():
             yield line
 
 
+_DEFAULT_ITER_LOGS = _iter_all_logs
+
+
+def _training_batches(native):
+    if not native or _iter_all_logs is not _DEFAULT_ITER_LOGS or not LOG_PATH or not os.path.exists(LOG_PATH):
+        yield from iter_training_batches(_iter_all_logs(), _parse, native=native)
+        return
+    yielded = False
+    for path in chain([LOG_PATH], sorted(glob.glob(f'{LOG_PATH}.*'))):
+        try:
+            opener = gzip.open if path.endswith('.gz') else open
+            with opener(path, 'rt', encoding='utf-8', errors='ignore') as file:
+                first = file.readline()
+            is_csv = {'timestamp', 'ip', 'path', 'status_code'} <= set(next(csv.reader([first]), []))
+            if is_csv:
+                for count, records in iter_csv_training_batches(path, legacy_csv=True):
+                    yielded |= bool(count)
+                    yield count, records
+            else:
+                with opener(path, 'rt', encoding='utf-8', errors='ignore') as file:
+                    for count, records in iter_training_batches(file, _parse):
+                        yielded |= bool(count)
+                        yield count, records
+        except (OSError, ValueError) as exc:
+            logger.warning('Could not read training log %s: %s', path, exc)
+    if not yielded:
+        yield from iter_training_batches(_iter_logs_from_model(), _parse)
+
+
 def _iter_csv_logs(path: str):
     """Read CSV log files produced by AIWAFLoggerMiddleware and convert to log lines."""
     try:
@@ -499,6 +534,9 @@ def _parse(line: str) -> dict | None:
     return core_parse_log_line(line)
 
 
+_DEFAULT_PARSE = _parse
+
+
 def _is_malicious_context_trainer(path: str, keyword: str, status: str = "404") -> bool:
     return core_is_malicious_context(path, keyword, status, STATIC_KW, path_exists_in_django)
 
@@ -584,18 +622,22 @@ def train(disable_ai=False, force_ai=False) -> None:
     seen_any_lines = False
 
     # Pass 1: collect aggregate stats only (no full parsed list in memory)
-    for line in _iter_all_logs():
-        seen_any_lines = True
-        rec = _parse(line)
-        if not rec:
-            continue
-        parsed_count += 1
-        ip_times[rec["ip"]].append(rec["timestamp"])
-        if rec["status"] == "404":
-            if is_exempt_path(rec["path"]):
-                ip_404_login[rec["ip"]] += 1  # Login path 404s
-            else:
-                ip_404[rec["ip"]] += 1  # Non-login path 404s
+    use_native_preparation = _is_csv_mode() and _parse is _DEFAULT_PARSE
+    exemption_cache = {}
+    def _aggregate_exempt(path):
+        if path not in exemption_cache:
+            exemption_cache[path] = is_exempt_path(path)
+        return exemption_cache[path]
+    for line_count, records in _training_batches(use_native_preparation):
+        seen_any_lines |= bool(line_count)
+        parsed_count += len(records)
+        errors, exempt_errors, times = aggregate_training_records(records, _aggregate_exempt)
+        for ip, count in errors.items():
+            ip_404[ip] += count
+        for ip, count in exempt_errors.items():
+            ip_404_login[ip] += count
+        for ip, values in times.items():
+            ip_times[ip].extend(values)
 
     if not seen_any_lines:
         logger.info("No log lines found  check AIWAF_ACCESS_LOG setting.")
@@ -624,6 +666,8 @@ def train(disable_ai=False, force_ai=False) -> None:
     # Pass 2: build features and keyword candidates.
     use_rust_features = _should_use_rust_features()
     rust_streaming_enabled = use_rust_features and rust_supports_chunked_features()
+    builder_class = native_function('NativeTrainingBuilder') if use_native_preparation and rust_streaming_enabled else None
+    native_builder = builder_class() if builder_class else None
     rust_chunk_size = max(1, int(getattr(settings, "AIWAF_RUST_FEATURE_CHUNK_SIZE", 5000)))
     if use_rust_features and not rust_streaming_enabled:
         logger.info("Rust streaming feature extraction unavailable; using single-batch Rust extraction.")
@@ -658,10 +702,29 @@ def train(disable_ai=False, force_ai=False) -> None:
             feature_dicts.extend([core_python_feature_from_record(r, ip_times, STATIC_KW) for r in python_batch])
         python_batch = []
 
-    for line in _iter_all_logs():
-        rec = _parse(line)
-        if not rec:
-            continue
+    def _cached_exists(path):
+        if path not in known_cache:
+            known_cache[path] = path_exists_in_django(path)
+        return known_cache[path]
+
+    def _cached_exempt(path):
+        if path not in exempt_cache:
+            exempt_cache[path] = is_exempt_path(path)
+        return exempt_cache[path]
+
+    def _feature_records():
+        for _, records in _training_batches(use_native_preparation):
+            counts = (count_training_keywords(records, _cached_exists, _cached_exempt, STATIC_KW, legitimate_keywords)
+                      if keyword_learning_enabled and use_native_preparation else None)
+            if counts is not None:
+                for keyword, count, examples in counts:
+                    tokens[keyword] += count
+                    remaining = 5 - len(token_example_paths[keyword])
+                    token_example_paths[keyword].extend(examples[:remaining])
+            for record in records:
+                yield record, counts is not None
+
+    for rec, keywords_counted in _feature_records():
 
         path = rec["path"]
         known_path = known_cache.get(path)
@@ -690,9 +753,12 @@ def train(disable_ai=False, force_ai=False) -> None:
             if rust_streaming_enabled:
                 rust_batch.append(rust_record)
                 if len(rust_batch) >= rust_chunk_size:
-                    batch_features, rust_state = rust_extract_features_batch(rust_batch, STATIC_KW, rust_state)
-                    if batch_features is not None:
-                        feature_dicts.extend(batch_features)
+                    if native_builder is not None:
+                        native_builder.add_batch(rust_batch, STATIC_KW)
+                    else:
+                        batch_features, rust_state = rust_extract_features_batch(rust_batch, STATIC_KW, rust_state)
+                        if batch_features is not None:
+                            feature_dicts.extend(batch_features)
                     rust_batch = []
             else:
                 rust_payload.append(rust_record)
@@ -710,7 +776,7 @@ def train(disable_ai=False, force_ai=False) -> None:
             if len(python_batch) >= python_batch_size:
                 _flush_python_batch()
 
-        if keyword_learning_enabled and rec["status"].startswith(("4", "5")) and not known_path and not exempt:
+        if keyword_learning_enabled and not keywords_counted and rec["status"].startswith(("4", "5")) and not known_path and not exempt:
             path_lower = path.lower()
             for seg in re.split(r"\W+", path_lower):
                 if (len(seg) > 3 and
@@ -727,12 +793,15 @@ def train(disable_ai=False, force_ai=False) -> None:
         python_executor.shutdown(wait=True)
 
     if rust_streaming_enabled and rust_batch:
-        batch_features, rust_state = rust_extract_features_batch(rust_batch, STATIC_KW, rust_state)
-        if batch_features is not None:
-            feature_dicts.extend(batch_features)
+        if native_builder is not None:
+            native_builder.add_batch(rust_batch, STATIC_KW)
+        else:
+            batch_features, rust_state = rust_extract_features_batch(rust_batch, STATIC_KW, rust_state)
+            if batch_features is not None:
+                feature_dicts.extend(batch_features)
         rust_batch = []
 
-    if rust_streaming_enabled:
+    if rust_streaming_enabled and native_builder is None:
         tail_features = rust_finalize_feature_state(STATIC_KW, rust_state)
         if tail_features:
             feature_dicts.extend(tail_features)
@@ -757,6 +826,8 @@ def train(disable_ai=False, force_ai=False) -> None:
         else:
             feature_dicts = rust_extract_features(rust_payload, STATIC_KW) or []
 
+    if native_builder is not None:
+        feature_dicts = native_builder.finish()
     if not feature_dicts:
         logger.info(" Nothing to train on  no valid log entries.")
         return
@@ -764,13 +835,14 @@ def train(disable_ai=False, force_ai=False) -> None:
     # AI Model Training (optional)
     blocked_count = 0
     force_ai = force_ai or getattr(settings, "AIWAF_FORCE_AI_TRAINING", False)
-    use_rust_ai = rust_isolation_forest_available()
+    use_rust_ai = (_should_use_rust_features() and rust_isolation_forest_available()
+                   and getattr(settings, 'AIWAF_RUST_ISOLATION_FOREST', True))
     if not disable_ai and not force_ai and parsed_count < MIN_AI_LOGS:
         logger.info(f"AI training skipped: {parsed_count} log lines < {MIN_AI_LOGS}. Falling back to keyword-only.")
         disable_ai = True
 
     if not disable_ai:
-        if not PANDAS_AVAILABLE:
+        if not PANDAS_AVAILABLE and not use_rust_ai:
             logger.info("AI model training skipped - pandas not available.")
             disable_ai = True
         elif not SKLEARN_AVAILABLE and not use_rust_ai:
@@ -781,14 +853,14 @@ def train(disable_ai=False, force_ai=False) -> None:
         logger.info(" Training AI anomaly detection model...")
         
         try:
-            df = pd.DataFrame(feature_dicts)
-            feature_cols = [c for c in df.columns if c != "ip"]
-            X = df[feature_cols].astype(float).values
             contamination = getattr(settings, "AIWAF_AI_CONTAMINATION", 0.05)
             model = None
             metadata = {}
 
             if use_rust_ai:
+                native_batch = hasattr(feature_dicts, 'fit_predict')
+                feature_cols = feature_dicts.feature_columns() if native_batch else list(dict.fromkeys(key for row in feature_dicts for key in row if key != 'ip'))
+                X = feature_dicts if native_batch else [[float(row.get(key, float('nan'))) for key in feature_cols] for row in feature_dicts]
                 rust_cls = rust_isolation_forest_class()
                 if rust_cls is None:
                     raise RuntimeError("Rust IsolationForest class unavailable")
@@ -801,10 +873,17 @@ def train(disable_ai=False, force_ai=False) -> None:
                     random_state=getattr(settings, "AIWAF_AI_RANDOM_STATE", 42),
                     warm_start=getattr(settings, "AIWAF_AI_WARM_START", False),
                 )
-                model.fit(X.tolist())
+                native_statistics = X.fit_predict(model) if native_batch else None
+                if not native_batch:
+                    model.fit(X)
                 model_data = rust_model_artifact(model, feature_cols, len(X), "django")
                 metadata = dict(model_data)
             else:
+                if hasattr(feature_dicts, 'to_dicts'):
+                    feature_dicts = feature_dicts.to_dicts()
+                df = pd.DataFrame(feature_dicts)
+                feature_cols = [c for c in df.columns if c != "ip"]
+                X = df[feature_cols].astype(float).values
                 model = IsolationForest(
                     contamination=contamination,
                     random_state=42
@@ -846,12 +925,12 @@ def train(disable_ai=False, force_ai=False) -> None:
                 logger.info(f"Created with scikit-learn v{metadata['sklearn_version']}")
             
             # Check for anomalies and intelligently decide which IPs to block
-            if metadata.get("model_backend") == "aiwaf_rust":
-                preds = model.predict(X.tolist())
-                anomalous_ips = {df.iloc[idx]["ip"] for idx, pred in enumerate(preds) if pred == -1}
+            if use_rust_ai and native_batch:
+                statistics = native_statistics
             else:
                 preds = model.predict(X)
-                anomalous_ips = set(df.loc[preds == -1, "ip"])
+                statistics = anomaly_statistics(feature_dicts, preds)
+            anomalous_ips = set(statistics)
             
             if anomalous_ips:
                 logger.info(f"Detected {len(anomalous_ips)} potentially anomalous IPs during training")
@@ -866,13 +945,9 @@ def train(disable_ai=False, force_ai=False) -> None:
                         continue
                     
                     # Get this IP's behavior from the data
-                    ip_data = df[df["ip"] == ip]
                     
                     # Criteria to determine if this is likely a legitimate user vs threat:
-                    avg_kw_hits = ip_data["kw_hits"].mean()
-                    max_404s = ip_data["total_404"].max()
-                    avg_burst = ip_data["burst_count"].mean()
-                    total_requests = len(ip_data)
+                    avg_kw_hits, max_404s, avg_burst, total_requests = statistics[ip]
                     
                     # Treat pure-burst traffic with no 404s/keywords as legitimate (e.g., polling)
                     if max_404s == 0 and avg_kw_hits == 0:
@@ -926,8 +1001,11 @@ def train(disable_ai=False, force_ai=False) -> None:
                 any(_is_malicious_context_trainer(path, kw) for path in example_paths[:3])):  # Check first 3 paths
                 
                 filtered_tokens.append((kw, cnt))
-                keyword_store.add_keyword(kw, cnt)
+                if not (_is_csv_mode() and hasattr(keyword_store, 'update_keywords')):
+                    keyword_store.add_keyword(kw, cnt)
                 learned_from_paths.extend(example_paths[:2])  # Track first 2 example paths
+        if filtered_tokens and _is_csv_mode() and hasattr(keyword_store, 'update_keywords'):
+            keyword_store.update_keywords(added=filtered_tokens)
         
         if filtered_tokens:
             logger.info(f"Added {len(filtered_tokens)} suspicious keywords: {[kw for kw, _ in filtered_tokens]}")

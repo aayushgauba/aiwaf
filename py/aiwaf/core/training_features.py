@@ -7,6 +7,16 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 
 from . import rust_backend
+from .native_runtime import function
+
+
+def extract_native_batch(parsed, ip_404, exists, exempt, statuses, keywords):
+    native = function('extract_native_training_features')
+    if native is None:
+        return None
+    eligible = {path: not exists(path) and not exempt(path)
+                for path in dict.fromkeys(record['path'] for record in parsed)}
+    return native(parsed, eligible, dict(ip_404), list(statuses), list(keywords))
 
 
 def extract_raw_features(parsed, ip_404, path_exists_fn, path_exempt_fn, status_idx_list, static_kw):

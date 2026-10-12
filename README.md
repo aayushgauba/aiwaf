@@ -271,6 +271,86 @@ Python adapters use flat `AIWAF_*` settings or their equivalent constructor opti
 
 When `aiwaf_rust` is importable, supported acceleration paths are selected automatically. Python remains the fallback when a native capability is unavailable. Persisted runtime models use JSON state; AIWAF does not load pickle, joblib, or other executable Python-object formats.
 
+### Rust-backed CSV runtime and training
+
+The Python 1.1.2 and `aiwaf-rust` 0.2.2 release candidates add native CSV storage,
+shared policy evaluation, and training preparation for Django, Flask, and FastAPI.
+Install matching Python and Rust builds and reload application workers to activate
+the new capabilities. Older extensions retain the compatible Python fallback.
+
+- **CSV storage:** bounded snapshot caches and indexed IP/key lookups avoid repeated
+  parsing and copying entire tables into Python. Native readers validate file
+  metadata and use shared OS locks; mutations use exclusive locks. Blacklist
+  reputation updates, keyword increments/removals, exemptions, audit entries, and
+  geo-list changes use atomic transactions. Unchanged policy rows skip rewriting
+  and disk synchronization. Changed policy writes still synchronize to disk.
+- **Request policies:** native helpers handle keyword/probe decisions, ASCII SQL
+  signatures, geo decisions, rate-window filtering, form timing, UUID format
+  validation, reputation scoring, wildcard/CIDR exemptions, and longest-prefix
+  route plans. Flask CSV keyword retrieval, evaluation, and learning share one
+  native call. SQL checks and blacklist updates retain their existing order;
+  custom evaluators and unsupported Unicode behavior use the Python adapter.
+- **Exemption reuse:** Flask reuses CSV exemption results within a request and
+  checks file identity, size, timestamps, and configuration before each reuse.
+  Changes invalidate the result; decorator checks still execute. Set
+  `AIWAF_CSV_REQUEST_CACHE=False` to disable this optimization.
+- **Training ingestion:** plain and gzip CSV stream directly in bounded batches,
+  including quoted fields and embedded newlines. Seconds and millisecond response
+  fields are normalized. Apache logs use batched extraction and native timestamp
+  parsing for supported English/C-locale forms. Unsupported dates/locales and
+  Unicode keyword learning retain Python behavior. Route checks are reused for
+  distinct paths, and learned keywords are persisted in batches.
+- **Native model preparation:** `NativeTrainingBatch` keeps features and numeric
+  matrices in Rust through Isolation Forest fitting, prediction, and per-IP anomaly
+  aggregation. `NativeTrainingBuilder` preserves Django's chunk/state behavior.
+  Supported native model paths train without a Pandas DataFrame; older APIs and
+  custom parsers retain compatibility paths.
+- **Synchronous CSV logging:** a bounded cache of writer handles avoids repeated
+  opens. Every row is locked and flushed before returning. File identity checks
+  handle rotation/replacement, and truncation recreates the header. Rows are not
+  queued in an application-side batch.
+
+Framework hooks, request/body extraction, route discovery, session/ORM access,
+response construction, datetime object/epoch conversion, training orchestration,
+and model artifact serialization still run in Python. The route plan selects
+middleware; framework hooks continue to execute separately in their established
+order. Database and Redis backends remain separate from the CSV implementation.
+
+Flask and Django honor `AIWAF_USE_RUST=False` or `AIWAF_RUST_CSV=False` to disable
+native CSV dispatch. Outside those application contexts, use the environment
+variable `AIWAF_RUST_CSV=false`. FastAPI training also honors these application
+options. ISO timestamps use Python's faster C parser by default;
+`AIWAF_RUST_ISO_DATES=1` opts into native ISO parsing for measurement.
+
+Flask can opt into shared, persistent CSV rate buckets:
+
+```python
+app.config["AIWAF_RATE_CACHE_BACKEND"] = "csv"
+# Optional: otherwise stored under AIWAF_DATA_DIR.
+app.config["AIWAF_RATE_CSV_PATH"] = "/absolute/path/to/rate_buckets.csv"
+```
+
+CSV rate decisions trim the window, consume the request, and persist the bucket
+under one native lock. Missing or disabled native support returns HTTP 503.
+Memory remains the default; CSV rewrites and synchronization can be slower than
+memory or Redis. Workers sharing CSV state must use compatible schemas and a
+filesystem with suitable locking. Legacy Python fallback writers on Windows only
+have process-local thread locks, so mixed Python/native writers need particular
+care. Explicit whole-file replacements are not concurrent incremental updates.
+
+`AIWAF_CSV_LOG_FSYNC=True` adds a disk sync per log row; the default is `False`,
+matching previous Python logging durability. Without per-row sync, a system crash
+can lose recently flushed OS-buffered entries. Cached handles close at process
+shutdown. After requests stop, call the Flask logger's `close()` or
+`aiwaf.core.native_runtime.close_csv_logs()` before deleting temporary log
+directories, especially on Windows.
+
+Check the installed extension without touching application data:
+
+```bash
+python scripts/check_native_csv_runtime.py
+```
+
 ### Python operations
 
 ```bash
@@ -290,7 +370,16 @@ python manage.py geo_block_country list
 aiwaf django aiwaf_list --all
 aiwaf flask --help
 aiwaf fast --help
+
+# FastAPI route-aware training using the application's runtime storage
+aiwaf fast train --app app:app --log-dir aiwaf_logs --disable-ai
+aiwaf fast train --app app:app --log-dir aiwaf_logs --model-path model.json
 ```
+
+FastAPI also exposes `aiwaf.fast.trainer.train_from_logs(app, ...)`. Training
+refreshes learned keywords and can write a Rust JSON model artifact. Existing
+anomaly middleware instances require an explicit model reload or application
+restart to use the newly trained model.
 
 ## JavaScript package
 
@@ -379,6 +468,11 @@ npm run aiwaf -- manifest --framework express --routes routes.json --output .aiw
 
 AIWAF loads `aiwaf-wasm` when available and falls back to the JavaScript implementation when WASM initialization or conversion is not worthwhile. Small, object-heavy operations can be faster in JavaScript because crossing the JS/WASM boundary and serializing objects has a fixed cost. WASM is most useful for sufficiently large feature batches and model scoring workloads.
 
+The new native CSV transactions, streaming readers, and retained training batches
+described in the Python section are PyO3 capabilities. They are not exposed to
+Node.js by the current WASM integration; JavaScript storage and middleware
+orchestration continue to use their existing implementation.
+
 ### JavaScript training and operations
 
 ```bash
@@ -412,6 +506,11 @@ The module provides:
 - incremental feature extraction with explicit state
 - recent-behavior analysis
 - `IsolationForest` training, scoring, prediction, retraining, and JSON state
+- locked CSV storage, indexed snapshot lookups, atomic policy mutations, and
+  synchronous cached log writers
+- shared request policies, combined route plans, and exemption matching
+- batched log/timestamp preparation, `TrainingCSVReader`,
+  `NativeTrainingBatch`, and `NativeTrainingBuilder`
 
 ```python
 import aiwaf_rust
@@ -754,6 +853,44 @@ python -m benchmarks.benchmark_auto_middleware --requests 200 --rounds 3 --warmu
 ```
 
 Use the same machine, environment, request count, and background load when comparing results. These measurements exclude network and production-server overhead.
+
+The latest native optimization measurements used three alternating runs. Timestamp
+and feature/model tests used 10,000 synthetic records; the model test used a
+20-tree forest and compared the previous Rust-feature/Python-matrix path with
+retained native features.
+
+| Scoped workload | Windows speedup | WSL Linux speedup |
+| --- | ---: | ---: |
+| Unique Apache timestamp parsing | 4.57× | 3.65× |
+| Feature extraction + Rust fit/predict boundary | 1.55× | 1.35× |
+
+Native ISO parsing was slower on both platforms, so it remains optional. An
+offline Windows Flask test-client workload with IP/keyword enforcement and CSV
+logging measured 5.95 ms/request native versus 9.18 ms/request Python (1.54×),
+using 100 initial blacklist rows and 20 requests per trial. These measurements
+exclude networking, production-server overhead, and concurrent request load;
+they do not establish a complete training or deployed-site speedup.
+
+Reproduce the focused measurements and concurrency smoke check locally:
+
+```bash
+python scripts/benchmark_native_training_boundary.py
+python scripts/benchmark_native_csv_training.py
+python scripts/benchmark_native_csv_workloads.py
+python scripts/benchmark_csv_request_reuse.py
+python scripts/profile_csv_logging.py
+python scripts/check_csv_release_concurrency.py
+```
+
+Validation of the development changes passed 282 Django tests, 134 FastAPI tests
+(one skipped), and 247 Flask/core optimization tests in separate processes.
+Coverage includes timestamp fallbacks, gzip/quoted CSV, seeded model parity,
+chunk equivalence, concurrent mutations, no-op writes, and log rotation/reopening.
+An installed-wheel Linux smoke check with four processes retained all 160 access
+rows and 80 blacklist entries. Local wheels were checked on Windows Python 3.13
+and WSL Python 3.10; the locally built Linux wheel requires glibc 2.34 or newer.
+The complete supported platform/version matrix and production load validation
+remain release checks.
 
 ## Release automation
 

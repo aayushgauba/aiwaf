@@ -5,9 +5,12 @@ from .utils import get_blacklist_extended_info, get_ip, is_exempt
 from .blacklist_manager import BlacklistManager
 from .storage import get_keyword_store
 from .exemption_decorators import should_apply_middleware
-from aiwaf.core.ip_keyword import evaluate_keyword_policy, extract_path_segments
+from aiwaf.core.ip_keyword import evaluate_keyword_policy, extract_path_segments, KeywordDecision
+from aiwaf.core.native_runtime import function as native_function, csv_function
 from aiwaf.core.request_context import extract_query_keys_from_flask_request
 from aiwaf.core.sql_injection import SQLInjectionPolicy, inspect_wsgi_request
+
+_DEFAULT_EVALUATE_POLICY = evaluate_keyword_policy
 
 class IPAndKeywordBlockMiddleware:
     def __init__(self, app=None):
@@ -97,7 +100,13 @@ class IPAndKeywordBlockMiddleware:
                 if logger:
                     logger.mark_request_blocked(finding.rule)
                 return jsonify({"error": finding.rule}), finding.status
-            dynamic_top = keyword_store.get_top_keywords(self.dynamic_top_n) if self.keyword_learning_enabled else []
+            from .storage import _get_storage_mode, _get_data_dir
+            custom_policy = (evaluate_keyword_policy is not _DEFAULT_EVALUATE_POLICY
+                or getattr(self._evaluate_keyword_request, '__func__', None) is not self._default_evaluate_request.__func__)
+            store_combined = (csv_function('csv_keyword_apply_from_store')
+                              if _get_storage_mode() == 'csv' and request.path.isascii() and not custom_policy else None)
+            dynamic_top = (keyword_store.get_top_keywords(self.dynamic_top_n)
+                           if self.keyword_learning_enabled and store_combined is None else [])
 
             def _is_malicious_context(seg: str) -> bool:
                 query = request.query_string.decode("utf-8", errors="ignore").lower() if request.query_string else ""
@@ -111,7 +120,50 @@ class IPAndKeywordBlockMiddleware:
                     return True
                 return False
 
-            decision = evaluate_keyword_policy(
+            native = native_function('policy_keyword_flask') if not custom_policy else None
+            from .storage import _get_storage_mode, _get_data_dir
+            combined = csv_function('csv_keyword_apply') if _get_storage_mode() == 'csv' else None
+            learned_natively = False
+            if native is not None and request.path.isascii():
+                args = (
+                    request.path, request.query_string.decode('utf-8', errors='ignore'),
+                    set(extract_query_keys_from_flask_request(request)), path_exists,
+                    self.keyword_learning_enabled, set(self.malicious_keywords), set(dynamic_top),
+                    set(self.legitimate_path_keywords), set(self.exempt_keywords),
+                    list(self.safe_prefixes), set(self.malicious_keywords))
+                if store_combined is not None:
+                    from pathlib import Path
+                    from aiwaf.core.storage_ops import now_iso
+                    from aiwaf.core.storage_schema import KEYWORDS_CSV
+                    decision = KeywordDecision(*store_combined(str(Path(_get_data_dir()) / KEYWORDS_CSV),
+                        now_iso(), *args[:6], *args[7:], self.dynamic_top_n))
+                    learned_natively = True
+                elif combined is not None:
+                    from pathlib import Path
+                    from aiwaf.core.storage_ops import now_iso
+                    from aiwaf.core.storage_schema import KEYWORDS_CSV
+                    decision = KeywordDecision(*combined(
+                        str(Path(_get_data_dir()) / KEYWORDS_CSV), now_iso(), *args))
+                    learned_natively = True
+                else:
+                    decision = KeywordDecision(*native(*args))
+            else:
+                decision = self._evaluate_keyword_request(request, path_exists, dynamic_top, _is_malicious_context)
+            if not learned_natively:
+                for seg in decision.learned_keywords:
+                    keyword_store.add_keyword(seg)
+            if decision.block_reason:
+                BlacklistManager.block(
+                    ip,
+                    decision.block_reason,
+                    extended_request_info=get_blacklist_extended_info(request),
+                )
+                if logger:
+                    logger.mark_request_blocked(decision.block_reason)
+                return jsonify({"error": "blocked"}), 403
+
+    def _evaluate_keyword_request(self, request, path_exists, dynamic_top, context):
+        return evaluate_keyword_policy(
                 path=request.path,
                 query_keys=list(extract_query_keys_from_flask_request(request)),
                 path_exists=path_exists,
@@ -122,16 +174,7 @@ class IPAndKeywordBlockMiddleware:
                 exempt_keywords=set(self.exempt_keywords),
                 safe_prefixes=self.safe_prefixes,
                 malicious_keywords=set(self.malicious_keywords),
-                is_malicious_context=_is_malicious_context,
+                is_malicious_context=context,
             )
-            for seg in decision.learned_keywords:
-                keyword_store.add_keyword(seg)
-            if decision.block_reason:
-                BlacklistManager.block(
-                    ip,
-                    decision.block_reason,
-                    extended_request_info=get_blacklist_extended_info(request),
-                )
-                if logger:
-                    logger.mark_request_blocked(decision.block_reason)
-                return jsonify({"error": "blocked"}), 403
+
+    _default_evaluate_request = _evaluate_keyword_request

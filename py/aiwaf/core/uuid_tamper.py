@@ -6,6 +6,7 @@ import re
 import time
 import uuid
 from threading import Lock
+from .native_runtime import function as native_function
 
 
 UUID_RE = re.compile(r"^[a-f0-9\-]{36}$")
@@ -21,6 +22,9 @@ def is_valid_uuid(value) -> bool:
     text = str(value).strip()
     if not text:
         return False
+    native = native_function('policy_uuid')
+    if native is not None:
+        return native(text)
     if UUID_RE.match(text.lower()) is None:
         return False
     try:

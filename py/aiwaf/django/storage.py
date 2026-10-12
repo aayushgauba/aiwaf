@@ -944,6 +944,10 @@ class CSVExemptionStoreAdapter:
 
 class CSVKeywordStoreAdapter:
     @staticmethod
+    def update_keywords(added=(), removed=()):
+        runtime_get_keyword_store().update_keywords(added, removed)
+
+    @staticmethod
     def add_keyword(keyword, count=1):
         runtime_get_keyword_store().add_keyword(keyword, count)
 

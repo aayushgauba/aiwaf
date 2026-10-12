@@ -10,6 +10,7 @@ from threading import RLock
 from typing import Any, Callable, Iterable, Mapping
 
 from .exemptions import normalize_middleware_name, normalize_path
+from .native_runtime import function as native_function
 
 
 MIDDLEWARE_NAMES = (
@@ -72,6 +73,7 @@ class RouteExecutionPlan:
 class CompiledRoutePolicy:
     token: int
     prefix_rules: tuple[tuple[str, Mapping[str, Any]], ...]
+    native_rules: tuple = ()
 
     def match(self, path: str) -> Mapping[str, Any] | None:
         normalized_path = normalize_path(path, trailing_slash=False)
@@ -127,9 +129,17 @@ def _compile_route_policy(rules: tuple[dict, ...], token: int) -> CompiledRouteP
         prefix = normalize_path(rule["PREFIX"], trailing_slash=True)
         prefix_rules.append((prefix, deepcopy(dict(rule)), position))
     prefix_rules.sort(key=lambda item: (-len(item[0]), item[2]))
+    native_rules = []
+    for prefix, rule, _position in prefix_rules:
+        disabled = rule.get('DISABLE', rule.get('disable', []))
+        if not isinstance(disabled, (list, tuple, set, frozenset)):
+            disabled = []
+        native_rules.append((prefix, frozenset(normalize_middleware_name(value)
+                                               for value in disabled if value)))
     return CompiledRoutePolicy(
         token=token,
         prefix_rules=tuple((prefix, rule) for prefix, rule, _position in prefix_rules),
+        native_rules=tuple(native_rules),
     )
 
 
@@ -214,6 +224,15 @@ def _build_route_execution_plan(
     exempt_middlewares: frozenset[str],
     required_middlewares: frozenset[str],
 ) -> RouteExecutionPlan:
+    native = native_function('policy_route_plan')
+    if native is not None and len(policy.native_rules) == len(policy.prefix_rules):
+        index, enabled = native(normalize_path(path, trailing_slash=False), list(policy.native_rules),
+                                list(MIDDLEWARE_NAMES), bool(fully_exempt),
+                                set(exempt_middlewares), set(required_middlewares))
+        rule = policy.prefix_rules[index][1] if index is not None else {}
+        overrides = rule.get('RATE_LIMIT', rule.get('rate_limit', {}))
+        return RouteExecutionPlan(frozenset(enabled),
+                                  _freeze(overrides if isinstance(overrides, Mapping) else {}))
     rule = policy.match(path)
     disabled_values = []
     rate_limit_overrides: Mapping[str, Any] = {}

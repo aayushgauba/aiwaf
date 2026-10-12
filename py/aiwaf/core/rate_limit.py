@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Iterable, List
 import threading
+from .native_runtime import function as native_function
 
 _bucket_lock = threading.RLock()
 
@@ -58,6 +59,11 @@ def evaluate_rate_limit(
     - flood_block: request exceeds hard limit (403 + blacklist)
     """
     window = max(float(window_seconds), 1.0)
+    native = native_function('policy_rate')
+    if native is not None:
+        action, count, updated = native(list(timestamps or []), float(now), window,
+                                        int(max_requests), int(flood_threshold))
+        return RateLimitDecision(action, count, updated)
     trimmed = [t for t in list(timestamps or []) if now - t < window]
     trimmed.append(now)
     count = len(trimmed)

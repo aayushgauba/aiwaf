@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .storage_csv import file_lock, safe_csv_operation
+from .native_runtime import csv_function, csv_values
 
 
 def ensure_csv_files(data_dir: Path, schema_headers: dict[str, list[str]]):
@@ -17,6 +18,10 @@ def ensure_csv_files(data_dir: Path, schema_headers: dict[str, list[str]]):
         for name, headers in schema_headers.items():
             file_path = data_dir / name
             if file_path.exists():
+                continue
+            native = csv_function('csv_write')
+            if native is not None:
+                native(str(file_path), headers, [], True)
                 continue
             with file_lock(file_path, "w") as f:
                 writer = csv.writer(f)
@@ -28,6 +33,9 @@ def read_csv_set(data_dir: Path, filename: str, key_field: str, schema_headers: 
     def _read():
         ensure_csv_files(data_dir, schema_headers)
         csv_file = data_dir / filename
+        native = csv_function('csv_read_set')
+        if native is not None:
+            return set(native(str(csv_file), key_field, True))
         items = set()
         with file_lock(csv_file, "r") as f:
             reader = csv.DictReader(f)
@@ -43,6 +51,9 @@ def read_csv_dict(data_dir: Path, filename: str, key_field: str, value_field: st
     def _read():
         ensure_csv_files(data_dir, schema_headers)
         csv_file = data_dir / filename
+        native = csv_function('csv_read_dict')
+        if native is not None:
+            return native(str(csv_file), key_field, value_field, True)
         items = {}
         with file_lock(csv_file, "r") as f:
             reader = csv.DictReader(f)
@@ -59,6 +70,10 @@ def append_csv_row(data_dir: Path, filename: str, row: list, schema_headers: dic
     def _append():
         ensure_csv_files(data_dir, schema_headers)
         csv_file = data_dir / filename
+        native = csv_function('csv_write')
+        if native is not None:
+            native(str(csv_file), schema_headers[filename], [csv_values(row)], True)
+            return
         with file_lock(csv_file, "a") as f:
             writer = csv.writer(f)
             writer.writerow(row)
@@ -69,6 +84,10 @@ def rewrite_csv_rows(data_dir: Path, filename: str, rows: list[list], schema_hea
     def _rewrite():
         ensure_csv_files(data_dir, schema_headers)
         csv_file = data_dir / filename
+        native = csv_function('csv_write')
+        if native is not None:
+            native(str(csv_file), schema_headers[filename], [csv_values(row) for row in rows], False)
+            return
         with file_lock(csv_file, "w") as f:
             writer = csv.writer(f)
             writer.writerow(schema_headers[filename])

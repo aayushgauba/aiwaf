@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Optional
+from .native_runtime import function as native_function
 
 
 ACTION_ALLOW = "allow"
@@ -86,6 +87,10 @@ def evaluate_form_timing(
     min_form_time: float,
     max_page_time: float,
 ) -> HoneypotDecision:
+    native = native_function('policy_form')
+    if native is not None:
+        return HoneypotDecision(*native(float(now), None if get_time is None else float(get_time),
+                                        path or '', float(min_form_time), float(max_page_time)))
     if get_time is None:
         return HoneypotDecision(action=ACTION_ALLOW)
 

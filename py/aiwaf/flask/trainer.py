@@ -46,9 +46,11 @@ from .utils import is_exempt, is_path_exempt
 from .geoip import lookup_country_name
 from aiwaf.core.constants import STATUS_IDX as CORE_STATUS_IDX
 from aiwaf.core.logs import parse_log_line as core_parse_log_line
+from aiwaf.core.training_pipeline import parse_training_logs, iter_csv_training_batches, aggregate_training_records, learn_training_keywords, anomaly_statistics
 from aiwaf.core.training import extract_rust_features_parallel as core_extract_rust_features_parallel
 from aiwaf.core.training_logic import is_malicious_context as core_is_malicious_context
 from aiwaf.core.training_features import (
+    extract_native_batch,
     build_records as core_build_records,
     extract_raw_features as core_extract_raw_features,
     rust_payload_from_records as core_rust_payload_from_records,
@@ -173,8 +175,11 @@ class FlaskAITrainer:
         exempt_tokens.update(allowed_path_keywords)
         
         # Remove exempt tokens from keyword storage
-        for token in exempt_tokens:
-            keyword_store.remove_keyword(token)
+        if exempt_tokens and hasattr(keyword_store, 'update_keywords'):
+            keyword_store.update_keywords(removed=exempt_tokens)
+        else:
+            for token in exempt_tokens:
+                keyword_store.remove_keyword(token)
         
         if exempt_tokens:
             logger.info(f" Removed {len(exempt_tokens)} exempt keywords from learning: {list(exempt_tokens)[:10]}")
@@ -302,6 +307,29 @@ class FlaskAITrainer:
         logger.info(f" Total log lines found: {len(lines)}")
         return lines
     
+    _default_read_all = _read_all_logs
+
+    def _load_training_csv(self):
+        if getattr(self._parse, '__func__', None) is not self._default_parse.__func__:
+            return None
+        if getattr(self._read_all_logs, '__func__', None) is not self._default_read_all.__func__:
+            return None
+        root = Path(self.get_config('AIWAF_LOG_DIR', DEFAULT_LOG_DIR))
+        candidates = [root / 'access.log', root / 'aiwaf.log', Path('access.log'), Path('aiwaf.log')]
+        for candidate in candidates:
+            if not candidate.is_file():
+                continue
+            with candidate.open(encoding='utf-8', errors='ignore') as file:
+                header = file.readline()
+            if not {'timestamp', 'ip', 'path', 'status_code'} <= set(next(csv.reader([header]), [])):
+                return None
+            parsed = []
+            for file in [candidate, *sorted(candidate.parent.glob(candidate.name + '.*'))]:
+                for _, batch in iter_csv_training_batches(file):
+                    parsed.extend(batch)
+            return parsed
+        return None
+
     def _get_logs_from_csv(self) -> List[str]:
         """Get log data from CSV files"""
         lines = []
@@ -378,6 +406,8 @@ class FlaskAITrainer:
     def _parse(self, line: str) -> Optional[Dict[str, Any]]:
         """Parse a log line using multiple regex patterns"""
         return core_parse_log_line(line)
+
+    _default_parse = _parse
     
     def _is_malicious_context_trainer(self, path: str, keyword: str, status: str = "404") -> bool:
         return core_is_malicious_context(path, keyword, status, STATIC_KW, self.path_exists_in_flask)
@@ -385,6 +415,11 @@ class FlaskAITrainer:
     def _generate_feature_dicts(self, parsed, ip_404, ip_times):
         """Generate model feature dictionaries using Rust backends or Python fallback."""
         use_rust = rust_available()
+        if getattr(self, '_native_training_handle', False):
+            native_batch = extract_native_batch(parsed, ip_404, self.path_exists_in_flask,
+                                                is_path_exempt, STATUS_IDX, STATIC_KW)
+            if native_batch is not None:
+                return native_batch
         if parsed and use_rust:
             raw_features = core_extract_raw_features(
                 parsed, ip_404, self.path_exists_in_flask, is_path_exempt, STATUS_IDX, STATIC_KW
@@ -486,8 +521,12 @@ class FlaskAITrainer:
     def train(self, disable_ai: bool = False) -> None:
         """Enhanced training with improved keyword filtering and exemption handling"""
         logger.info(" Starting AIWAF Flask enhanced training...")
+        ai_available = AI_AVAILABLE or (
+            self.get_config('AIWAF_USE_RUST', True)
+            and self.get_config('AIWAF_RUST_ISOLATION_FOREST', True)
+            and rust_available() and rust_isolation_forest_available())
         
-        if not AI_AVAILABLE and not disable_ai:
+        if not ai_available and not disable_ai:
             logger.info("  AI dependencies not available - switching to keyword-only mode")
             logger.info("   Install with: pip install aiwaf-flask[ai]")
             disable_ai = True
@@ -504,44 +543,35 @@ class FlaskAITrainer:
         # For now, we'll rely on the existing exemption system during blocking
         exempted_count = 0  # Since we can't easily get all exempted IPs
         
-        raw_lines = self._read_all_logs()
-        if not raw_lines:
+        prepared_csv = self._load_training_csv() if _get_storage_mode() == 'csv' else None
+        raw_lines = self._read_all_logs() if prepared_csv is None else []
+        input_count = len(raw_lines) if prepared_csv is None else len(prepared_csv)
+        if not input_count:
             logger.info(" No log lines found  check AIWAF_LOG_DIR setting or log files.")
             return
         
         # Skip processing if we have too few entries
-        if len(raw_lines) < 50:
-            logger.info(f"  Only {len(raw_lines)} log entries found - need at least 50 for basic training")
+        if input_count < 50:
+            logger.info(f"  Only {input_count} log entries found - need at least 50 for basic training")
             return
         
         # Check if we have enough data for AI training
         min_ai_threshold = current_app.config.get('AIWAF_MIN_AI_LOGS', 10000)
         force_ai = current_app.config.get('AIWAF_FORCE_AI', False)
         
-        if not disable_ai and not force_ai and len(raw_lines) < min_ai_threshold:
-            logger.info(f"  Only {len(raw_lines)} log entries found - need at least {min_ai_threshold} for AI training")
+        if not disable_ai and not force_ai and input_count < min_ai_threshold:
+            logger.info(f"  Only {input_count} log entries found - need at least {min_ai_threshold} for AI training")
             logger.info("   Switching to keyword-only mode (use --force-ai to override or --disable-ai to suppress this warning)")
             disable_ai = True
-        elif not disable_ai and force_ai and len(raw_lines) < min_ai_threshold:
-            logger.info(f"  Only {len(raw_lines)} log entries found (recommended: {min_ai_threshold}+) but forcing AI training")
-        
-        parsed = []
-        ip_404 = defaultdict(int)
-        ip_404_login = defaultdict(int)
-        ip_times = defaultdict(list)
-        
-        logger.info(f" Parsing {len(raw_lines)} log entries...")
-        for line in raw_lines:
-            rec = self._parse(line)
-            if not rec:
-                continue
-            parsed.append(rec)
-            ip_times[rec["ip"]].append(rec["timestamp"])
-            if rec["status"] == "404":
-                if is_path_exempt(rec["path"]):
-                    ip_404_login[rec["ip"]] += 1
-                else:
-                    ip_404[rec["ip"]] += 1
+        elif not disable_ai and force_ai and input_count < min_ai_threshold:
+            logger.info(f"  Only {input_count} log entries found (recommended: {min_ai_threshold}+) but forcing AI training")
+
+        logger.info(f" Parsing {input_count} log entries...")
+        use_batch = (_get_storage_mode() == 'csv' and
+                     getattr(self._parse, '__func__', None) is self._default_parse.__func__)
+        parsed = (prepared_csv if prepared_csv is not None else parse_training_logs(raw_lines) if use_batch else
+                  [record for line in raw_lines if (record := self._parse(line))])
+        ip_404, ip_404_login, ip_times = aggregate_training_records(parsed, is_path_exempt)
         
         logger.info(f" Successfully parsed {len(parsed)} log entries")
         
@@ -565,7 +595,12 @@ class FlaskAITrainer:
             logger.info(f" Blocked {blocked_404_count} IPs for excessive 404 errors")
         
         # Prepare feature data (prefer Rust if enabled)
-        feature_dicts = self._generate_feature_dicts(parsed, ip_404, ip_times)
+        self._native_training_handle = bool(use_batch and not disable_ai
+            and self.get_config('AIWAF_RUST_ISOLATION_FOREST', True))
+        try:
+            feature_dicts = self._generate_feature_dicts(parsed, ip_404, ip_times)
+        finally:
+            self._native_training_handle = False
         
         if not feature_dicts:
             logger.info(" Nothing to train on  no valid log entries.")
@@ -575,28 +610,34 @@ class FlaskAITrainer:
         
         # AI Model Training (optional)
         blocked_count = 0
-        if not disable_ai and AI_AVAILABLE:
+        if not disable_ai and ai_available:
             logger.info(" Training AI anomaly detection model...")
             
             try:
-                df = pd.DataFrame(feature_dicts)
-                feature_cols = [c for c in df.columns if c != "ip"]
-                X = df[feature_cols].astype(float).values
-
                 contamination = self.get_config("AIWAF_AI_CONTAMINATION", 0.05)
                 use_rust_iforest = (
                     rust_available()
+                    and self.get_config('AIWAF_USE_RUST', True)
                     and rust_isolation_forest_available()
                     and self.get_config("AIWAF_RUST_ISOLATION_FOREST", True)
                 )
                 if use_rust_iforest:
+                    native_batch = hasattr(feature_dicts, 'fit_predict')
+                    feature_cols = (feature_dicts.feature_columns() if native_batch else
+                        list(dict.fromkeys(key for row in feature_dicts for key in row if key != 'ip')))
+                    X = feature_dicts if native_batch else [[float(row.get(key, float('nan'))) for key in feature_cols] for row in feature_dicts]
                     model_cls = get_isolation_forest_class()
                     model = model_cls(
                         contamination=contamination,
                         random_state=42,
                     )
-                    model.fit(X.tolist())
+                    native_statistics = X.fit_predict(model) if native_batch else None
+                    if not native_batch:
+                        model.fit(X)
                 else:
+                    df = pd.DataFrame(feature_dicts)
+                    feature_cols = [c for c in df.columns if c != "ip"]
+                    X = df[feature_cols].astype(float).values
                     if not SKLEARN_AVAILABLE:
                         logger.info("  scikit-learn not available; cannot train sklearn IsolationForest")
                         return
@@ -630,11 +671,12 @@ class FlaskAITrainer:
                     logger.info(f" Trained on {len(X)} samples with scikit-learn v{sklearn.__version__}")
                 
                 # Check for anomalies and intelligently decide which IPs to block
-                if use_rust_iforest:
-                    preds = model.predict(X.tolist())
+                if use_rust_iforest and native_batch:
+                    statistics = native_statistics
                 else:
                     preds = model.predict(X)
-                anomalous_ips = set(df.loc[preds == -1, "ip"])
+                    statistics = anomaly_statistics(feature_dicts, preds)
+                anomalous_ips = set(statistics)
                 
                 if anomalous_ips:
                     logger.info(f" Detected {len(anomalous_ips)} potentially anomalous IPs")
@@ -647,13 +689,8 @@ class FlaskAITrainer:
                             continue
                         
                         # Get this IP's behavior from the data
-                        ip_data = df[df["ip"] == ip]
-                        
                         # Criteria to determine if this is likely legitimate vs threat
-                        avg_kw_hits = ip_data["kw_hits"].mean()
-                        max_404s = ip_data["total_404"].max()
-                        avg_burst = ip_data["burst_count"].mean()
-                        total_requests = len(ip_data)
+                        avg_kw_hits, max_404s, avg_burst, total_requests = statistics[ip]
                         
                         # Don't block if it looks like legitimate behavior
                         if (
@@ -705,7 +742,10 @@ class FlaskAITrainer:
                 keyword_path_exempt_cache[path] = is_path_exempt(path)
             return keyword_path_exempt_cache[path]
 
-        for r in parsed:
+        native_keywords = (learn_training_keywords(parsed, _path_exists_cached, _path_exempt_cached,
+                           STATIC_KW, legitimate_keywords, self.get_config('AIWAF_DYNAMIC_TOP_N', 10))
+                           if use_batch else None)
+        for r in ([] if native_keywords is not None else parsed):
             # Only learn from suspicious requests (errors on non-existent paths)
             if (r["status"].startswith(("4", "5")) and 
                 not _path_exists_cached(r["path"]) and 
@@ -741,8 +781,18 @@ class FlaskAITrainer:
                 any(self._is_malicious_context_trainer(path, kw) for path in example_paths[:3])):
                 
                 filtered_tokens.append((kw, cnt))
-                keyword_store.add_keyword(kw, cnt)
+                if not hasattr(keyword_store, 'update_keywords'):
+                    keyword_store.add_keyword(kw, cnt)
                 learned_from_paths.extend(example_paths[:2])
+
+        if native_keywords is not None:
+            filtered_tokens = [(keyword, count) for keyword, count, _ in native_keywords]
+            learned_from_paths = [path for _, _, paths in native_keywords for path in paths]
+            if not hasattr(keyword_store, 'update_keywords'):
+                for keyword, count in filtered_tokens:
+                    keyword_store.add_keyword(keyword, count)
+        if filtered_tokens and hasattr(keyword_store, 'update_keywords'):
+            keyword_store.update_keywords(added=[keyword for keyword, _ in filtered_tokens])
         
         # Training summary
         logger.info("\n" + "="*60)
@@ -753,7 +803,7 @@ class FlaskAITrainer:
         logger.info("="*60)
         logger.info(f" Training Data: {len(parsed)} log entries processed")
         
-        if not disable_ai and AI_AVAILABLE:
+        if not disable_ai and ai_available:
             logger.info(f" AI Model: Trained with {len(feature_cols) if 'feature_cols' in locals() else 'N/A'} features")
             logger.info(f" AI Blocked IPs: {blocked_count} suspicious IPs blocked")
         else:

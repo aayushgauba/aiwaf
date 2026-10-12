@@ -11,6 +11,7 @@ from typing import Set, Dict, Optional, List, Any
 from pathlib import Path
 import logging
 from .reputation import FIRST_BLOCK_SECONDS, evaluate_reputation, format_block_reason
+from .native_runtime import csv_function
 
 logger = logging.getLogger(__name__)
 
@@ -281,12 +282,25 @@ class CSVStorage(StorageBackend):
             self._save_data()
 
     def get(self, key: str) -> Optional[Any]:
+        native = csv_function('csv_kv_get')
+        if native is not None:
+            raw = native(str(self.file_path), key, time.time())
+            if raw is None:
+                return None
+            try:
+                return json.loads(raw)
+            except (ValueError, TypeError):
+                return raw
         with self._lock:
             self._cleanup_expired()
             entry = self._data.get(key)
             return entry.get("value") if entry else None
 
     def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        native = csv_function('csv_kv_update')
+        if native is not None:
+            now = time.time()
+            return native(str(self.file_path), key, json.dumps(value), now + ttl if ttl else None, now)
         with self._lock:
             expires_at = (time.time() + ttl) if ttl else None
             self._data[key] = {"value": value, "expires_at": expires_at}
@@ -294,6 +308,9 @@ class CSVStorage(StorageBackend):
             return True
 
     def delete(self, key: str) -> bool:
+        native = csv_function('csv_kv_update')
+        if native is not None:
+            return native(str(self.file_path), key, None, None, time.time())
         with self._lock:
             if key in self._data:
                 del self._data[key]
@@ -305,6 +322,13 @@ class CSVStorage(StorageBackend):
         return self.get(key) is not None
 
     def get_all_keys(self, pattern: str = "*") -> List[str]:
+        native = csv_function('csv_kv_keys')
+        if native is not None:
+            keys = native(str(self.file_path), time.time())
+            if pattern == '*':
+                return keys
+            import fnmatch
+            return [key for key in keys if fnmatch.fnmatch(key, pattern)]
         with self._lock:
             self._cleanup_expired()
             if pattern == "*":
@@ -393,9 +417,21 @@ class ExemptionStore:
     def _load_exemptions(self):
         """Load exemptions from storage."""
         exempt_data = self.storage.get("exemptions")
-        if exempt_data:
-            self._exempt_ips = set(exempt_data.get('ips', []))
-            self._exempt_patterns = exempt_data.get('patterns', [])
+        exempt_data = exempt_data or {}
+        self._exempt_ips = set(exempt_data.get('ips', []))
+        self._exempt_patterns = list(exempt_data.get('patterns', []))
+
+    def _native_update(self, operation, value, reason=""):
+        native = csv_function('csv_runtime_list_update') if isinstance(self.storage, CSVStorage) else None
+        if native is None:
+            return None
+        found = native(str(self.storage.file_path), operation, value, reason, time.time())
+        self._load_exemptions()
+        return found
+
+    def _refresh_csv(self):
+        if isinstance(self.storage, CSVStorage) and csv_function('csv_kv_get') is not None:
+            self._load_exemptions()
     
     def _save_exemptions(self):
         """Save exemptions to storage."""
@@ -407,6 +443,9 @@ class ExemptionStore:
     
     def add_ip(self, ip: str, reason: str = "Manual exemption"):
         """Add an IP to exemption list."""
+        if self._native_update('add_ip', ip, reason) is not None:
+            logger.info(f"IP {ip} added to exemption list: {reason}")
+            return
         self._exempt_ips.add(ip)
         self._save_exemptions()
         
@@ -423,6 +462,9 @@ class ExemptionStore:
     
     def remove_ip(self, ip: str):
         """Remove an IP from exemption list."""
+        found = self._native_update('remove_ip', ip)
+        if found is not None:
+            return found
         if ip in self._exempt_ips:
             self._exempt_ips.remove(ip)
             self._save_exemptions()
@@ -432,6 +474,8 @@ class ExemptionStore:
     
     def add_pattern(self, pattern: str, reason: str = "Manual exemption"):
         """Add an IP pattern to exemption list."""
+        if self._native_update('add_pattern', pattern, reason) is not None:
+            return
         if pattern not in self._exempt_patterns:
             self._exempt_patterns.append(pattern)
             self._save_exemptions()
@@ -439,6 +483,9 @@ class ExemptionStore:
     
     def remove_pattern(self, pattern: str):
         """Remove a pattern from exemption list."""
+        found = self._native_update('remove_pattern', pattern)
+        if found is not None:
+            return found
         if pattern in self._exempt_patterns:
             self._exempt_patterns.remove(pattern)
             self._save_exemptions()
@@ -448,36 +495,18 @@ class ExemptionStore:
     
     def is_exempted(self, ip: str) -> bool:
         """Check if an IP is exempted."""
-        # Check direct IP match
-        if ip in self._exempt_ips:
-            return True
-        
-        # Check pattern matches
-        import fnmatch
-        import ipaddress
-        
-        for pattern in self._exempt_patterns:
-            # Simple wildcard matching
-            if fnmatch.fnmatch(ip, pattern):
-                return True
-            
-            # CIDR notation matching
-            if '/' in pattern:
-                try:
-                    network = ipaddress.ip_network(pattern, strict=False)
-                    if ipaddress.ip_address(ip) in network:
-                        return True
-                except ValueError:
-                    continue
-        
-        return False
+        from .exemptions import is_ip_exempt
+        self._refresh_csv()
+        return is_ip_exempt(ip, self._exempt_ips, self._exempt_patterns)
     
     def get_exempted_ips(self) -> Set[str]:
         """Get all exempted IPs."""
+        self._refresh_csv()
         return self._exempt_ips.copy()
     
     def get_exempted_patterns(self) -> List[str]:
         """Get all exempted patterns."""
+        self._refresh_csv()
         return self._exempt_patterns.copy()
 
 
@@ -503,6 +532,13 @@ class BlacklistStore:
             duration: Block duration in seconds (None for permanent)
         """
         now = time.time()
+        native = csv_function('csv_runtime_block') if isinstance(self.storage, CSVStorage) else None
+        if native is not None:
+            native(str(self.storage.file_path), ip, reason,
+                   json.dumps(extended_request_info) if extended_request_info is not None else None,
+                   now, duration)
+            logger.warning(f"IP {ip} blocked: {reason}")
+            return
         existing = self.get_block_info(ip) or {}
         if not isinstance(existing, dict):
             existing = {"reason": str(existing), "reasons": [str(existing)]}
@@ -616,11 +652,29 @@ class KeywordStore:
     def __init__(self, storage: StorageBackend):
         self.storage = storage
 
+    def update_keywords(self, added=(), removed=()):
+        added = [(str(key).strip().lower(), int(count)) for key, count in added if str(key).strip()]
+        removed = {str(key).strip().lower() for key in removed if str(key).strip()}
+        if not added and not removed:
+            return
+        native = csv_function('csv_runtime_keywords_update') if isinstance(self.storage, CSVStorage) else None
+        if native is not None:
+            native(str(self.storage.file_path), added, removed, time.time())
+            return
+        for key in removed:
+            self.remove_keyword(key)
+        for key, count in added:
+            self.add_keyword(key, count)
+
     def add_keyword(self, keyword: str, count: int = 1):
         if not keyword:
             return
         keyword = str(keyword).strip().lower()
         if not keyword:
+            return
+        native = csv_function('csv_runtime_keyword') if isinstance(self.storage, CSVStorage) else None
+        if native is not None:
+            native(str(self.storage.file_path), keyword, int(count), False, time.time())
             return
         counts = self.storage.get("keyword_counts") or {}
         counts[keyword] = int(counts.get(keyword, 0)) + max(1, int(count))
@@ -628,6 +682,10 @@ class KeywordStore:
 
     def remove_keyword(self, keyword: str):
         if not keyword:
+            return
+        native = csv_function('csv_runtime_keyword') if isinstance(self.storage, CSVStorage) else None
+        if native is not None:
+            native(str(self.storage.file_path), str(keyword).strip().lower(), 1, True, time.time())
             return
         counts = self.storage.get("keyword_counts") or {}
         keyword = str(keyword).strip().lower()
@@ -659,6 +717,10 @@ class GeoBlockStore:
         code = str(country_code or "").strip().upper()
         if not code:
             return
+        native = csv_function('csv_runtime_list_update') if isinstance(self.storage, CSVStorage) else None
+        if native is not None:
+            native(str(self.storage.file_path), 'add_country', code, '', time.time())
+            return
         countries = self.get_countries()
         countries.add(code)
         self.storage.set("geo_blocked_countries", sorted(countries))
@@ -666,6 +728,10 @@ class GeoBlockStore:
     def remove_country(self, country_code: str):
         code = str(country_code or "").strip().upper()
         if not code:
+            return
+        native = csv_function('csv_runtime_list_update') if isinstance(self.storage, CSVStorage) else None
+        if native is not None:
+            native(str(self.storage.file_path), 'remove_country', code, '', time.time())
             return
         countries = self.get_countries()
         countries.discard(code)

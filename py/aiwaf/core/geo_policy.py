@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Iterable, Set
+from .native_runtime import function as native_function
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,9 @@ def evaluate_geo_policy(
     allow = normalize_country_list(allow_countries)
     block = normalize_country_list(block_countries)
     dynamic = normalize_country_list(dynamic_blocked)
+    native = native_function('policy_geo')
+    if native is not None:
+        return GeoDecision(*native(normalized_country, allow, block, dynamic))
 
     if allow:
         blocked = normalized_country not in allow

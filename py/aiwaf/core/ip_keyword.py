@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import re
 from typing import Callable, Iterable, List, Optional, Sequence, Set
+from .native_runtime import function as native_function
 
 
 INHERENTLY_MALICIOUS_PATTERNS = (
@@ -61,6 +62,18 @@ def evaluate_keyword_policy(
     malicious_keywords: Set[str],
     is_malicious_context: Callable[[str], bool],
 ) -> KeywordDecision:
+    native = native_function('policy_keyword')
+    if native is not None and (path or '').isascii():
+        static_keywords, dynamic_keywords = set(static_keywords), set(dynamic_keywords)
+        # Framework-specific context callbacks remain in the adapter. Evaluate each
+        # distinct candidate once, then pass its result with the policy snapshot.
+        # Learning historically evaluates path segments first. Preserve that order
+        # for adapters whose context callback keeps per-request state.
+        candidates = dict.fromkeys(extract_path_segments(path) + sorted(static_keywords | dynamic_keywords))
+        contexts = {candidate for candidate in candidates if is_malicious_context(candidate)}
+        return KeywordDecision(*native(path or '', set(query_keys), bool(path_exists),
+            bool(keyword_learning_enabled), static_keywords, dynamic_keywords,
+            legitimate_keywords, exempt_keywords, list(safe_prefixes), malicious_keywords, contexts))
     raw_path = (path or "").lower()
     normalized_path = raw_path.lstrip("/")
     segments = extract_path_segments(raw_path)

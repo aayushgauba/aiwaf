@@ -27,6 +27,7 @@ from .storage_ops import (
     now_iso,
 )
 from .storage_csv import file_lock, safe_csv_operation
+from .native_runtime import csv_function
 
 
 def ensure_all(data_dir: Path):
@@ -38,8 +39,26 @@ def read_whitelist(data_dir: Path) -> set[str]:
     return read_csv_set(data_dir, WHITELIST_CSV, "ip", CSV_HEADERS)
 
 
+def contains_whitelist(data_dir: Path, ip: str) -> bool:
+    native = csv_function('csv_contains')
+    if native is not None:
+        ensure_csv_files(data_dir, CSV_HEADERS)
+        return native(str(data_dir / WHITELIST_CSV), 'ip', ip, True)
+    return ip in read_whitelist(data_dir)
+
+
 def append_whitelist(data_dir: Path, ip: str):
+    if native_policy_list_update(data_dir, WHITELIST_CSV, ip, [ip, now_iso()], False):
+        return
     return append_csv_row(data_dir, WHITELIST_CSV, [ip, now_iso()], CSV_HEADERS)
+
+
+def native_policy_list_update(data_dir, filename, key, row, remove, mode='exact'):
+    native = csv_function('csv_policy_list_update')
+    if native is None:
+        return False
+    native(str(data_dir / filename), CSV_HEADERS[filename], key, row, remove, mode)
+    return True
 
 
 def rewrite_whitelist(data_dir: Path, whitelist: set[str]):
@@ -123,6 +142,10 @@ def _migrate_blacklist_csv(data_dir: Path):
         csv_file = data_dir / BLACKLIST_CSV
         if not csv_file.exists():
             return
+        native = csv_function('csv_headers_match')
+        if native is not None:
+            if native(str(csv_file), CSV_HEADERS[BLACKLIST_CSV]):
+                return
         with file_lock(csv_file, "r") as f:
             raw_rows = list(csv.reader(f))
         current_headers = CSV_HEADERS[BLACKLIST_CSV]
@@ -191,6 +214,15 @@ def read_blacklist(data_dir: Path) -> dict[str, dict]:
         ensure_all(data_dir)
         csv_file = data_dir / BLACKLIST_CSV
         items = {}
+        native = csv_function('csv_read')
+        if native is not None:
+            headers, rows = native(str(csv_file), True)
+            for values in rows:
+                row = dict(zip(headers, values))
+                ip = (row.get('ip') or '').strip()
+                if ip:
+                    items[ip] = _blacklist_entry_from_row(row)
+            return items
         with file_lock(csv_file, "r") as f:
             reader = csv.DictReader(f)
             for row in reader:
@@ -200,6 +232,45 @@ def read_blacklist(data_dir: Path) -> dict[str, dict]:
                 items[ip] = _blacklist_entry_from_row(row)
         return items
     return safe_csv_operation(_read)
+
+
+def read_blacklist_entry(data_dir: Path, ip: str):
+    native = csv_function('csv_lookup')
+    if native is not None:
+        ensure_all(data_dir)
+        row = native(str(data_dir / BLACKLIST_CSV), 'ip', ip)
+        return _blacklist_entry_from_row(row) if row is not None else None
+    return read_blacklist(data_dir).get(ip)
+
+
+def native_block_blacklist(data_dir: Path, ip: str, reason: str, info=None, duration=None):
+    native = csv_function('csv_blacklist_block')
+    if native is None:
+        return False
+    ensure_all(data_dir)
+    now = time.time()
+    native(str(data_dir / BLACKLIST_CSV), CSV_HEADERS[BLACKLIST_CSV], ip, reason,
+           time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(now)),
+           (json.dumps(info, separators=(',', ':'), ensure_ascii=False) if info else '') if info is not None else None,
+           now, duration)
+    return True
+
+
+def native_check_blacklist(data_dir: Path, ip: str, now: float):
+    native = csv_function('csv_blacklist_check')
+    if native is None:
+        return None
+    ensure_all(data_dir)
+    return native(str(data_dir / BLACKLIST_CSV), CSV_HEADERS[BLACKLIST_CSV], ip, now)
+
+
+def native_remove_blacklist(data_dir: Path, ip: str):
+    native = csv_function('csv_remove_key')
+    if native is None:
+        return False
+    ensure_all(data_dir)
+    native(str(data_dir / BLACKLIST_CSV), CSV_HEADERS[BLACKLIST_CSV], ip)
+    return True
 
 
 def append_blacklist(data_dir: Path, ip: str, reason: str, info_json: str, metadata: Optional[dict] = None):
@@ -261,7 +332,19 @@ def read_keywords(data_dir: Path) -> set[str]:
 
 
 def append_keyword(data_dir: Path, keyword: str):
+    native = csv_function('csv_set_update')
+    if native is not None:
+        return native(str(data_dir / KEYWORDS_CSV), CSV_HEADERS[KEYWORDS_CSV],
+                      keyword, [keyword, now_iso()], False)
     return append_csv_row(data_dir, KEYWORDS_CSV, [keyword, now_iso()], CSV_HEADERS)
+
+
+def native_remove_keyword(data_dir: Path, keyword: str) -> bool:
+    native = csv_function('csv_set_update')
+    if native is None:
+        return False
+    native(str(data_dir / KEYWORDS_CSV), CSV_HEADERS[KEYWORDS_CSV], keyword, [], True)
+    return True
 
 
 def rewrite_keywords(data_dir: Path, keywords: set[str]):
@@ -274,6 +357,9 @@ def read_geo_blocked_countries(data_dir: Path) -> set[str]:
 
 
 def append_geo_blocked_country(data_dir: Path, country_code: str):
+    if native_policy_list_update(data_dir, GEO_BLOCKED_COUNTRIES_CSV, country_code,
+                                 [country_code, now_iso()], False, 'upper'):
+        return
     return append_csv_row(data_dir, GEO_BLOCKED_COUNTRIES_CSV, [country_code, now_iso()], CSV_HEADERS)
 
 
@@ -287,6 +373,9 @@ def read_path_exemptions(data_dir: Path) -> dict[str, str]:
 
 
 def append_path_exemption(data_dir: Path, path: str, reason: str):
+    if native_policy_list_update(data_dir, PATH_EXEMPTIONS_CSV, path,
+                                 [path, reason, now_iso()], False, 'lower'):
+        return
     return append_csv_row(data_dir, PATH_EXEMPTIONS_CSV, [path, reason, now_iso()], CSV_HEADERS)
 
 
