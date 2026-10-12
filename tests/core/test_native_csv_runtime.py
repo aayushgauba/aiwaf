@@ -483,7 +483,12 @@ def test_flask_php_probe_native_path(native, tmp_path):
 
 
 def test_disable_and_old_extension_fallback(native, monkeypatch, tmp_path):
+    import sys
     from aiwaf.core.native_runtime import csv_function
+    # This tests environment dispatch outside framework contexts. Other suites
+    # may have configured Django during collection; its settings take precedence.
+    monkeypatch.setitem(sys.modules, 'django.conf', None)
+    monkeypatch.setitem(sys.modules, 'flask', None)
     monkeypatch.setenv('AIWAF_RUST_CSV', 'false')
     assert csv_function('csv_read') is None
     storage_csv_impl.append_keyword(tmp_path, 'python')

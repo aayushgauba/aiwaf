@@ -1,3 +1,4 @@
+"""FastAPI trainer integration, native parity, and CLI regression tests."""
 import csv
 import sys
 from types import SimpleNamespace
