@@ -38,7 +38,10 @@ def _infer_framework_from_app(app) -> Optional[str]:
     return None
 
 
-def _detect_framework(explicit_framework: Optional[str], app=None) -> str:
+def _detect_framework(
+    explicit_framework: Optional[str], app=None, *,
+    selection_hint: str = "Pass --framework or --app so AIWAF can choose the correct adapter.",
+) -> str:
     framework = _normalize_framework(explicit_framework)
     if framework:
         return framework
@@ -54,12 +57,13 @@ def _detect_framework(explicit_framework: Optional[str], app=None) -> str:
     if not installed:
         raise SystemExit(
             "Could not detect a supported framework. Install Django, Flask, or FastAPI, "
-            "or pass --framework."
+            + selection_hint
         )
     raise SystemExit(
         "Multiple supported frameworks are installed: "
         + ", ".join(installed)
-        + ". Pass --framework or --app so AIWAF can choose the correct adapter."
+        + ". "
+        + selection_hint
     )
 
 
@@ -185,10 +189,10 @@ def main() -> None:
     """Top-level AIWAF CLI entrypoint.
 
     Supports both styles:
-    - `aiwaf <command> ...` (unified default command set)
-    - `aiwaf <framework> <command> ...` where framework is flask|fast|django
+    - `aiwaf <command> ...` (detect the single installed framework)
+    - `aiwaf <framework> <command> ...` where framework is flask|fastapi|fast|django
     """
-    frameworks = {"django", "flask", "fast"}
+    frameworks = {"django", "flask", "fast", "fastapi"}
     argv = list(sys.argv[1:])
 
     if argv and argv[0] == "init":
@@ -196,11 +200,13 @@ def main() -> None:
         return
 
     if argv and argv[0] in frameworks:
-        framework = argv[0]
+        framework = _normalize_framework(argv[0])
         framework_args = argv[1:]
     else:
-        # Unified shorthand: route bare commands through the shared Fast/Flask CLI.
-        framework = "fast"
+        framework = _detect_framework(
+            None,
+            selection_hint="Choose explicitly with `aiwaf flask ...`, `aiwaf fastapi ...`, or `aiwaf django ...`.",
+        )
         framework_args = argv
 
     if framework == "flask":
@@ -209,10 +215,11 @@ def main() -> None:
         sys.argv = ["aiwaf flask"] + list(framework_args)
         flask_main()
         return
-    if framework == "fast":
+    if framework == "fastapi":
         from aiwaf.fast.cli import main as fast_main
 
-        sys.argv = ["aiwaf fast"] + list(framework_args)
+        command_name = argv[0] if argv and argv[0] in {"fast", "fastapi"} else "fastapi"
+        sys.argv = ["aiwaf " + command_name] + list(framework_args)
         fast_main()
         return
     if framework == "django":

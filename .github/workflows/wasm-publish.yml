@@ -59,6 +59,9 @@ jobs:
       - name: Test Rust core
         run: cargo test --manifest-path rust/Cargo.toml --locked -p aiwaf_core
 
+      - name: Test native request engine policies
+        run: cargo test --manifest-path rust/Cargo.toml --locked -p aiwaf-wasm --lib
+
       - name: Test WebAssembly bindings
         working-directory: rust/crates/aiwaf_wasm
         run: wasm-pack test --node

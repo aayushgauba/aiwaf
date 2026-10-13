@@ -422,6 +422,10 @@ class ExemptionStore:
         self._exempt_patterns = list(exempt_data.get('patterns', []))
 
     def _native_update(self, operation, value, reason=""):
+        if getattr(self.storage, 'policy_csv', False):
+            found = self.storage.update_exemption(operation, value)
+            self._load_exemptions()
+            return found
         native = csv_function('csv_runtime_list_update') if isinstance(self.storage, CSVStorage) else None
         if native is None:
             return None
@@ -430,7 +434,7 @@ class ExemptionStore:
         return found
 
     def _refresh_csv(self):
-        if isinstance(self.storage, CSVStorage) and csv_function('csv_kv_get') is not None:
+        if getattr(self.storage, 'policy_csv', False) or (isinstance(self.storage, CSVStorage) and csv_function('csv_kv_get') is not None):
             self._load_exemptions()
     
     def _save_exemptions(self):
@@ -532,6 +536,10 @@ class BlacklistStore:
             duration: Block duration in seconds (None for permanent)
         """
         now = time.time()
+        if getattr(self.storage, 'policy_csv', False):
+            self.storage.block_ip(ip, reason, extended_request_info, duration)
+            logger.warning(f"IP {ip} blocked: {reason}")
+            return
         native = csv_function('csv_runtime_block') if isinstance(self.storage, CSVStorage) else None
         if native is not None:
             native(str(self.storage.file_path), ip, reason,
@@ -657,6 +665,9 @@ class KeywordStore:
         removed = {str(key).strip().lower() for key in removed if str(key).strip()}
         if not added and not removed:
             return
+        if getattr(self.storage, 'policy_csv', False):
+            self.storage.update_keywords(added, removed)
+            return
         native = csv_function('csv_runtime_keywords_update') if isinstance(self.storage, CSVStorage) else None
         if native is not None:
             native(str(self.storage.file_path), added, removed, time.time())
@@ -672,6 +683,9 @@ class KeywordStore:
         keyword = str(keyword).strip().lower()
         if not keyword:
             return
+        if getattr(self.storage, 'policy_csv', False):
+            self.storage.update_keywords([(keyword, count)])
+            return
         native = csv_function('csv_runtime_keyword') if isinstance(self.storage, CSVStorage) else None
         if native is not None:
             native(str(self.storage.file_path), keyword, int(count), False, time.time())
@@ -682,6 +696,9 @@ class KeywordStore:
 
     def remove_keyword(self, keyword: str):
         if not keyword:
+            return
+        if getattr(self.storage, 'policy_csv', False):
+            self.storage.update_keywords(removed=[str(keyword).strip().lower()])
             return
         native = csv_function('csv_runtime_keyword') if isinstance(self.storage, CSVStorage) else None
         if native is not None:
@@ -729,6 +746,17 @@ class GeoBlockStore:
         allow = normalize_country_list(allow_countries)
         block = normalize_country_list(block_countries)
         extra = normalize_country_list(extra_countries)
+        if (getattr(self.storage, 'policy_csv', False)
+                and type(self).get_countries is GeoBlockStore._default_get_countries
+                and 'get_countries' not in self.__dict__):
+            combined = csv_function('csv_geo_policy')
+            if combined is not None:
+                country = str(country or '').strip().upper()
+                if country in extra and country not in allow:
+                    return evaluate_geo_policy(country=country, allow_countries=allow,
+                        block_countries=block, dynamic_blocked=extra)
+                return GeoDecision(*combined(str(self.storage.data_dir / 'geo_blocked_countries.csv'),
+                    country, allow, block))
         native = (csv_function('csv_runtime_geo_policy') if type(self.storage) is CSVStorage
                   and type(self).get_countries is GeoBlockStore._default_get_countries
                   and 'get_countries' not in self.__dict__ else None)
@@ -743,6 +771,9 @@ class GeoBlockStore:
         code = str(country_code or "").strip().upper()
         if not code:
             return
+        if getattr(self.storage, 'policy_csv', False):
+            self.storage.update_country(code, remove=False)
+            return
         native = csv_function('csv_runtime_list_update') if isinstance(self.storage, CSVStorage) else None
         if native is not None:
             native(str(self.storage.file_path), 'add_country', code, '', time.time())
@@ -754,6 +785,9 @@ class GeoBlockStore:
     def remove_country(self, country_code: str):
         code = str(country_code or "").strip().upper()
         if not code:
+            return
+        if getattr(self.storage, 'policy_csv', False):
+            self.storage.update_country(code, remove=True)
             return
         native = csv_function('csv_runtime_list_update') if isinstance(self.storage, CSVStorage) else None
         if native is not None:
@@ -782,8 +816,8 @@ def initialize_storage(backend: str = "memory", **kwargs) -> StorageBackend:
         file_path = kwargs.get('file_path', 'aiwaf_data.json')
         _storage_backend = FileStorage(file_path)
     elif backend == "csv":
-        file_path = kwargs.get("file_path", "aiwaf_data.csv")
-        _storage_backend = CSVStorage(file_path)
+        from .policy_csv_storage import initialize_policy_csv
+        _storage_backend = initialize_policy_csv(data_dir=kwargs.get('data_dir'), file_path=kwargs.get('file_path'))
     elif backend == "db":
         file_path = kwargs.get("file_path", "aiwaf_data.db")
         _storage_backend = DBStorage(file_path)

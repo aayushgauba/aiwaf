@@ -34,10 +34,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build matching native WASM fixture for Jest
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install wasm-pack --locked
+          wasm-pack build ../rust/crates/aiwaf_wasm --release --target nodejs --out-dir pkg-node-test
+          echo "AIWAF_NATIVE_TEST_MODULE=$GITHUB_WORKSPACE/rust/crates/aiwaf_wasm/pkg-node-test/aiwaf_wasm.js" >> "$GITHUB_ENV"
+
       - name: Test
         run: |
           npm run test:coverage
           npm run test:wasm
+          npm run test:native
 
       - name: Audit production dependencies
         run: npm audit --omit=dev

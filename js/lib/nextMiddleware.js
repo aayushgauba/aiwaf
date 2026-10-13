@@ -42,8 +42,8 @@ function createExpressLikeResponse(res) {
 function wrapHandler(handler, opts) {
   const middleware = createExpressMiddleware(opts);
 
-  return async (req, res) => {
-    const handled = await new Promise(resolve => {
+  const wrapper = async (req, res) => {
+    const handled = await new Promise((resolve, reject) => {
       let done = false;
       const finish = () => {
         if (done) return;
@@ -53,12 +53,12 @@ function wrapHandler(handler, opts) {
       res.on('finish', finish);
       res.on('close', finish);
       const wrappedRes = createExpressLikeResponse(res);
-      const maybePromise = middleware(req, wrappedRes, () => finish());
+      const maybePromise = middleware(req, wrappedRes, error => error ? reject(error) : finish());
       if (wrappedRes._handled) {
         finish();
         return;
       }
-      Promise.resolve(maybePromise).then(finish).catch(finish);
+      Promise.resolve(maybePromise).then(() => finish()).catch(reject);
     });
 
     if (handled) return;
@@ -66,6 +66,8 @@ function wrapHandler(handler, opts) {
     if (res.finished) return;
     return handler(req, res);
   };
+  if (middleware.ready) wrapper.ready = middleware.ready;
+  return wrapper;
 }
 
 module.exports = function createNextHandler(handlerOrOpts, maybeOpts) {

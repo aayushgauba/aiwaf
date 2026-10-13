@@ -622,7 +622,7 @@ dependencies and traffic. `--plain` measures an endpoint without AIWAF, and the
 harness reports server processing time separately from HTTP latency.
 
 ```bash
-# Unified CLI
+# Auto-detected CLI (one supported framework installed)
 aiwaf --help
 aiwaf blacklist migrate
 aiwaf status
@@ -638,11 +638,47 @@ python manage.py geo_block_country list
 aiwaf django aiwaf_list --all
 aiwaf flask --help
 aiwaf fast --help
+aiwaf fastapi --help
 
 # FastAPI route-aware training using the application's runtime storage
 aiwaf fast train --app app:app --log-dir aiwaf_logs --disable-ai
 aiwaf fast train --app app:app --log-dir aiwaf_logs --model-path model.json
 ```
+
+Bare CLI commands select the single installed supported framework. If multiple
+frameworks are installed, specify `aiwaf flask ...`, `aiwaf fastapi ...`, or
+`aiwaf django <management-command> ...`. The `fast` alias remains supported.
+Django uses its management command names, such as `aiwaf_list`.
+
+The Flask CSV management CLI reuses existing policy files in the current project's
+`aiwaf_data` (preferred) or `.aiwaf/data` before searching user and package data
+directories. `AIWAF_DATA_DIR` or `aiwaf flask --data-dir /absolute/path status`
+overrides discovery, including for a new directory. Set the same absolute
+`AIWAF_DATA_DIR` for the Flask app and CLI when running them from different
+working directories.
+
+Flask, FastAPI, Django CSV mode, and the native Rust pipeline now use the same
+policy files: `blacklist.csv`, `whitelist.csv`, `keywords.csv`,
+`geo_blocked_countries.csv`, and `path_exemptions.csv`. For FastAPI, configure
+`storage.backend = "csv"` and `storage.data_dir = "/absolute/path/aiwaf_data"`;
+`AIWAF_DATA_DIR` also supplies the directory. Memory, JSON-file, database, and
+Django ORM modes retain their existing storage behavior.
+
+Startup imports a legacy `runtime_store.csv` in the chosen directory, or the
+old default `aiwaf_data.csv` beside the project's `aiwaf_data` directory.
+Existing custom `storage.file_path` settings remain accepted as migration
+sources: `/path/custom.csv` maps to `/path/custom/`, while `runtime_store.csv`
+maps to its parent. Prefer an explicit `data_dir` for the application and CLI.
+Original legacy files remain intact, pre-import canonical files are backed up,
+and a completion marker prevents replay after blocks or keywords are removed.
+Existing canonical policy wins conflicts. Invalid legacy input stops startup
+with an error; repair it and restart to retry an incomplete import. Stop old
+workers before upgrading: subsequent writes to a legacy source are not reimported.
+
+Keyword frequencies and non-policy runtime history are retained in
+`runtime_metadata.csv`; policy enforcement reads the shared policy files.
+The low-level `CSVStorage` key/value class remains available for explicit use,
+but framework CSV initialization selects `PolicyCSVStorage`.
 
 FastAPI also exposes `aiwaf.fast.trainer.train_from_logs(app, ...)`. Training
 refreshes learned keywords and can write a Rust JSON model artifact. Existing
@@ -736,10 +772,137 @@ npm run aiwaf -- manifest --framework express --routes routes.json --output .aiw
 
 AIWAF loads `aiwaf-wasm` when available and falls back to the JavaScript implementation when WASM initialization or conversion is not worthwhile. Small, object-heavy operations can be faster in JavaScript because crossing the JS/WASM boundary and serializing objects has a fixed cost. WASM is most useful for sufficiently large feature batches and model scoring workloads.
 
-The new native CSV transactions, streaming readers, and retained training batches
-described in the Python section are PyO3 capabilities. They are not exposed to
-Node.js by the current WASM integration; JavaScript storage and middleware
-orchestration continue to use their existing implementation.
+The Python filesystem CSV transactions and retained training bindings remain
+PyO3-specific. Node now also has an **explicit stateful WASM request pipeline**;
+its transport and filesystem I/O remain in JavaScript.
+
+### Rust-owned Node request pipeline
+
+Node 1.1.2 now requires `aiwaf-wasm>=0.2.2,<0.3`. From the current source checkout, build the companion package with
+`NativeRequestPipeline` support before using this adapter. Registry packages may
+not yet contain this new API. Publish the WASM 0.2.2 companion first; refresh the
+npm lockfile's registry integrity after publication, then run Node release gates
+and publish the Node package. The existing `aiwaf(options)` integration remains
+the legacy path; it does not switch automatically.
+
+```javascript
+const express = require('express');
+const aiwaf = require('aiwaf');
+
+async function main() {
+  const app = express();
+  // Configure trust proxy for your actual deployment; the native adapter uses req.ip.
+  app.use(express.json({ limit: '64kb' }));
+  app.use(express.urlencoded({ extended: false, limit: '64kb' }));
+  const firewall = await aiwaf.native({
+    dataDir: 'aiwaf_native_data',
+    profile: { rate_key_mode: 'ip_path', min_form_time: 1.0 },
+    // Optional synchronous adapter facts; use your application's authentication.
+    authenticated: req => Boolean(req.user),
+    routeExists: req => req.path === '/api/ok'
+  });
+  app.use(firewall);
+  app.get('/api/ok', (_req, res) => res.json({ ok: true }));
+  app.listen(3000);
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });
+```
+
+Configuration and native API checks happen once at startup. Rust runs geo,
+IP/keyword/structured SQL inspection, rate/flood, anomaly block state, honeypot,
+UUID and header checks in one `begin` call. A single `finish` call owns response
+observations, UUID scores, anomaly features/history/inference, bounded keyword
+learning, and escaped CSV row formatting. Node normalizes framework facts,
+serializes the request envelope, emits responses, and appends the returned rows
+using cached file descriptors. Logging is immediate, not queued or batched.
+
+The dedicated lowercase `profile` rejects unknown keys. It does not import legacy
+settings, PATH_RULES/manifests, Redis, custom stores, UUID resolver callbacks or
+ORM state. Missing native support fails startup with no JavaScript policy fallback.
+Install this adapter instead of the existing chain, not alongside it. Bounded body
+parsers must run first; an unparsed body with a declared length/chunked encoding
+is rejected with 413 when inspection is enabled. Upload streams require another
+integration path. `countryLookup(req)`, `authenticated(req)` and `routeExists(req)`
+are optional synchronous fact callbacks; country defaults to unknown and route
+existence to `Boolean(req.route)`. Supply accurate facts when the firewall runs
+before Express resolves routes. Country headers are not implicitly trusted.
+
+All eight stages are enabled by default. Native defaults include:
+
+| Profile setting | Default / scope |
+| --- | --- |
+| `exempt_paths`, `exempt_ips` | `/health`, `/robots.txt`, `/sitemap.xml`; no IPs; literal case-insensitive path prefixes |
+| `sql_mode`, `max_bytes` | `block`, `65536`; `off` supported, monitor rejected; bounded nested JSON/form values and double URL decoding |
+| `static_keywords`, `dynamic_keywords`, `legitimate_keywords`, `learning` | Native vocabulary, empty dynamic set, legitimate exact route names, `true`; learned probe segments capped at 4096 |
+| `geo_allow`, `geo_block`, `blacklist` | Empty; blacklist maps IP to Unix expiry seconds (`0` permanent) |
+| `rate_window`, `rate_max`, `rate_flood`, `rate_key_mode` | `10` seconds, `20`, `40`, `ip_path`; `ip` also supported |
+| `min_form_time`, `max_page_time`, `skip_authenticated`, `honeypot_field` | `1.0`, `240` seconds, `true`, empty field; local Rust timing state |
+| `allowed_methods`, `uuid_prefix`, `uuid_window`, `uuid_threshold` | Empty method restriction, `/user/`, `60` seconds, `5` repeated UUID 404s; malformed UUID denied immediately |
+| `required_headers`, `header_min_score` | `HTTP_USER_AGENT`, `HTTP_ACCEPT`; score `3`, plus header safety caps |
+| `anomaly_window`, `max_history`, `max_clients`, `max_pending` | `60` seconds, `1000`, `100000`, `10000`; periodic cleanup and bounded state |
+| `block_duration` | `86400` seconds for newly generated blocks |
+
+Rate counters, honeypot timestamps, UUID scores, anomaly history and loaded policy
+snapshots are local to each engine/worker and reset on restart. Blocks and learned
+keywords append to dedicated `native_blocks.csv`/`native_keywords.csv`, synced
+immediately, and replay at startup (`persistBlocks: false` disables this disk
+history). Policy files are **not live synchronized across workers**; do not share
+the native state/log files across worker processes. These schemas and block rules
+are separate from legacy reputation/CLI stores. Restart/reconstruct to apply
+changed policies; no backend migration or automatic legacy CSV import occurs.
+
+`native_requests.csv` is written immediately; `logFsync` defaults to false and
+optionally syncs every log row. `logPath` overrides its location. CSV formatting
+and policy decisions run in Rust; Node necessarily owns actual filesystem calls.
+Finalization runs on response `finish` (or `close`, recorded as 499), uses a Node
+monotonic elapsed clock, and executes once per engine-owned context. Stop requests,
+wait for responses, then call `firewall.close()` to release writers/WASM state.
+Logging/persistence errors invoke `onError(error)` or report to stderr; an already
+completed response cannot be retracted.
+After rotating native log files, reload workers to reopen the cached writers;
+ordinary appends do not check file metadata or reopen descriptors per request.
+
+Pass a fitted six-feature Rust/WASM forest as `model` (from
+`aiwaf.wasm.createIsolationForest` with `__aiwafWasm === true`). The engine copies
+its snapshot; `firewall.setModel(model)` replaces it and `setModel(null)` disables
+inference. Node's feature order remains `[pathLen, kwHits, statusIdx, responseTime,
+burst, total404]`, with response time in **milliseconds**, distinct from Python's
+contract. Model scoring/behavior gates at response finalization can update block
+state for later requests. No model means history/learning without model blocking.
+`firewall.diagnostics()` reports native activation, actual inference count and
+state sizes. There are no historical request-log database reads per request.
+
+Fastify/Hapi/Koa/Nest/Next/Adonis/Sails can select the same engine with the sole
+outer option `AIWAF_NATIVE_PIPELINE: { profile: {...}, dataDir: '...' }`. Do not mix
+legacy options. Fastify initializes during registration and executes at
+`preValidation`; Hapi initializes during registration, begins enforcement on
+`onRequest` (including unknown routes), then makes an additional native call at
+`onPreHandler` for parsed-body inspection and authenticated form timing.
+Koa/Adonis wrappers and Next API handlers expose `.ready`;
+Nest's middleware class exposes static `.ready`; await those promises before
+starting the application. Fastify/Hapi close the engine on shutdown; use the
+resolved native handle's `close()` for the other wrappers. Route metadata must be
+installed before enforcement; required middleware overrides decorator exemptions,
+while profile-level exemptions remain global. Next integration is Node API routes,
+not Edge/Fetch middleware.
+
+Run `npm run test:native` in `js/` against the built WASM package and
+`node scripts/benchmark_js_pipeline.js` for full HTTP comparisons. The benchmark
+subtracts bare Express server processing latency and includes synchronous response
+finalization/logging. Its legacy comparison uses SQLite policy lookups and JSONL
+logging, while native uses Rust state and CSV output; this is an integration
+comparison with different persistence/policy semantics, not a pure language test.
+
+The matched Windows HTTP benchmark (Node v22.18.0, Express 4.22.1) measured:
+
+| Mode | Server processing | Added overhead |
+| --- | ---: | ---: |
+| Express only | 0.37 ms | 0.00 ms |
+| Legacy, AI off | 3.86 ms | 3.48 ms |
+| Native, AI off | 0.60 ms | 0.22 ms |
+| Native, AI on | 0.64 ms | 0.27 ms |
+
+Server samples include synchronous finalization and immediate logging. Overhead subtracts the matched bare Express baseline; figures are medians of per-run means. Legacy uses SQLite policy lookups and one immediate JSONL append; native uses Rust state and one immediate CSV append. These stores/policies have different persistence semantics, so this is an integration comparison, not a pure Rust-versus-JavaScript equivalence test. GeoIP is an unknown-country fixture, not a real database lookup. Synthetic local latency does not establish production throughput or latency.
 
 ### JavaScript training and operations
 

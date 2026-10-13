@@ -24,6 +24,7 @@ dependencies = [
  "aiwaf_core",
  "getrandom",
  "js-sys",
+ "regex",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

@@ -87,7 +87,7 @@ def _train(argv):
     parser = argparse.ArgumentParser(description='Train FastAPI AIWAF using its routes and runtime storage')
     parser.add_argument('--app', required=True, help='FastAPI application import path (module:app)')
     parser.add_argument('--log-dir')
-    parser.add_argument('--data-dir', help='Override runtime CSV directory (runtime_store.csv)')
+    parser.add_argument('--data-dir', help='Shared policy CSV directory (imports legacy runtime_store.csv)')
     parser.add_argument('--disable-ai', action='store_true')
     parser.add_argument('--force-ai', action='store_true')
     parser.add_argument('--min-ai-logs', type=int, default=10000)
@@ -99,7 +99,7 @@ def _train(argv):
     app = _load_fastapi_app(args.app)
     if args.data_dir:
         from aiwaf.core.runtime_storage import initialize_storage
-        initialize_storage('csv', file_path=str(Path(args.data_dir) / 'runtime_store.csv'))
+        initialize_storage('csv', data_dir=args.data_dir)
     from aiwaf.fast.trainer import train_from_logs
     import json
     result = train_from_logs(app, log_dir=args.log_dir, disable_ai=args.disable_ai,

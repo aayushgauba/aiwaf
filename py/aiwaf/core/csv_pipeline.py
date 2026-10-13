@@ -53,6 +53,10 @@ class CSVPipeline:
             factory = importlib.import_module("aiwaf_rust").NativeCSVPipeline
         except (ImportError, AttributeError) as error:
             raise RuntimeError("The CSV pipeline requires aiwaf-rust with NativeCSVPipeline support") from error
+        directory = config.get('data_dir', 'aiwaf_data')
+        if isinstance(directory, str) and directory:
+            from .policy_csv_storage import PolicyCSVStorage
+            PolicyCSVStorage(data_dir=directory)
         self.native = factory(json.dumps(config, allow_nan=False))
         self.policy = _BufferPolicy(config.get("sql_mode", "block"), config.get("max_bytes", 65536))
         if model is not None:

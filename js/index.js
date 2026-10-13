@@ -27,6 +27,8 @@ function withMiddlewares(selection) {
 }
 
 module.exports = createExpressMiddleware;
+// Await startup once; this path requires native support and has no JS policy fallback.
+module.exports.native = require('./lib/nativePipeline');
 module.exports.fastify = createFastifyPlugin;
 module.exports.hapi = createHapiPlugin;
 module.exports.koa = createKoaMiddleware;

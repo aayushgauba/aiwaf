@@ -19,6 +19,38 @@ use std::collections::HashMap;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::{Headers, Window};
+mod request_pipeline;
+
+/// Explicit stateful request engine. No JavaScript policy fallback.
+#[wasm_bindgen]
+pub struct NativeRequestPipeline {
+    inner: request_pipeline::Engine,
+}
+
+#[wasm_bindgen]
+impl NativeRequestPipeline {
+    #[wasm_bindgen(constructor)]
+    pub fn new(profile: &str) -> Result<NativeRequestPipeline, JsValue> {
+        Ok(Self { inner: request_pipeline::Engine::new(profile).map_err(|e| JsValue::from_str(&e))? })
+    }
+    pub fn begin(&mut self, request: &str) -> Result<String, JsValue> {
+        self.inner.begin(request).map_err(|e| JsValue::from_str(&e))
+    }
+    pub fn finish(&mut self, context: &str, status: u16, elapsed_ms: f64, now: f64) -> Result<String, JsValue> {
+        self.inner.finish(context, status, elapsed_ms, now).map_err(|e| JsValue::from_str(&e))
+    }
+    pub fn inspect_payload(&self, payload: &str) -> Result<String, JsValue> {
+        self.inner.inspect_payload(payload).map_err(|e| JsValue::from_str(&e))
+    }
+    pub fn inspect_body(&mut self, context:&str, payload:&str, exhausted:bool, authenticated:bool, now:f64)->Result<String,JsValue> {
+        self.inner.inspect_body(context,payload,exhausted,authenticated,now).map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn set_model(&mut self, model: &IsolationForest) -> Result<(), JsValue> {
+        self.inner.set_model(model.inner.clone()).map_err(|e| JsValue::from_str(&e))
+    }
+    pub fn clear_model(&mut self) { self.inner.model = None; }
+    pub fn diagnostics(&self) -> String { self.inner.diagnostics() }
+}
 
 #[wasm_bindgen]
 pub struct KeywordMatcher {

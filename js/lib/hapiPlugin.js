@@ -50,6 +50,28 @@ module.exports = {
   register: async (server, opts = {}) => {
     const middleware = createExpressMiddleware(opts);
 
+    if (middleware.ready) {
+      const native = await middleware.ready;
+      const { DEFER_BODY } = require('./nativePipeline');
+      server.ext('onRequest', (request, h) => {
+        const req = request.raw.req;
+        req.ip = request.info.remoteAddress; req.path = request.path;
+        req.url = request.url.pathname + request.url.search;
+        req[DEFER_BODY] = true;
+        req.body = undefined; req.query = undefined;
+        const res = createExpressLikeResponse(h, request.raw.res);
+        native(req, res, error => { if (error) throw error; });
+        return res._handled ? res.toResponse().takeover() : h.continue;
+      });
+      server.ext('onPreHandler', (request,h) => {
+        request.raw.req.auth = request.auth;
+        const finding=native.inspectBody(request.raw.req,request.payload);
+        return finding ? h.response({error:finding.rule}).code(finding.status).takeover() : h.continue;
+      });
+      server.events.once('stop', () => native.close());
+      return;
+    }
+
     server.ext('onPreHandler', async (request, h) => {
       const finding = await middleware.inspectPayload({
         headers: request.headers, ip: request.info?.remoteAddress,

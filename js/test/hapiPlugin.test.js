@@ -64,7 +64,9 @@ describe('AIWAF Hapi plugin', () => {
     const res = await server.inject({
       method: 'GET',
       url: '/safe',
-      headers: { 'x-forwarded-for': '198.51.100.20' }
+      headers: { 'x-forwarded-for': '198.51.100.20',
+        'user-agent': 'Mozilla/5.0 Chrome/130.0 Safari/537.36',
+        accept: 'text/html', 'accept-language': 'en', 'accept-encoding': 'gzip' }
     });
     expect(res.statusCode).toBe(200);
     await server.stop();
@@ -126,6 +128,8 @@ describe('AIWAF Hapi plugin', () => {
     });
     const headers = {
       'x-forwarded-for': '198.51.100.24',
+      'user-agent': 'Mozilla/5.0 Chrome/130.0 Safari/537.36',
+      'accept-language': 'en', 'accept-encoding': 'gzip',
       accept: 'application/json'
     };
     const first = await server.inject({ method: 'GET', url: '/safe', headers });

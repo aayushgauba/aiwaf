@@ -46,7 +46,7 @@ function createExpressLikeResponse(ctx) {
 module.exports = function createAdonisMiddleware(opts = {}) {
   const middleware = createExpressMiddleware(opts);
 
-  return async (ctx, next) => {
+  const wrapper = async (ctx, next) => {
     const req = ctx.request?.request || ctx.request || {};
     const res = createExpressLikeResponse(ctx);
 
@@ -58,11 +58,12 @@ module.exports = function createAdonisMiddleware(opts = {}) {
     
     // Don't override headers - the raw request already has them from the HTTP server
 
-    await new Promise(resolve => {
+    await new Promise((resolve, reject) => {
       let resolved = false;
-      const finish = () => {
+      const finish = error => {
         if (resolved) return;
         resolved = true;
+        if (error) { reject(error); return; }
         resolve();
       };
       const maybePromise = middleware(req, res, finish);
@@ -70,7 +71,7 @@ module.exports = function createAdonisMiddleware(opts = {}) {
         finish();
         return;
       }
-      Promise.resolve(maybePromise).then(finish).catch(finish);
+      Promise.resolve(maybePromise).then(() => finish()).catch(reject);
     });
 
     if (res._handled || ctx.response?.response?.writableEnded || ctx.response?.response?.headersSent) {
@@ -79,4 +80,6 @@ module.exports = function createAdonisMiddleware(opts = {}) {
 
     await next();
   };
+  if (middleware.ready) wrapper.ready = middleware.ready;
+  return wrapper;
 };

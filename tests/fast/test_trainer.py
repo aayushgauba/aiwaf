@@ -70,4 +70,5 @@ def test_fast_cli_train_avoids_flask_fallback(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, 'argv', ['aiwaf-fast', '--data-dir', str(tmp_path), 'train', '--app', 'sample:app', '--disable-ai'])
     cli.main()
     assert '50' in capsys.readouterr().out
-    assert get_storage().file_path == tmp_path / 'runtime_store.csv'
+    assert get_storage().data_dir == tmp_path
+    assert get_storage().file_path == tmp_path / 'runtime_metadata.csv'

@@ -187,6 +187,7 @@ class AIWAFConfig:
             # Storage
             'AIWAF_STORAGE_BACKEND': ('storage', 'backend'),
             'AIWAF_STORAGE_FILE_PATH': ('storage', 'file_path'),
+            'AIWAF_DATA_DIR': ('storage', 'data_dir'),
             
             # Header validation
             'AIWAF_HEADER_VALIDATION_ENABLED': ('header_validation', 'enabled', bool),
@@ -408,7 +409,11 @@ class AIWAFConfig:
     
     def get_storage_config(self) -> Dict[str, Any]:
         """Get storage specific configuration."""
-        return self.get('storage', {})
+        result = dict(self.get('storage', {}))
+        if result.get('backend') == 'csv' and result.get('file_path') == 'aiwaf_data.json':
+            # The default JSON path belongs to the file backend.
+            result.pop('file_path')
+        return result
     
     def get_rate_limiting_config(self) -> Dict[str, Any]:
         """Get rate limiting specific configuration."""

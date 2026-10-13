@@ -76,6 +76,7 @@ from ..core.honeypot import (
 from ..core.ip_keyword import evaluate_keyword_policy
 from ..core.request_engine import prepare_request_engine
 from ..core.runtime_storage import KeywordStore as RuntimeKeywordStore, CSVStorage
+from ..core.policy_csv_storage import PolicyCSVStorage
 from . import storage as _engine_storage
 _DEFAULT_ENGINE_KEYWORD = evaluate_keyword_policy
 _DEFAULT_ENGINE_PATH_EXISTS = path_exists_in_django
@@ -539,7 +540,7 @@ class IPAndKeywordBlockMiddleware:
             standard_converters = {IntConverter, PathConverter, SlugConverter, StringConverter, UUIDConverter}
             runtime_store = _engine_storage.runtime_get_keyword_store()
             if (type(keyword_store) is _engine_storage.CSVKeywordStoreAdapter
-                    and type(runtime_store) is RuntimeKeywordStore and type(runtime_store.storage) is CSVStorage
+                    and type(runtime_store) is RuntimeKeywordStore and type(runtime_store.storage) in {CSVStorage, PolicyCSVStorage}
                     and keyword_store.add_keyword is _DEFAULT_ENGINE_ADD
                     and keyword_store.get_top_keywords is _DEFAULT_ENGINE_TOP
                     and getattr(runtime_store.add_keyword, '__func__', None) is _DEFAULT_RUNTIME_ENGINE_ADD
@@ -552,7 +553,9 @@ class IPAndKeywordBlockMiddleware:
                     path=request.path, query_context=request.META.get('QUERY_STRING', ''),
                     query_keys=extract_query_keys_from_django_request(request), exists=path_exists,
                     learning=self.keyword_learning_enabled, top_n=getattr(settings, 'AIWAF_DYNAMIC_TOP_N', 10),
-                    file=runtime_store.storage.file_path, counts=True, static=STATIC_KW,
+                    file=(runtime_store.storage.data_dir / 'keywords.csv' if type(runtime_store.storage) is PolicyCSVStorage
+                          else runtime_store.storage.file_path),
+                    counts=type(runtime_store.storage) is CSVStorage, static=STATIC_KW,
                     legitimate=self.legitimate_path_keywords, exempt=self.exempt_keywords,
                     prefixes=self.safe_prefixes, malicious=self.malicious_keywords, sql_prechecked=True)
                 if prepared:

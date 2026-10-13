@@ -31,6 +31,21 @@ function createExpressLikeResponse(reply) {
 function fastifyPlugin(fastify, opts = {}, done) {
   const middleware = createExpressMiddleware(opts);
 
+  if (middleware.ready) {
+    // Parsed bodies are available here; do not reject/inspect an unparsed stream onRequest.
+    fastify.addHook('preValidation', async (request, reply) => {
+      const native = await middleware.ready;
+      const req = request.raw;
+      req.ip = request.ip; req.body = request.body; req.query = request.query;
+      req.path = String(req.url || '/').split('?')[0];
+      await native(req, createExpressLikeResponse(reply), error => { if (error) throw error; });
+      if (reply.sent) return reply;
+    });
+    fastify.addHook('onClose', async () => (await middleware.ready).close());
+    middleware.ready.then(() => done(), done);
+    return;
+  }
+
   fastify.addHook('onRequest', async (request, reply) => {
     const res = createExpressLikeResponse(reply);
     await middleware(request.raw, res, () => {});

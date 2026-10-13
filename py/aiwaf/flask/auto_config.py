@@ -33,6 +33,21 @@ class AIWAFAutoConfig:
         # Method 1: Environment variable (highest priority - always consistent)
         if self._check_environment_variable():
             return self.data_dir
+
+        # Older Flask installations use the project's aiwaf_data directory.
+        # Prefer that application's policy over unrelated user/global stores.
+        for project_dir in (Path.cwd() / 'aiwaf_data', Path.cwd() / '.aiwaf' / 'data'):
+            if self._has_policy_files(project_dir):
+                self.data_dir = str(project_dir.absolute())
+                self.detected_config = {
+                    'method': 'existing_project_directory',
+                    'found_at': self.data_dir,
+                }
+                return self.data_dir
+        if (Path.cwd() / 'aiwaf_data.csv').is_file():
+            self.data_dir = str((Path.cwd() / 'aiwaf_data').absolute())
+            self.detected_config = {'method': 'existing_project_directory', 'found_at': self.data_dir}
+            return self.data_dir
             
         # Method 2: Find the BEST existing data directory (most data, avoid nesting)
         if self._find_best_existing_data_directory():
@@ -44,7 +59,8 @@ class AIWAFAutoConfig:
     def _check_environment_variable(self) -> bool:
         """Check if AIWAF_DATA_DIR is set in environment."""
         env_dir = os.environ.get('AIWAF_DATA_DIR')
-        if env_dir and Path(env_dir).exists():
+        if env_dir:
+            Path(env_dir).mkdir(parents=True, exist_ok=True)
             self.data_dir = str(Path(env_dir).absolute())
             self.detected_config['method'] = 'environment_variable'
             return True
@@ -163,7 +179,7 @@ class AIWAFAutoConfig:
     def _validate_aiwaf_data_dir(self, path: Path) -> bool:
         """Validate that a directory looks like an AIWAF data directory."""
         # Check for characteristic files
-        csv_files = ['whitelist.csv', 'blacklist.csv', 'keywords.csv', 'geo_blocked_countries.csv']
+        csv_files = ['whitelist.csv', 'blacklist.csv', 'keywords.csv', 'geo_blocked_countries.csv', 'path_exemptions.csv']
         
         # If any CSV files exist, consider it valid
         if any((path / csv_file).exists() for csv_file in csv_files):
@@ -177,6 +193,12 @@ class AIWAFAutoConfig:
             pass
             
         return False
+
+    @staticmethod
+    def _has_policy_files(path: Path) -> bool:
+        from aiwaf.core.storage_schema import CSV_HEADERS
+
+        return path.is_dir() and any((path / name).is_file() for name in (*CSV_HEADERS, 'runtime_store.csv'))
     
     def _detect_project_structure(self) -> bool:
         """Detect project structure and infer best data directory location."""
@@ -459,14 +481,9 @@ class AIWAFAutoConfig:
                 continue
                 
             try:
-                # Check direct aiwaf_data directory in this path
-                direct_aiwaf_data = search_path / 'aiwaf_data'
-                if direct_aiwaf_data.exists() and direct_aiwaf_data.is_dir() and self._validate_aiwaf_data_dir(direct_aiwaf_data):
-                    data_score = self._calculate_data_directory_score(direct_aiwaf_data)
-                    candidates.append((data_score, str(direct_aiwaf_data.absolute()), direct_aiwaf_data))
-                
-                # Also check if search_path itself is an aiwaf_data directory
-                if search_path.name == 'aiwaf_data' and self._validate_aiwaf_data_dir(search_path):
+                # Each candidate is already a data directory, including those
+                # named 'data'. Do not accidentally search data/aiwaf_data.
+                if self._has_policy_files(search_path):
                     data_score = self._calculate_data_directory_score(search_path)
                     candidates.append((data_score, str(search_path.absolute()), search_path))
                     
@@ -490,7 +507,7 @@ class AIWAFAutoConfig:
     def _calculate_data_directory_score(self, path: Path) -> int:
         """Calculate a score for a data directory based on its contents."""
         score = 0
-        csv_files = ['whitelist.csv', 'blacklist.csv', 'keywords.csv', 'geo_blocked_countries.csv']
+        csv_files = ['whitelist.csv', 'blacklist.csv', 'keywords.csv', 'geo_blocked_countries.csv', 'path_exemptions.csv']
         
         for csv_file in csv_files:
             csv_path = path / csv_file
@@ -588,6 +605,7 @@ def print_auto_config_info(config_info: Dict[str, Any]) -> None:
         'environment_variable': 'Found AIWAF_DATA_DIR environment variable',
         'package_based_location': 'Located data directory near package installation',
         'best_existing_directory': 'Selected data directory with most existing data',
+        'existing_project_directory': 'Found existing project CSV data',
         'user_data_directory': 'Created in user-specific location for consistency',
         'temp_user_directory': 'Using temporary user-specific directory',
         # Legacy methods (still supported)

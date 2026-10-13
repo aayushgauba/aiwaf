@@ -13,7 +13,7 @@ except ImportError:
     aiwaf_rust = None
 
 
-@skipUnless(aiwaf_rust and hasattr(aiwaf_rust, 'csv_runtime_geo_policy'), 'Requires rebuilt geo extension')
+@skipUnless(aiwaf_rust and hasattr(aiwaf_rust, 'csv_geo_policy'), 'Requires rebuilt geo extension')
 class CombinedCSVGeoTests(TestCase):
     def setUp(self):
         directory = TemporaryDirectory()
@@ -55,7 +55,7 @@ class CombinedCSVGeoTests(TestCase):
     def test_exemption_and_disabled_native(self):
         from aiwaf.core.runtime_storage import get_geo_block_store
         get_geo_block_store().add_country('US')
-        with patch.object(aiwaf_rust, 'csv_runtime_geo_policy', side_effect=AssertionError('Unexpected native geo')):
+        with patch.object(aiwaf_rust, 'csv_geo_policy', side_effect=AssertionError('Unexpected native geo')):
             with patch.object(self.mw, 'is_exempt', return_value=True):
                 self.assertIsNone(self.mw.GeoBlockMiddleware(lambda _: None).process_request(self.request))
             with override_settings(AIWAF_USE_RUST=False):

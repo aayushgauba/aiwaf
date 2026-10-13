@@ -48,7 +48,7 @@ def get_storage_instance():
         def _read_csv_whitelist():
             """Read whitelist from CSV."""
             data_dir = Path(_get_data_dir())
-            data_dir.mkdir(exist_ok=True)
+            data_dir.mkdir(parents=True, exist_ok=True)
             whitelist_file = data_dir / 'whitelist.csv'
             
             whitelist = set()
@@ -274,6 +274,9 @@ class AIWAFManager:
                 print_auto_config_info(config_info)
             except ImportError:
                 print(f" Using {self.storage['mode']} storage: {self.storage['data_dir']()}")
+
+        from aiwaf.core.policy_csv_storage import PolicyCSVStorage
+        self.policy_storage = PolicyCSVStorage(data_dir=self.storage['data_dir']())
     
     def list_whitelist(self) -> List[str]:
         """Get all whitelisted IPs."""

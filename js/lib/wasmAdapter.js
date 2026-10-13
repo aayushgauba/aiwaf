@@ -45,7 +45,8 @@ async function loadWasmFromDisk() {
     build_records: bg.build_records,
     rust_payload_from_records: bg.rust_payload_from_records,
     python_feature_from_record: bg.python_feature_from_record,
-    python_features_batched: bg.python_features_batched
+    python_features_batched: bg.python_features_batched,
+    NativeRequestPipeline: bg.NativeRequestPipeline
   };
 }
 
@@ -522,7 +523,29 @@ function getWasmStatus() {
   };
 }
 
+async function createRequestPipeline(profile = {}, model = null) {
+  const mod = await loadWasm();
+  if (!mod || typeof mod.NativeRequestPipeline !== 'function') {
+    throw new Error('Native pipeline requires aiwaf-wasm with NativeRequestPipeline support; no fallback');
+  }
+  const native = new mod.NativeRequestPipeline(JSON.stringify(profile));
+  if (['begin','finish','inspect_payload','inspect_body','set_model','clear_model','diagnostics'].some(name => typeof native[name] !== 'function')) {
+    native.free();
+    throw new Error('Incompatible NativeRequestPipeline API; install the matching WASM build');
+  }
+  const setModel = value => {
+    if (value == null) { native.clear_model(); return; }
+    if (!value.__aiwafWasm || typeof value.toJSON !== 'function') throw new TypeError('A trained Rust/WASM model is required');
+    const Forest = mod.IsolationForest || mod.AiwafIsolationForest;
+    const snapshot = Forest.from_json(value.toJSON());
+    try { native.set_model(snapshot); } finally { snapshot.free(); }
+  };
+  try { if (model) setModel(model); } catch (error) { native.free(); throw error; }
+  return { native, setModel };
+}
+
 module.exports = {
+  createRequestPipeline,
   createIsolationForest,
   createIsolationForestFromJSON,
   validateHeaders,

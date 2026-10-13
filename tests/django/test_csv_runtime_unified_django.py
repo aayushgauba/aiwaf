@@ -1,31 +1,39 @@
-import pytest
-from django.test import override_settings
+import csv
+import json
+import time
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from django.test import SimpleTestCase, override_settings
 
-pytestmark = pytest.mark.django
 
+class UnifiedCSVStorageTests(SimpleTestCase):
+    def test_shared_policy_files_and_legacy_migration(self):
+        from aiwaf.django.storage import get_blacklist_store, get_exemption_store, get_keyword_store
+        from aiwaf.core import storage_csv_impl as policy
+        from aiwaf.core.runtime_storage import get_storage
 
-def test_django_csv_mode_uses_runtime_storage_and_persists(tmp_path):
-    from aiwaf.django.storage import (
-        get_blacklist_store,
-        get_exemption_store,
-        get_keyword_store,
-    )
-
-    with override_settings(AIWAF_STORAGE_MODE="csv", AIWAF_DATA_DIR=str(tmp_path)):
-        exemption_store = get_exemption_store()
-        blacklist_store = get_blacklist_store()
-        keyword_store = get_keyword_store()
-
-        ip = "203.0.113.10"
-        exemption_store.add_exemption(ip, "trusted test ip")
-        assert exemption_store.is_exempted(ip) is True
-
-        blacklist_store.block_ip("198.51.100.23", "csv django test block")
-        assert blacklist_store.is_blocked("198.51.100.23") is True
-
-        keyword_store.add_keyword("runtime-csv-keyword", count=2)
-        top = keyword_store.get_top_keywords(10)
-        assert "runtime-csv-keyword" in top
-
-        runtime_csv = tmp_path / "runtime_store.csv"
-        assert runtime_csv.exists(), "Expected shared runtime CSV backend file to exist"
+        with TemporaryDirectory() as directory, override_settings(AIWAF_STORAGE_MODE='csv', AIWAF_DATA_DIR=directory):
+            root = Path(directory)
+            source = root / 'runtime_store.csv'
+            expiry = time.time() + 600
+            with source.open('w', newline='') as stream:
+                writer = csv.writer(stream)
+                writer.writerow(['key', 'value', 'expires_at'])
+                writer.writerow(['blocked:203.0.113.8', json.dumps({'reason': 'legacy', 'expires_at': expiry}), expiry])
+                writer.writerow(['keyword_counts', json.dumps({'legacy-keyword': 7}), ''])
+            original = source.read_bytes()
+            exemptions = get_exemption_store()
+            blocks = get_blacklist_store()
+            keywords = get_keyword_store()
+            self.assertTrue(blocks.is_blocked('203.0.113.8'))
+            self.assertEqual(policy.read_blacklist(root)['203.0.113.8']['expires_at'], expiry)
+            self.assertEqual(get_storage().get('keyword_counts'), {'legacy-keyword': 7})
+            exemptions.add_exemption('192.0.2.1', 'trusted')
+            self.assertIn('192.0.2.1', policy.read_whitelist(root))
+            blocks.block_ip('198.51.100.23', 'Django canonical block')
+            self.assertIn('198.51.100.23', policy.read_blacklist(root))
+            keywords.add_keyword('shared-keyword', count=2)
+            self.assertIn('shared-keyword', policy.read_keywords(root))
+            blocks.unblock_ip('203.0.113.8')
+            self.assertFalse(get_blacklist_store().is_blocked('203.0.113.8'))
+            self.assertEqual(source.read_bytes(), original)

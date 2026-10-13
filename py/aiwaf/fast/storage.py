@@ -17,12 +17,14 @@ from aiwaf.core.runtime_storage import (
     get_storage,
     initialize_storage,
 )
+from aiwaf.core.policy_csv_storage import PolicyCSVStorage
 
 __all__ = [
     "StorageBackend",
     "MemoryStorage",
     "FileStorage",
     "CSVStorage",
+    "PolicyCSVStorage",
     "DBStorage",
     "ExemptionStore",
     "BlacklistStore",

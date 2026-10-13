@@ -17,6 +17,7 @@ js-sys = "0.3"
 web-sys = { version = "0.3", features = ["Headers", "Window", "Navigator"] }
 getrandom = { version = "0.2", features = ["js"] }
 serde_json = "1"
+regex = "1"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

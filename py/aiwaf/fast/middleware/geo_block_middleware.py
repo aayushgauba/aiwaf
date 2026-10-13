@@ -10,6 +10,7 @@ from ..storage import get_geo_block_store
 from ..utils import get_blacklist_extended_info, get_ip, is_exempt
 from aiwaf.core.geo_policy import evaluate_geo_policy, normalize_country_list
 from aiwaf.core.runtime_storage import GeoBlockStore, CSVStorage
+from aiwaf.core.policy_csv_storage import PolicyCSVStorage
 from aiwaf.core.native_runtime import native_override
 
 _DEFAULT_GEO_POLICY = evaluate_geo_policy
@@ -37,7 +38,7 @@ class GeoBlockMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         store = get_geo_block_store()
-        combined = (type(store) is GeoBlockStore and type(store.storage) is CSVStorage
+        combined = (type(store) is GeoBlockStore and type(store.storage) in {CSVStorage, PolicyCSVStorage}
             and (self.allow_countries or self.block_countries)
             and evaluate_geo_policy is _DEFAULT_GEO_POLICY)
         with native_override(self.use_rust):

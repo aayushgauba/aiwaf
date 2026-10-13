@@ -56,11 +56,13 @@ def file_lock(file_path, mode="r", max_retries=3, retry_delay=0.1):
                     descriptor = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, 'O_BINARY', 0), 0o666)
                     try:
                         return os.fdopen(descriptor, 'r+b' if 'b' in open_mode else 'r+',
-                                         newline='' if 'b' not in open_mode else None)
+                                         newline='' if 'b' not in open_mode else None,
+                                         encoding='utf-8' if 'b' not in open_mode else None)
                     except Exception:
                         os.close(descriptor)
                         raise
-                return open(path, open_mode, newline='' if 'b' not in open_mode else None)
+                return open(path, open_mode, newline='' if 'b' not in open_mode else None,
+                            encoding='utf-8' if 'b' not in open_mode else None)
             except (PermissionError, OSError) as e:
                 last_exc = e
                 time.sleep(retry_delay * (attempt + 1))

@@ -129,6 +129,18 @@ function applyAutoMiddlewareDefaults(opts, enabled, rawOpts = {}) {
 
 
 module.exports = function aiwaf(rawOpts = {}) {
+  if (rawOpts.AIWAF_NATIVE_PIPELINE !== undefined) {
+    if (Object.keys(rawOpts).some(key => key !== 'AIWAF_NATIVE_PIPELINE')) {
+      throw new Error('Native pipeline uses a dedicated profile; do not mix legacy options');
+    }
+    const ready = require('./nativePipeline')(rawOpts.AIWAF_NATIVE_PIPELINE);
+    // Compatibility wrapper for framework adapters. Await ready during application startup.
+    // No legacy modules are initialized and no fallback is selected on this branch.
+    const middleware = async (req, res, next) => (await ready)(req, res, next);
+    middleware.ready = ready;
+    middleware.inspectPayload = async req => (await ready).inspectPayload(req);
+    return middleware;
+  }
   let opts = normalizeSettings(rawOpts);
   const inspectSql = createInspector(opts);
   opts.AIWAF_MIDDLEWARES = normalizedMiddlewareList(opts.AIWAF_MIDDLEWARES);

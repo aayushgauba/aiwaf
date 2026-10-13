@@ -14,6 +14,7 @@ from ...core.sql_injection import SQLInjectionPolicy, inspect_asgi_request
 from ...core.request_engine import prepare_request_engine
 from ...core.native_runtime import native_override
 from ...core.runtime_storage import KeywordStore, CSVStorage
+from ...core.policy_csv_storage import PolicyCSVStorage
 
 _DEFAULT_EVALUATE = evaluate_keyword_policy
 _DEFAULT_INSPECT = inspect_asgi_request
@@ -105,7 +106,7 @@ class IPAndKeywordBlockMiddleware(BaseHTTPMiddleware):
         with native_override(use_rust):
             if (has_config and cfg.get('AIWAF_RUST_REQUEST_ENGINE', False)
                     and len(request.scope.get('query_string', b'')) <= self.sql_policy.max_bytes
-                    and type(keyword_store) is KeywordStore and type(keyword_store.storage) is CSVStorage
+                    and type(keyword_store) is KeywordStore and type(keyword_store.storage) in {CSVStorage, PolicyCSVStorage}
                     and getattr(keyword_store.add_keyword, '__func__', None) is _DEFAULT_ADD
                     and getattr(keyword_store.get_top_keywords, '__func__', None) is _DEFAULT_TOP
                     and extract_query_keys_from_fastapi_request is _DEFAULT_QUERY_KEYS
@@ -114,7 +115,9 @@ class IPAndKeywordBlockMiddleware(BaseHTTPMiddleware):
                     path=request.url.path, query_context=str(request.url.query),
                     query_keys=extract_query_keys_from_fastapi_request(request), exists=path_exists,
                     learning=self.keyword_learning_enabled, top_n=self.dynamic_top_n,
-                    file=keyword_store.storage.file_path, counts=True, static=self.malicious_keywords,
+                    file=(keyword_store.storage.data_dir / 'keywords.csv' if type(keyword_store.storage) is PolicyCSVStorage
+                          else keyword_store.storage.file_path),
+                    counts=type(keyword_store.storage) is CSVStorage, static=self.malicious_keywords,
                     legitimate=self.legitimate_path_keywords, exempt=self.exempt_keywords,
                     prefixes=self.safe_prefixes, malicious=self.malicious_keywords)
         def evaluate_combined(query, body):

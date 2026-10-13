@@ -830,7 +830,7 @@ def _resolve_csv_data_dir():
 def _ensure_runtime_csv_backend():
     data_dir = _resolve_csv_data_dir()
     os.makedirs(data_dir, exist_ok=True)
-    runtime_initialize_storage(backend="csv", file_path=os.path.join(data_dir, "runtime_store.csv"))
+    runtime_initialize_storage(backend="csv", data_dir=data_dir)
     return data_dir
 
 
