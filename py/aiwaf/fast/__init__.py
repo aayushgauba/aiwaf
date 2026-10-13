@@ -7,9 +7,10 @@ Usage:
 
 from importlib import import_module
 
-__version__ = "1.1.0"
+from aiwaf import __version__
 
 __all__ = [
+    "NativeAIWAFMiddleware",
     "AIWAF",
     "AIWAFConfig",
     "IPAndKeywordBlockMiddleware",
@@ -30,6 +31,8 @@ __all__ = [
 
 
 def __getattr__(name):
+    if name == "NativeAIWAFMiddleware":
+        return getattr(import_module(".csv_pipeline", __name__), name)
     if name == "AIWAF":
         return getattr(import_module(".core", __name__), name)
     if name == "AIWAFConfig":

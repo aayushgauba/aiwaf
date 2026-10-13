@@ -8,6 +8,7 @@ Usage:
 from importlib import import_module
 
 __all__ = [
+    "NativeAIWAF",
     "AIWAF",
     "register_aiwaf_middlewares",
     "register_aiwaf_protection",
@@ -52,6 +53,8 @@ def _load_integration():
 
 
 def __getattr__(name):
+    if name == "NativeAIWAF":
+        return getattr(import_module(".csv_pipeline", __name__), name)
     if name == "AIWAF":
         return getattr(_load_integration(), "AIWAF")
     if name == "register_aiwaf_middlewares":

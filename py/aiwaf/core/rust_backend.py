@@ -1,6 +1,7 @@
 """
-Optional Rust backend for header validation and CSV logging.
-Falls back to Python if the Rust extension is unavailable.
+Rust dispatch for compatibility adapters.
+Python 1.1.3 requires the native package at installation. Legacy adapters retain
+guarded Python paths for custom integrations; CSVPipeline requires native support.
 """
 
 from __future__ import annotations

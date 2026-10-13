@@ -131,7 +131,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install pytest rust/dist/*.whl
-          python -m pytest -q rust/tests/test_python_api.py
+          python -m pytest -q rust/tests/test_python_api.py rust/tests/test_csv_pipeline_api.py
 
       - name: Upload wheel
         uses: actions/upload-artifact@v6

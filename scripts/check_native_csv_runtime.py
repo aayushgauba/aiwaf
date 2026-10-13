@@ -5,6 +5,7 @@ import tempfile
 
 
 REQUIRED = (
+    'NativeCSVPipeline', 'NativePipelineRequest',
     'csv_read', 'csv_write', 'csv_kv_get', 'csv_kv_update', 'csv_blacklist_check',
     'csv_runtime_block', 'csv_runtime_list_update', 'csv_policy_list_update',
     'csv_keyword_apply', 'csv_log_append', 'csv_request_exempt',
@@ -24,7 +25,13 @@ def check():
     report = {'python_version': aiwaf.__version__, 'python_source': aiwaf.__file__,
         'rust_source': getattr(module, '__file__', None), 'enabled': native_runtime.enabled(),
         'missing_capabilities': [name for name in REQUIRED if not hasattr(module, name)],
-        'smoke_test_passed': False}
+        'smoke_test_passed': False,
+        'request_batching_capabilities': {
+            name: hasattr(module, name) for name in ('policy_sql_signatures', 'csv_geo_policy', 'csv_runtime_geo_policy')
+        },
+        'runtime_anomaly_capabilities': {
+            name: hasattr(module, name) for name in ('NativeAnomalyHistory', 'analyze_recent_tuples', 'NativeRequestEngine')
+        }}
     if report['missing_capabilities'] or not report['enabled']:
         return report
     with tempfile.TemporaryDirectory(prefix='aiwaf-preflight-') as directory:

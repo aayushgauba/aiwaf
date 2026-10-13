@@ -832,7 +832,32 @@ pub fn analyze_recent_behavior(
     timestamps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut total_kw_hits = 0f64;
-    let mut total_burst = 0f64;
+    // Sorted finite timestamps admit a linear sweep after the existing sort.
+    // Retain the established binary-search behavior for NaN/infinite inputs.
+    let total_burst = if timestamps.iter().all(|t| t.is_finite()) {
+        let mut lower = 0usize;
+        let mut upper = 0usize;
+        let mut total = 0f64;
+        for timestamp in &timestamps {
+            while lower < timestamps.len() && timestamps[lower] < timestamp - 10.0 {
+                lower += 1;
+            }
+            while upper < timestamps.len() && timestamps[upper] <= timestamp + 10.0 {
+                upper += 1;
+            }
+            total += (upper.saturating_sub(lower)) as i32 as f64;
+        }
+        total
+    } else {
+        entries
+            .iter()
+            .map(|entry| {
+                let lower = lower_bound(&timestamps, entry.timestamp - 10.0);
+                let upper = upper_bound(&timestamps, entry.timestamp + 10.0);
+                (upper.saturating_sub(lower)) as i32 as f64
+            })
+            .sum()
+    };
     let mut max_404s = 0i32;
     let mut scanning_404s = 0i32;
 
@@ -845,11 +870,6 @@ pub fn analyze_recent_behavior(
         }
         let kw = keyword_hits(&entry.path_lower, &keywords, entry.kw_check);
         total_kw_hits += kw as f64;
-
-        let lower = lower_bound(&timestamps, entry.timestamp - 10.0);
-        let upper = upper_bound(&timestamps, entry.timestamp + 10.0);
-        let burst = (upper.saturating_sub(lower)) as i32;
-        total_burst += burst as f64;
     }
 
     let total_requests = entries.len() as i32;
@@ -1762,6 +1782,41 @@ mod tests {
     fn analyze_recent_behavior_empty_returns_none() {
         let result = analyze_recent_behavior(Vec::new(), vec![]);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn burst_sweep_matches_previous_searches() {
+        for times in [
+            vec![20.0, 0.0, 10.0, 10.0, -0.01, 30.01],
+            (0..2000)
+                .map(|i| ((i * 7919) % 1031) as f64 / 10.0)
+                .collect(),
+            vec![f64::NEG_INFINITY, 0.0, 10.0, f64::INFINITY],
+            vec![0.0, f64::NAN, 10.0],
+            vec![f64::MAX, -f64::MAX, 0.0],
+        ] {
+            let mut sorted = times.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let total: f64 = times
+                .iter()
+                .map(|t| {
+                    (upper_bound(&sorted, t + 10.0).saturating_sub(lower_bound(&sorted, t - 10.0)))
+                        as i32 as f64
+                })
+                .sum();
+            let entries = times
+                .iter()
+                .map(|t| RecentEntryInput {
+                    path_lower: "/docs".into(),
+                    timestamp: *t,
+                    status: 200,
+                    kw_check: false,
+                })
+                .collect();
+            let result = analyze_recent_behavior(entries, vec![]).unwrap();
+            assert_eq!(result.avg_burst, total / times.len() as f64);
+            assert!(!result.should_block);
+        }
     }
 
     #[test]

@@ -93,17 +93,17 @@ fn with_table<T>(
 }
 
 fn indexed_row<'a>(snapshot: &'a mut Snapshot, field: &str, key: &str) -> Option<&'a Vec<String>> {
-    let index = snapshot.1.0.iter().position(|h| h == field)?;
+    let index = snapshot.1 .0.iter().position(|h| h == field)?;
     let lookup = snapshot.2.entry(field.to_owned()).or_insert_with(|| {
         snapshot
             .1
-            .1
+             .1
             .iter()
             .enumerate()
             .filter_map(|(i, row)| row.get(index).map(|v| (v.trim().to_owned(), i)))
             .collect()
     });
-    lookup.get(key).and_then(|i| snapshot.1.1.get(*i))
+    lookup.get(key).and_then(|i| snapshot.1 .1.get(*i))
 }
 
 #[pyfunction]
@@ -497,7 +497,7 @@ pub fn csv_lookup(
     py.allow_threads(|| {
         with_snapshot(&path, true, |snapshot| {
             let row = indexed_row(snapshot, &key_field, &key).cloned();
-            Ok(row.map(|row| snapshot.1.0.iter().cloned().zip(row).collect()))
+            Ok(row.map(|row| snapshot.1 .0.iter().cloned().zip(row).collect()))
         })
     })
 }
@@ -689,7 +689,7 @@ pub fn csv_kv_get(py: Python<'_>, path: String, key: String, now: f64) -> PyResu
             return Ok(None);
         }
         with_snapshot(&path, true, |snapshot| {
-            if snapshot.1.0 != &["key", "value", "expires_at"] {
+            if snapshot.1 .0 != &["key", "value", "expires_at"] {
                 return Err(error("Invalid key/value CSV schema"));
             }
             Ok(indexed_row(snapshot, "key", &key).and_then(|r| {
@@ -697,7 +697,11 @@ pub fn csv_kv_get(py: Python<'_>, path: String, key: String, now: f64) -> PyResu
                     .get(2)
                     .and_then(|v| v.parse::<f64>().ok())
                     .is_some_and(|expiry| expiry != 0.0 && now > expiry);
-                if expired { None } else { r.get(1).cloned() }
+                if expired {
+                    None
+                } else {
+                    r.get(1).cloned()
+                }
             }))
         })
     })
@@ -1280,7 +1284,65 @@ pub fn csv_request_exempt(
     ))
 }
 
+/// Read dynamic geo state and evaluate the policy in one extension call.
+#[pyfunction]
+pub fn csv_geo_policy(
+    py: Python<'_>,
+    file: String,
+    country: String,
+    allow: HashSet<String>,
+    block: HashSet<String>,
+) -> PyResult<(bool, String, String)> {
+    let dynamic = csv_read_set(py, file, "country".into(), true)?
+        .into_iter()
+        .map(|value| value.trim().to_uppercase())
+        .filter(|value| !value.is_empty())
+        .collect();
+    Ok(crate::runtime_policy::policy_geo(
+        country, allow, block, dynamic,
+    ))
+}
+
+/// KV-backed geo state used by FastAPI and Django CSV stores. Unsupported
+/// legacy values return None so the host retains its existing conversion path.
+#[pyfunction]
+pub fn csv_runtime_geo_policy(
+    py: Python<'_>,
+    file: String,
+    country: String,
+    allow: HashSet<String>,
+    block: HashSet<String>,
+    extra: HashSet<String>,
+    now: f64,
+) -> PyResult<Option<(bool, String, String)>> {
+    let raw = csv_kv_get(py, file, "geo_blocked_countries".into(), now)?;
+    let mut dynamic = extra;
+    if let Some(raw) = raw {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            return Ok(None);
+        };
+        if !value.is_null() {
+            let Some(values) = value.as_array() else {
+                return Ok(None);
+            };
+            for value in values {
+                let Some(value) = value.as_str() else {
+                    return Ok(None);
+                };
+                if !value.is_empty() {
+                    dynamic.insert(value.trim().to_uppercase());
+                }
+            }
+        }
+    }
+    Ok(Some(crate::runtime_policy::policy_geo(
+        country, allow, block, dynamic,
+    )))
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(csv_runtime_geo_policy, m)?)?;
+    m.add_function(wrap_pyfunction!(csv_geo_policy, m)?)?;
     m.add_function(wrap_pyfunction!(csv_runtime_keywords_update, m)?)?;
     m.add_function(wrap_pyfunction!(csv_log_append, m)?)?;
     m.add_function(wrap_pyfunction!(csv_log_close, m)?)?;

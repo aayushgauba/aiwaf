@@ -256,6 +256,7 @@ class AIWAF:
                 allow_countries=geo_cfg.get("allow_countries", []),
                 block_countries=geo_cfg.get("block_countries", []),
                 path_rules=path_rules,
+                use_rust=bool(self.config.get('AIWAF_USE_RUST', True) and self.config.get('AIWAF_RUST_CSV', True)),
             )
     
     def _add_lifecycle_events(self, app: FastAPI):

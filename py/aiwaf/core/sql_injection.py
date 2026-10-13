@@ -38,16 +38,28 @@ class SQLInjectionPolicy:
         if self.mode == "off":
             return None
         stack, seen, size, nodes = [(query, 0), (body, 0)], set(), 0, 0
+        batch_native = native_function('policy_sql_signatures')
+        single_native = native_function('policy_sql_signature') if batch_native is not None else None
+        immediate_checks = 0
+        pending = []
+
+        def flush():
+            if not pending:
+                return None
+            rule = batch_native(pending)
+            pending.clear()
+            return Finding(rule) if rule else None
+
         while stack:
             value, depth = stack.pop()
             nodes += 1
             if nodes > 4096 or depth > 16:
-                return Finding("payload_inspection_limit", 413)
+                return flush() or Finding("payload_inspection_limit", 413)
             if value is None:
                 continue
             if isinstance(value, bytes):
                 if size + len(value) > self.max_bytes:
-                    return Finding("payload_inspection_limit", 413)
+                    return flush() or Finding("payload_inspection_limit", 413)
                 if b'\x00' in value or value.startswith((b'\xef\xbb\xbf', b'\xff\xfe', b'\xfe\xff')):
                     try:
                         parsed = json.loads(value)
@@ -60,17 +72,17 @@ class SQLInjectionPolicy:
                 stack.append((value.decode("utf-8", errors="replace"), depth + 1))
             elif isinstance(value, (dict, list, tuple)):
                 if id(value) in seen:
-                    return Finding("payload_inspection_limit", 413)
+                    return flush() or Finding("payload_inspection_limit", 413)
                 seen.add(id(value))
                 values = (item for pair in value.items() for item in pair) if isinstance(value, dict) else iter(value)
                 for item in values:
                     stack.append((item, depth + 1))
                     if len(stack) > 4096:
-                        return Finding("payload_inspection_limit", 413)
+                        return flush() or Finding("payload_inspection_limit", 413)
             elif isinstance(value, str):
                 size += len(value.encode("utf-8", errors="replace"))
                 if size > self.max_bytes:
-                    return Finding("payload_inspection_limit", 413)
+                    return flush() or Finding("payload_inspection_limit", 413)
                 for _ in range(2):
                     value = unquote_plus(value)
                 if value.lstrip().startswith(("{", "[")):
@@ -78,6 +90,25 @@ class SQLInjectionPolicy:
                         stack.append((json.loads(value), depth + 1))
                     except (ValueError, RecursionError):
                         pass
+                if batch_native is not None and value.isascii():
+                    # Reject attacks near the start immediately rather than
+                    # preparing a complete batch before checking them.
+                    if immediate_checks < 8:
+                        immediate_checks += 1
+                        rule = single_native(value) if single_native is not None else batch_native([value])
+                        if rule:
+                            return Finding(rule)
+                        continue
+                    pending.append(value)
+                    if len(pending) >= 128:
+                        finding = flush()
+                        if finding:
+                            return finding
+                    continue
+                # Earlier ASCII findings retain precedence over Unicode checks.
+                finding = flush()
+                if finding:
+                    return finding
                 native = native_function('policy_sql_signature')
                 if native is not None and value.isascii():
                     rule = native(value)
@@ -88,7 +119,7 @@ class SQLInjectionPolicy:
                 for name, pattern in RULES:
                     if pattern.search(value):
                         return Finding(name)
-        return None
+        return flush()
 
     def enforce(self, finding):
         if finding and self.mode == "monitor":
@@ -118,9 +149,12 @@ class _PrefixStream(io.RawIOBase):
         return len(data)
 
 
-def inspect_wsgi_request(request, policy, *, django=False):
+def inspect_wsgi_request(request, policy, *, django=False, evaluator=None):
     """Read at most budget+1 bytes and prepend them for the application's parser."""
     if policy.mode == "off":
+        if evaluator is not None:
+            query = request.META.get("QUERY_STRING", "") if django else request.query_string
+            return evaluator(query, None)
         return None
     if django:
         query = request.META.get("QUERY_STRING", "")
@@ -141,12 +175,14 @@ def inspect_wsgi_request(request, policy, *, django=False):
             stream = request.stream
             body = stream.read(policy.max_bytes + 1)
             request.stream = io.BufferedReader(_PrefixStream(body, stream))
-    return policy.enforce(policy.inspect(query, body))
+    return policy.enforce((evaluator or policy.inspect)(query, body))
 
 
-async def inspect_asgi_request(request, policy):
+async def inspect_asgi_request(request, policy, *, evaluator=None):
     """Replay exact ASGI messages, including an over-budget monitor-mode prefix."""
     if policy.mode == "off":
+        if evaluator is not None:
+            return evaluator(request.scope.get("query_string", b""), None)
         return None
     body = None
     if inspectable_content_type(request.headers.get("content-type")):
@@ -179,4 +215,4 @@ async def inspect_asgi_request(request, policy):
             if exhausted:
                 return policy.enforce(Finding("payload_inspection_limit", 413))
     query = request.scope.get("query_string", b"")
-    return policy.enforce(policy.inspect(query, body))
+    return policy.enforce((evaluator or policy.inspect)(query, body))

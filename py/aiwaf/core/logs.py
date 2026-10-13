@@ -11,9 +11,20 @@ import re
 import csv
 from datetime import datetime
 from aiwaf.core.storage_csv import file_lock
+from aiwaf.core.native_runtime import csv_function, csv_values
 
 
-def write_csv_log(csv_file: str, headers: list[str], row: dict) -> None:
+def write_csv_log(csv_file: str, headers: list[str], row: dict, *, durable: bool = False) -> None:
+    # Match DictWriter's rejection of extra fields before invoking a native writer.
+    if row.keys() - headers:
+        return
+    native_log = csv_function('csv_log_append')
+    if native_log is not None:
+        try:
+            native_log(str(csv_file), headers, csv_values([row.get(key, '') for key in headers]), durable)
+        except Exception:
+            pass  # Do not retry a possibly completed append and duplicate a record.
+        return
     log_dir = os.path.dirname(csv_file)
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
@@ -26,6 +37,9 @@ def write_csv_log(csv_file: str, headers: list[str], row: dict) -> None:
                 if needs_header:
                     writer.writeheader()
                 writer.writerow(row)
+                if durable:
+                    f.flush()
+                    os.fsync(f.fileno())
     except Exception:
         pass
 

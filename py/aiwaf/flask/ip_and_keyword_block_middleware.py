@@ -9,8 +9,16 @@ from aiwaf.core.ip_keyword import evaluate_keyword_policy, extract_path_segments
 from aiwaf.core.native_runtime import function as native_function, csv_function
 from aiwaf.core.request_context import extract_query_keys_from_flask_request
 from aiwaf.core.sql_injection import SQLInjectionPolicy, inspect_wsgi_request
+from aiwaf.core.request_engine import prepare_request_engine
+from . import storage as _engine_storage
 
 _DEFAULT_EVALUATE_POLICY = evaluate_keyword_policy
+_DEFAULT_INSPECT_WSGI = inspect_wsgi_request
+_DEFAULT_ADD_KEYWORD = _engine_storage.add_keyword
+_DEFAULT_STORE_ADD = _engine_storage.KeywordStore.add_keyword
+_DEFAULT_STORE_TOP = _engine_storage.KeywordStore.get_top_keywords
+_DEFAULT_GET_TOP = _engine_storage.get_top_keywords
+_DEFAULT_QUERY_KEYS = extract_query_keys_from_flask_request
 
 class IPAndKeywordBlockMiddleware:
     def __init__(self, app=None):
@@ -95,11 +103,42 @@ class IPAndKeywordBlockMiddleware:
                 return jsonify({"error": "blocked"}), 403
             
             keyword_store = get_keyword_store()
-            finding = inspect_wsgi_request(request, self.sql_policy)
+            prepared = None
+            if (app.config.get('AIWAF_RUST_REQUEST_ENGINE', False)
+                    and len(request.query_string) <= self.sql_policy.max_bytes):
+                from pathlib import Path
+                from aiwaf.core.storage_schema import KEYWORDS_CSV
+                if (_engine_storage._get_storage_mode() == 'csv'
+                        and type(keyword_store) is _engine_storage.KeywordStore
+                        and _engine_storage.add_keyword is _DEFAULT_ADD_KEYWORD
+                        and _engine_storage.get_top_keywords is _DEFAULT_GET_TOP
+                        and getattr(keyword_store.add_keyword, '__func__', None) is _DEFAULT_STORE_ADD
+                        and getattr(keyword_store.get_top_keywords, '__func__', None) is _DEFAULT_STORE_TOP
+                        and extract_query_keys_from_flask_request is _DEFAULT_QUERY_KEYS
+                        and inspect_wsgi_request is _DEFAULT_INSPECT_WSGI
+                        and evaluate_keyword_policy is _DEFAULT_EVALUATE_POLICY
+                        and getattr(self._evaluate_keyword_request, '__func__', None) is self._default_evaluate_request.__func__):
+                    prepared = prepare_request_engine(self, enabled=True, policy=self.sql_policy,
+                        path=request.path, query_context=request.query_string.decode('utf-8', errors='ignore'),
+                        query_keys=extract_query_keys_from_flask_request(request), exists=path_exists,
+                        learning=self.keyword_learning_enabled, top_n=self.dynamic_top_n,
+                        file=Path(_engine_storage._get_data_dir()) / KEYWORDS_CSV, counts=False,
+                        static=self.malicious_keywords, legitimate=self.legitimate_path_keywords,
+                        exempt=self.exempt_keywords, prefixes=self.safe_prefixes, malicious=self.malicious_keywords)
+            finding = (inspect_wsgi_request(request, self.sql_policy, evaluator=prepared[0])
+                       if prepared else inspect_wsgi_request(request, self.sql_policy))
             if finding:
                 if logger:
                     logger.mark_request_blocked(finding.rule)
                 return jsonify({"error": finding.rule}), finding.status
+            if prepared and prepared[1]:
+                decision = prepared[1][0]
+                if decision.block_reason:
+                    BlacklistManager.block(ip, decision.block_reason, extended_request_info=get_blacklist_extended_info(request))
+                    if logger:
+                        logger.mark_request_blocked(decision.block_reason)
+                    return jsonify({"error": "blocked"}), 403
+                return None
             from .storage import _get_storage_mode, _get_data_dir
             custom_policy = (evaluate_keyword_policy is not _DEFAULT_EVALUATE_POLICY
                 or getattr(self._evaluate_keyword_request, '__func__', None) is not self._default_evaluate_request.__func__)

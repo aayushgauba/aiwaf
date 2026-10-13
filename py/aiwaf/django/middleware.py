@@ -74,9 +74,19 @@ from ..core.honeypot import (
     ACTION_PAGE_EXPIRED,
 )
 from ..core.ip_keyword import evaluate_keyword_policy
+from ..core.request_engine import prepare_request_engine
+from ..core.runtime_storage import KeywordStore as RuntimeKeywordStore, CSVStorage
+from . import storage as _engine_storage
+_DEFAULT_ENGINE_KEYWORD = evaluate_keyword_policy
+_DEFAULT_ENGINE_PATH_EXISTS = path_exists_in_django
+_DEFAULT_ENGINE_ADD = _engine_storage.CSVKeywordStoreAdapter.add_keyword
+_DEFAULT_ENGINE_TOP = _engine_storage.CSVKeywordStoreAdapter.get_top_keywords
+_DEFAULT_RUNTIME_ENGINE_ADD = RuntimeKeywordStore.add_keyword
+_DEFAULT_RUNTIME_ENGINE_TOP = RuntimeKeywordStore.get_top_keywords
 from ..core.method_validation import evaluate_method_policy, ACTION_BLOCK as METHOD_BLOCK
 from ..core import header_validation as core_header_validation
 from ..core.geo_policy import evaluate_geo_policy, normalize_country_list
+_DEFAULT_GEO_POLICY = evaluate_geo_policy
 from ..core.block_responses import throttle_response
 from ..core.request_context import (
     extract_blacklist_extended_info_from_django_request,
@@ -523,11 +533,36 @@ class IPAndKeywordBlockMiddleware:
         path_exists = path_exists_in_django(request.path)
         
         keyword_store = get_keyword_store()
-        if self.keyword_learning_enabled:
-            dynamic_top = keyword_store.get_top_keywords(getattr(settings, "AIWAF_DYNAMIC_TOP_N", 10))
+        prepared = None
+        if getattr(settings, 'AIWAF_RUST_REQUEST_ENGINE', False):
+            from django.urls.converters import get_converters, IntConverter, PathConverter, SlugConverter, StringConverter, UUIDConverter
+            standard_converters = {IntConverter, PathConverter, SlugConverter, StringConverter, UUIDConverter}
+            runtime_store = _engine_storage.runtime_get_keyword_store()
+            if (type(keyword_store) is _engine_storage.CSVKeywordStoreAdapter
+                    and type(runtime_store) is RuntimeKeywordStore and type(runtime_store.storage) is CSVStorage
+                    and keyword_store.add_keyword is _DEFAULT_ENGINE_ADD
+                    and keyword_store.get_top_keywords is _DEFAULT_ENGINE_TOP
+                    and getattr(runtime_store.add_keyword, '__func__', None) is _DEFAULT_RUNTIME_ENGINE_ADD
+                    and getattr(runtime_store.get_top_keywords, '__func__', None) is _DEFAULT_RUNTIME_ENGINE_TOP
+                    and evaluate_keyword_policy is _DEFAULT_ENGINE_KEYWORD
+                    and path_exists_in_django is _DEFAULT_ENGINE_PATH_EXISTS
+                    and getattr(self._is_malicious_context, '__func__', None) is _DEFAULT_ENGINE_CONTEXT
+                    and not any(type(converter) not in standard_converters for converter in get_converters().values())):
+                prepared = prepare_request_engine(self, enabled=True, policy=self.sql_policy,
+                    path=request.path, query_context=request.META.get('QUERY_STRING', ''),
+                    query_keys=extract_query_keys_from_django_request(request), exists=path_exists,
+                    learning=self.keyword_learning_enabled, top_n=getattr(settings, 'AIWAF_DYNAMIC_TOP_N', 10),
+                    file=runtime_store.storage.file_path, counts=True, static=STATIC_KW,
+                    legitimate=self.legitimate_path_keywords, exempt=self.exempt_keywords,
+                    prefixes=self.safe_prefixes, malicious=self.malicious_keywords, sql_prechecked=True)
+                if prepared:
+                    prepared[0](None, None)
+        learned_natively = bool(prepared and prepared[1])
+        if learned_natively:
+            decision = prepared[1][0]
         else:
-            dynamic_top = []
-        decision = evaluate_keyword_policy(
+            dynamic_top = keyword_store.get_top_keywords(getattr(settings, 'AIWAF_DYNAMIC_TOP_N', 10)) if self.keyword_learning_enabled else []
+            decision = evaluate_keyword_policy(
             path=request.path,
             query_keys=list(extract_query_keys_from_django_request(request)),
             path_exists=path_exists,
@@ -540,8 +575,9 @@ class IPAndKeywordBlockMiddleware:
             malicious_keywords=self.malicious_keywords,
             is_malicious_context=lambda seg: self._is_malicious_context(request, seg),
         )
-        for seg in decision.learned_keywords:
-            keyword_store.add_keyword(seg)
+        if not learned_natively:
+            for seg in decision.learned_keywords:
+                keyword_store.add_keyword(seg)
 
         if decision.block_reason and not is_ip_exempted(ip):
             BlacklistManager.block(
@@ -553,6 +589,8 @@ class IPAndKeywordBlockMiddleware:
                 _raise_blocked(request, decision.block_reason, status_code=403)
         return self.get_response(request)
 
+
+_DEFAULT_ENGINE_CONTEXT = IPAndKeywordBlockMiddleware._is_malicious_context
 
 class RateLimitMiddleware:
     def __init__(self, get_response):
@@ -666,12 +704,19 @@ class GeoBlockMiddleware(MiddlewareMixin):
             )
         except Exception:
             dynamic_block = []
-        decision = evaluate_geo_policy(
-            country=country,
-            allow_countries=self.allow_countries,
-            block_countries=self.block_countries,
-            dynamic_blocked=dynamic_block,
-        )
+        from .storage import _is_csv_mode, _ensure_runtime_csv_backend
+        if _is_csv_mode() and evaluate_geo_policy is _DEFAULT_GEO_POLICY:
+            from ..core.runtime_storage import get_geo_block_store
+            _ensure_runtime_csv_backend()
+            decision = get_geo_block_store().evaluate_geo_policy(
+                country, self.allow_countries, self.block_countries, dynamic_block)
+        else:
+            decision = evaluate_geo_policy(
+                country=country,
+                allow_countries=self.allow_countries,
+                block_countries=self.block_countries,
+                dynamic_blocked=dynamic_block,
+            )
 
         if decision.should_block:
             reason = f"Geo-blocked country: {decision.country}"

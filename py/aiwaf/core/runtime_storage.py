@@ -710,8 +710,34 @@ class GeoBlockStore:
         self.storage = storage
 
     def get_countries(self) -> set[str]:
-        values = self.storage.get("geo_blocked_countries") or []
+        if type(self.storage) is CSVStorage and csv_function('csv_kv_get') is None:
+            # Native mutations do not populate the Python object's snapshot.
+            # Refresh before fallback reads, including external removals.
+            with self.storage._lock:
+                self.storage._data = {}
+                self.storage._load_data()
+                values = self.storage.get("geo_blocked_countries") or []
+        else:
+            values = self.storage.get("geo_blocked_countries") or []
         return {str(v).strip().upper() for v in values if v}
+
+    _default_get_countries = get_countries
+
+    def evaluate_geo_policy(self, country, allow_countries, block_countries, extra_countries=()):
+        """Read CSV state and decide together; custom getters/backends retain fallback."""
+        from .geo_policy import GeoDecision, normalize_country_list, evaluate_geo_policy
+        allow = normalize_country_list(allow_countries)
+        block = normalize_country_list(block_countries)
+        extra = normalize_country_list(extra_countries)
+        native = (csv_function('csv_runtime_geo_policy') if type(self.storage) is CSVStorage
+                  and type(self).get_countries is GeoBlockStore._default_get_countries
+                  and 'get_countries' not in self.__dict__ else None)
+        if native is not None:
+            result = native(str(self.storage.file_path), country or '', allow, block, extra, time.time())
+            if result is not None:
+                return GeoDecision(*result)
+        return evaluate_geo_policy(country=country, allow_countries=allow,
+            block_countries=block, dynamic_blocked=self.get_countries() | extra)
 
     def add_country(self, country_code: str):
         code = str(country_code or "").strip().upper()

@@ -9,6 +9,7 @@ import re
 import time
 import logging
 import os
+from threading import RLock
 from datetime import datetime, timezone
 from flask import request, jsonify, g, current_app
 from .utils import get_ip, is_exempt, is_path_exempt
@@ -16,6 +17,7 @@ from .blacklist_manager import BlacklistManager
 from .exemption_decorators import should_apply_middleware
 from aiwaf.core import rust_backend
 from aiwaf.core.anomaly import evaluate_anomaly as core_evaluate_anomaly
+from aiwaf.core.anomaly import select_native_history, prune_inactive_histories
 from aiwaf.core.logs import write_csv_log
 from aiwaf.core.model_security import is_trusted_model_path
 from aiwaf.core.model_serialization import load_model_artifact
@@ -56,6 +58,8 @@ class AIAnomalyMiddleware:
         self.model_is_rust = False
         self.malicious_keywords = set(STATIC_KEYWORDS)
         self.request_cache = {}  # Simple in-memory cache for request history
+        self._history_lock = RLock()
+        self._history_cleanup_at = 0.0
         self.window_seconds = 60
         self.top_n = 10
         
@@ -282,10 +286,16 @@ class AIAnomalyMiddleware:
         """
         try:
             from flask import current_app
-            from werkzeug.routing import RequestRedirect, MethodNotAllowed
+            from werkzeug.routing import RequestRedirect
+            from werkzeug.exceptions import MethodNotAllowed
             
             # Test if the path matches any route
-            adapter = current_app.url_map.bind('localhost')
+            route_map = current_app.url_map
+            cached = getattr(g, '_aiwaf_anomaly_route_adapter', None)
+            if cached is None or cached[0] is not route_map:
+                cached = (route_map, route_map.bind('localhost'))
+                g._aiwaf_anomaly_route_adapter = cached
+            adapter = cached[1]
             try:
                 adapter.match(path)
                 return True
@@ -366,7 +376,11 @@ class AIAnomalyMiddleware:
         resp_time = now - start_time
         
         key = f"aiwaf:{ip}"
-        data = self.request_cache.get(key, [])
+        with self._history_lock:
+            if now >= self._history_cleanup_at or now < self._history_cleanup_at - 30.0:
+                prune_inactive_histories(self.request_cache, now=now, window_seconds=self.window_seconds)
+                self._history_cleanup_at = now + 30.0
+            data = self.request_cache.get(key, [])
 
         outcome = core_evaluate_anomaly(
             ip=ip,
@@ -374,7 +388,8 @@ class AIAnomalyMiddleware:
             status_code=int(getattr(response, "status_code", 0) or 0),
             response_time=float(resp_time),
             now=float(now),
-            history=data,
+            history=select_native_history(data, self.model,
+                enabled=bool(current_app.config.get('AIWAF_RUST_ANOMALY_HISTORY', True))),
             window_seconds=float(self.window_seconds),
             model=self.model,
             static_keywords=list(STATIC_KEYWORDS),
@@ -387,7 +402,8 @@ class AIAnomalyMiddleware:
             legitimate_keywords=set(),
         )
 
-        self.request_cache[key] = outcome.updated_history
+        with self._history_lock:
+            self.request_cache[key] = outcome.updated_history
 
         if outcome.learned_keywords:
             try:
@@ -441,7 +457,8 @@ class AIAnomalyMiddleware:
             "user_agent": request.headers.get("User-Agent", "")[:2000],
         }
         try:
-            write_csv_log(csv_file, headers, row)
+            write_csv_log(csv_file, headers, row,
+                durable=bool(self.app.config.get('AIWAF_CSV_LOG_FSYNC', False)))
         except Exception:
             pass
 

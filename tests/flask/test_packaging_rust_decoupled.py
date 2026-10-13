@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import ast
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -21,13 +22,15 @@ def test_pyproject_uses_setuptools_not_maturin():
 def test_rust_extra_defined_in_pyproject():
     content = _read("pyproject.toml")
     assert "rust = [" in content
-    assert '"aiwaf-rust>=0.2.2"' in content
+    assert '"aiwaf-rust>=0.2.3"' in content
 
 
-def test_rust_extra_defined_in_setup():
+def test_rust_required_in_setup():
     content = _read("setup.py")
-    assert '"rust": [' in content
-    assert '"aiwaf-rust>=0.2.2"' in content
+    setup_call = next(node for node in ast.walk(ast.parse(content))
+                      if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'setup')
+    required = ast.literal_eval(next(item.value for item in setup_call.keywords if item.arg == 'install_requires'))
+    assert 'aiwaf-rust>=0.2.3' in required
 
 
 def test_manifest_has_no_local_rust_sources():

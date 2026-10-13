@@ -2,6 +2,7 @@
 Storage and blacklist tests for AIWAF.
 """
 import time
+import pytest
 
 from aiwaf.core.runtime_blacklist import BlacklistManager
 from aiwaf.core.runtime_storage import FileStorage, get_blacklist_store, get_exemption_store, get_storage
@@ -161,3 +162,53 @@ def test_keyword_and_geo_stores_cover_mutations():
     geo.remove_country("us")
     geo.remove_country("")
     assert geo.get_countries() == set()
+@pytest.mark.parametrize('values', [[' us ', 'DE'], ['US', 7], None])
+def test_combined_geo_legacy_values_and_disabled_refresh(tmp_path, monkeypatch, values):
+    from aiwaf.core import rust_backend
+    from aiwaf.core.runtime_storage import CSVStorage, GeoBlockStore
+    from aiwaf.core.native_runtime import native_override
+    from aiwaf.core.geo_policy import evaluate_geo_policy
+    native = pytest.importorskip('aiwaf_rust')
+    if not hasattr(native, 'csv_runtime_geo_policy'):
+        pytest.skip('Requires rebuilt geo extension')
+    monkeypatch.setattr(rust_backend, 'aiwaf_rust', native)
+    store = GeoBlockStore(CSVStorage(str(tmp_path / 'geo.csv')))
+    store.storage.set('geo_blocked_countries', values)
+    expected = evaluate_geo_policy(country='US', allow_countries=[], block_countries=['CN'],
+        dynamic_blocked=store.get_countries() | {'GB'})
+    assert store.evaluate_geo_policy('US', [], ['CN'], ['GB']) == expected
+    with native_override(False):
+        assert store.evaluate_geo_policy('US', [], ['CN'], ['GB']) == expected
+    store.storage.delete('geo_blocked_countries')
+    with native_override(False):
+        assert store.get_countries() == set()
+
+
+def test_combined_geo_ttl_and_custom_getter(tmp_path, monkeypatch):
+    from aiwaf.core import rust_backend, runtime_storage
+    from aiwaf.core.runtime_storage import CSVStorage, GeoBlockStore
+    native = pytest.importorskip('aiwaf_rust')
+    if not hasattr(native, 'csv_runtime_geo_policy'):
+        pytest.skip('Requires rebuilt geo extension')
+    monkeypatch.setattr(rust_backend, 'aiwaf_rust', native)
+    monkeypatch.setattr(runtime_storage.time, 'time', lambda: 100)
+    store = GeoBlockStore(CSVStorage(str(tmp_path / 'geo.csv')))
+    store.storage.set('geo_blocked_countries', ['US'], ttl=10)
+    assert store.evaluate_geo_policy('US', [], []).should_block
+    monkeypatch.setattr(runtime_storage.time, 'time', lambda: 111)
+    assert not store.evaluate_geo_policy('US', [], []).should_block
+    monkeypatch.setattr(store, 'get_countries', lambda: {'US'})
+    assert store.evaluate_geo_policy('US', [], []).should_block
+
+
+def test_combined_geo_class_override_is_preserved(tmp_path, monkeypatch):
+    from aiwaf.core import rust_backend
+    from aiwaf.core.runtime_storage import CSVStorage, GeoBlockStore
+    native = pytest.importorskip('aiwaf_rust')
+    if not hasattr(native, 'csv_runtime_geo_policy'):
+        pytest.skip('Requires rebuilt geo extension')
+    monkeypatch.setattr(rust_backend, 'aiwaf_rust', native)
+    store = GeoBlockStore(CSVStorage(str(tmp_path / 'geo.csv')))
+    monkeypatch.setattr(GeoBlockStore, 'get_countries', lambda self: {'GB'})
+    monkeypatch.setattr(native, 'csv_runtime_geo_policy', lambda *_: (_ for _ in ()).throw(AssertionError('Custom getter bypassed')))
+    assert store.evaluate_geo_policy('GB', [], []).should_block

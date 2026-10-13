@@ -45,7 +45,7 @@ dependencies = [
 
 [[package]]
 name = "aiwaf_rust"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "aiwaf_core",
  "csv",
@@ -53,6 +53,7 @@ dependencies = [
  "fs2",
  "pyo3",
  "regex",
+ "serde",
  "serde_json",
 ]
 

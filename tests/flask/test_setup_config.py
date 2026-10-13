@@ -2,6 +2,7 @@
 """
 Test setup.py configuration for AIWAF Flask dependencies.
 """
+import ast
 
 def test_setup_py():
     """Test that setup.py has correct dependency configuration."""
@@ -19,8 +20,10 @@ def test_setup_py():
         assert '"flask":' in content
         assert '"fastapi":' in content
         assert '"django":' in content
-        assert '"rust":' in content
-        assert 'aiwaf-rust>=' in content
+        setup_call = next(node for node in ast.walk(ast.parse(content))
+                          if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'setup')
+        required = ast.literal_eval(next(item.value for item in setup_call.keywords if item.arg == 'install_requires'))
+        assert 'aiwaf-rust>=0.2.3' in required
         
         print(" setup.py configuration is correct")
         assert True

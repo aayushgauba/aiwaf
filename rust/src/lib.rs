@@ -1,5 +1,8 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 mod csv_runtime;
+mod native_anomaly;
+mod request_engine;
+mod csv_pipeline;
 mod exemption_policy;
 mod runtime_policy;
 mod training_dates;
@@ -1052,7 +1055,10 @@ fn contamination_to_py<'py>(py: Python<'py>, value: &Contamination) -> PyObject 
 
 #[pymodule]
 fn aiwaf_rust(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    csv_pipeline::register(m)?;
     csv_runtime::register(m)?;
+    native_anomaly::register(m)?;
+    request_engine::register(m)?;
     runtime_policy::register(m)?;
     exemption_policy::register(m)?;
     training_pipeline::register(m)?;

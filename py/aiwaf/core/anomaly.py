@@ -8,11 +8,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+import math
+from . import rust_backend
+from .native_runtime import function as native_function
 from typing import Callable, Iterable, List, Optional, Sequence, Set, Tuple, Union, Any
 
 from .constants import STATUS_IDX as DEFAULT_STATUS_IDX
 from .rust_backend import analyze_recent_behavior as rust_analyze_recent_behavior
 from .rust_backend import is_rust_isolation_forest, rust_available
+_DEFAULT_RUST_ANALYZE = rust_analyze_recent_behavior
 from .training_logic import is_scanning_path
 
 try:  # optional
@@ -42,7 +46,25 @@ class AnomalyOutcome:
     block: bool
     reason: Optional[str]
     learned_keywords: List[str]
-    updated_history: List[HistoryEntry]
+    updated_history: Sequence[HistoryEntry]
+
+
+def select_native_history(history, model, *, enabled=True):
+    """Use native snapshots only for local adapter caches and real Rust models."""
+    factory = native_function('NativeAnomalyHistory') if enabled else None
+    if factory is None or not is_rust_isolation_forest(model):
+        existing_type = getattr(rust_backend.aiwaf_rust, 'NativeAnomalyHistory', None)
+        if existing_type is not None and isinstance(history, existing_type):
+            return list(history)
+        return history
+    if isinstance(history, factory):
+        return history
+    if any(not str(entry[1]).isascii() for entry in (history or [])):
+        return history
+    try:
+        return factory(list(history or []))
+    except (TypeError, ValueError, OverflowError):
+        return history
 
 
 def compute_kw_hits(path_lower: str, static_keywords: Sequence[str]) -> int:
@@ -52,6 +74,25 @@ def compute_kw_hits(path_lower: str, static_keywords: Sequence[str]) -> int:
 def trim_history(history: Sequence[HistoryEntry], *, now: float, window_seconds: float) -> List[HistoryEntry]:
     window = max(float(window_seconds), 1.0)
     return [h for h in list(history or []) if now - float(h[0]) < window]
+
+
+def prune_inactive_histories(cache: dict, *, now: float, window_seconds: float) -> None:
+    """Remove only histories with no entries surviving the normal scoring window.
+
+    Local adapters call this periodically while holding their cache lock. Active
+    histories are never capped, so burst counts and blocking thresholds stay exact.
+    """
+    if not math.isfinite(float(now)) or not math.isfinite(float(window_seconds)):
+        return
+    factory = getattr(rust_backend.aiwaf_rust, 'NativeAnomalyHistory', None)
+    window = max(float(window_seconds), 1.0)
+    for key, history in list(cache.items()):
+        if factory is not None and isinstance(history, factory):
+            active = bool(len(history.trimmed(float(now), window)))
+        else:
+            active = any(now - float(entry[0]) < window for entry in history)
+        if not active:
+            del cache[key]
 
 
 def extract_segments(path: str) -> List[str]:
@@ -125,6 +166,18 @@ def analyze_recent_behavior(
         return None
 
     stats: Optional[dict] = None
+    tuples_native = (native_function('analyze_recent_tuples') if prefer_rust and rust_available()
+                     and rust_analyze_recent_behavior is _DEFAULT_RUST_ANALYZE else None)
+    if tuples_native is not None:
+        try:
+            entries = [(str(p).lower(), float(t), int(s),
+                        (not bool(path_exists(p))) and (not bool(is_exempt_path(p))))
+                       for t, p, s, _rt in recent_data]
+            result = tuples_native(entries, list(static_keywords))
+            if result is not None:
+                return AnomalyStats(*result)
+        except Exception:
+            pass
     if prefer_rust and rust_available():
         try:
             rust_payload = []
@@ -224,35 +277,66 @@ def evaluate_anomaly(
     legitimate_keywords = legitimate_keywords or set()
 
     # Update + trim history first (so burst/404 counts include recent window).
-    trimmed = trim_history(history, now=now, window_seconds=window_seconds)
+    factory = native_function('NativeAnomalyHistory')
+    native_history = (factory is not None and isinstance(history, factory)
+        and is_rust_isolation_forest(model) and str(path).isascii()
+        and all(isinstance(kw, str) and kw.isascii() for kw in (*static_keywords, *malicious_keywords))
+        and all(math.isfinite(float(v)) for v in (now, window_seconds, response_time))
+        and history.supports_ascii())
+    trimmed = (history.trimmed(float(now), float(window_seconds)) if native_history else
+               trim_history(history, now=now, window_seconds=window_seconds))
     path_exists_current = bool(path_exists(path))
     exempt_current = bool(is_exempt_path(path))
 
-    feats = build_feature_vector(
-        path=path,
-        status_code=status_code,
-        response_time=response_time,
-        now=now,
-        history=trimmed,
-        static_keywords=static_keywords,
-        status_index_values=status_index_values,
-        path_exists_current=path_exists_current,
-        is_exempt_path_current=exempt_current,
-    )
+    if not native_history:
+        feats = build_feature_vector(
+            path=path,
+            status_code=status_code,
+            response_time=response_time,
+            now=now,
+            history=trimmed,
+            static_keywords=static_keywords,
+            status_index_values=status_index_values,
+            path_exists_current=path_exists_current,
+            is_exempt_path_current=exempt_current,
+        )
 
     block = False
     reason = None
 
-    prediction = predict_anomaly(model, feats)
+    if native_history:
+        try:
+            prediction, _features = trimmed.predict_current(model, str(path), int(status_code),
+                float(response_time), float(now), not path_exists_current and not exempt_current,
+                list(static_keywords), list(status_index_values))
+        except Exception:
+            feats = build_feature_vector(path=path, status_code=status_code, response_time=response_time,
+                now=now, history=list(trimmed), static_keywords=static_keywords,
+                status_index_values=status_index_values, path_exists_current=path_exists_current,
+                is_exempt_path_current=exempt_current)
+            prediction = predict_anomaly(model, feats)
+    else:
+        prediction = predict_anomaly(model, feats)
     if prediction == -1:
-        recent_data = [d for d in trimmed if now - float(d[0]) <= 300]
-        stats = analyze_recent_behavior(
-            recent_data,
-            static_keywords=malicious_keywords,
-            path_exists=path_exists,
-            is_exempt_path=is_exempt_path,
-            prefer_rust=True,
-        )
+        if native_history:
+            try:
+                paths = trimmed.recent_paths(float(now))
+                checks = [(not bool(path_exists(p))) and (not bool(is_exempt_path(p))) for p in paths]
+                native_stats = trimmed.analyze(float(now), list(malicious_keywords), checks)
+                stats = AnomalyStats(*native_stats) if native_stats is not None else None
+            except Exception:
+                recent_data = [d for d in trimmed if now - float(d[0]) <= 300]
+                stats = analyze_recent_behavior(recent_data, static_keywords=malicious_keywords,
+                    path_exists=path_exists, is_exempt_path=is_exempt_path, prefer_rust=True)
+        else:
+            recent_data = [d for d in trimmed if now - float(d[0]) <= 300]
+            stats = analyze_recent_behavior(
+                recent_data,
+                static_keywords=malicious_keywords,
+                path_exists=path_exists,
+                is_exempt_path=is_exempt_path,
+                prefer_rust=True,
+            )
         if stats and stats.should_block:
             reason = (
                 "AI anomaly + scanning behavior "
@@ -268,9 +352,12 @@ def evaluate_anomaly(
             reason = f"AI anomaly + scanning behavior (kw:{current_kw_hits}, scanning_path:{path})"
             block = True
 
-    updated = list(trimmed)
-    updated.append((float(now), str(path), int(status_code), float(response_time)))
-    updated = trim_history(updated, now=now, window_seconds=window_seconds)
+    if native_history:
+        updated = trimmed.appended(float(now), str(path), int(status_code), float(response_time))
+    else:
+        updated = list(trimmed)
+        updated.append((float(now), str(path), int(status_code), float(response_time)))
+        updated = trim_history(updated, now=now, window_seconds=window_seconds)
 
     learned_keywords: List[str] = []
     if (

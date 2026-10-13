@@ -331,22 +331,32 @@ pub fn policy_keyword_flask(
 
 #[pyfunction]
 pub fn policy_sql_signature(py: Python<'_>, text: String) -> Option<String> {
-    py.allow_threads(|| {
-        static COMMENTS: OnceLock<Regex> = OnceLock::new();
-        static RULES: OnceLock<Vec<(&str, Regex)>> = OnceLock::new();
-        let text = COMMENTS.get_or_init(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap())
-            .replace_all(&text, " ");
-        RULES.get_or_init(|| vec![
+    py.allow_threads(|| sql_signature(&text))
+}
+
+pub(crate) fn sql_signature(text: &str) -> Option<String> {
+    static COMMENTS: OnceLock<Regex> = OnceLock::new();
+    static RULES: OnceLock<Vec<(&str, Regex)>> = OnceLock::new();
+    let text = COMMENTS
+        .get_or_init(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap())
+        .replace_all(text, " ");
+    RULES.get_or_init(|| vec![
             ("sql_union_select", Regex::new(r"(?i)\bunion\s+(?:all\s+)?select\b").unwrap()),
             ("sql_boolean_tautology", Regex::new(r#"(?i)['"`]\s*(?:or|and)\s*(?:true\b|\d+\s*=\s*\d+|['"][^'"\r\n]{0,80}['"]\s*=\s*['"])"#).unwrap()),
             ("sql_quote_comment", Regex::new(r#"(?i)['"`]\s*(?:--|#)"#).unwrap()),
             ("sql_stacked_statement", Regex::new(r"(?i);\s*(?:drop\s+table|delete\s+from|insert\s+into|update\s+\w+\s+set)\b").unwrap()),
         ]).iter().find(|(_, rule)| rule.is_match(&text)).map(|(name, _)| (*name).to_owned())
-    })
+}
+
+/// Preserve first-value/first-rule order while crossing the binding once.
+#[pyfunction]
+pub fn policy_sql_signatures(py: Python<'_>, texts: Vec<String>) -> Option<String> {
+    py.allow_threads(|| texts.iter().find_map(|text| sql_signature(text)))
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(policy_sql_signature, m)?)?;
+    m.add_function(wrap_pyfunction!(policy_sql_signatures, m)?)?;
     m.add_function(wrap_pyfunction!(policy_keyword_flask, m)?)?;
     m.add_function(wrap_pyfunction!(policy_rate, m)?)?;
     m.add_function(wrap_pyfunction!(policy_geo, m)?)?;

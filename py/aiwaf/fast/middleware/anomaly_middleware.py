@@ -10,6 +10,7 @@ Uses the shared core anomaly engine (same decision flow as Django/Flask):
 from __future__ import annotations
 
 import time
+from threading import RLock
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,8 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 
-from aiwaf.core.anomaly import HistoryEntry, evaluate_anomaly as core_evaluate_anomaly
+from aiwaf.core.anomaly import HistoryEntry, evaluate_anomaly as core_evaluate_anomaly, select_native_history, prune_inactive_histories
 from aiwaf.core.logs import write_csv_log
+from aiwaf.core.native_runtime import native_override
 
 
 def _segment_has_malicious_context(path_lower: str, query_lower: str, seg: str) -> bool:
@@ -60,7 +62,9 @@ class AIAnomalyMiddleware(BaseHTTPMiddleware):
         self.window_seconds = 60
         self.keyword_learning_enabled = True
         self.model: Any = None
-        self.request_cache: Dict[str, List[HistoryEntry]] = {}
+        self.request_cache: Dict[str, Any] = {}  # Native snapshots or legacy tuple lists.
+        self._history_lock = RLock()
+        self._history_cleanup_at = 0.0
         self._route_paths = set()
         self._init_from_app(app)
 
@@ -117,7 +121,15 @@ class AIAnomalyMiddleware(BaseHTTPMiddleware):
         resp_time = now - start
 
         key = f"aiwaf:{ip}"
-        history = self.request_cache.get(key, [])
+        with self._history_lock:
+            if now >= self._history_cleanup_at or now < self._history_cleanup_at - 30.0:
+                prune_inactive_histories(self.request_cache, now=now, window_seconds=self.window_seconds)
+                self._history_cleanup_at = now + 30.0
+            history = self.request_cache.get(key, [])
+        cfg = getattr(request.app.state, 'aiwaf_config', None)
+        has_config = cfg is not None and callable(getattr(cfg, 'get', None))
+        use_rust = bool(cfg.get('AIWAF_USE_RUST', True) and cfg.get('AIWAF_RUST_CSV', True)) if has_config else True
+        native_history_enabled = bool(cfg.get('AIWAF_RUST_ANOMALY_HISTORY', True)) if has_config else True
         path_lower = (request.url.path or "").lower()
         query_lower = str(getattr(request.url, "query", "") or "").lower()
 
@@ -133,24 +145,26 @@ class AIAnomalyMiddleware(BaseHTTPMiddleware):
             path_lower, query_lower, seg
         )
 
-        outcome = core_evaluate_anomaly(
-            ip=ip,
-            path=request.url.path,
-            status_code=int(getattr(response, "status_code", 0) or 0),
-            response_time=float(resp_time),
-            now=float(now),
-            history=history,
-            window_seconds=float(self.window_seconds),
-            model=self.model,
-            static_keywords=STATIC_KW,
-            malicious_keywords=STATIC_KW,
-            keyword_learning_enabled=bool(self.keyword_learning_enabled),
-            path_exists=_path_exists,
-            is_exempt_path=lambda _p: False,
-            is_malicious_context=is_malicious_context,
-        )
+        with native_override(use_rust):
+            outcome = core_evaluate_anomaly(
+                ip=ip,
+                path=request.url.path,
+                status_code=int(getattr(response, "status_code", 0) or 0),
+                response_time=float(resp_time),
+                now=float(now),
+                history=select_native_history(history, self.model, enabled=native_history_enabled),
+                window_seconds=float(self.window_seconds),
+                model=self.model,
+                static_keywords=STATIC_KW,
+                malicious_keywords=STATIC_KW,
+                keyword_learning_enabled=bool(self.keyword_learning_enabled),
+                path_exists=_path_exists,
+                is_exempt_path=lambda _p: False,
+                is_malicious_context=is_malicious_context,
+            )
 
-        self.request_cache[key] = outcome.updated_history
+        with self._history_lock:
+            self.request_cache[key] = outcome.updated_history
 
         if outcome.learned_keywords:
             keyword_store = get_keyword_store()
@@ -207,6 +221,10 @@ class AIAnomalyMiddleware(BaseHTTPMiddleware):
             "user_agent": request.headers.get("user-agent", "")[:2000],
         }
         try:
-            write_csv_log(str(csv_file), headers, row)
+            has_config = cfg is not None and callable(getattr(cfg, 'get', None))
+            use_rust = bool(cfg.get('AIWAF_USE_RUST', True) and cfg.get('AIWAF_RUST_CSV', True)) if has_config else True
+            durable = bool(cfg.get('AIWAF_CSV_LOG_FSYNC', False)) if has_config else False
+            with native_override(use_rust):
+                write_csv_log(str(csv_file), headers, row, durable=durable)
         except Exception:
             pass
