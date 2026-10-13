@@ -30,7 +30,6 @@ availability at the cost of enforcement when the cache fails. Flask rejects
 invalid Redis configuration at initialization, and FastAPI rejects requests
 instead of silently selecting a process-local cache. Python `rediss://` URLs
 are delegated to redis-py for TLS support when that driver is installed.
-Java uses Jackson 2.22.3 to address advisories affecting 2.22.2.
 
 Python Flask/FastAPI Redis buckets now update atomically across workers.
 Django's native `django.core.cache.backends.redis.RedisCache` uses Redis
@@ -40,15 +39,15 @@ the supported Redis backends when sharing limits across workers.
 
 Each package is versioned and released independently.
 
-Python 1.1.4, Rust/Python 0.2.3, Node.js 1.1.2, WASM 0.2.2, and Java 1.3.3 are local release candidates; see the
+Python 1.1.5, Rust/Python 0.2.4, Node.js 1.1.3, WASM 0.2.3, and Java 1.3.3 are local release candidates; see the
 [upgrade notes](docs/releases/2026-10-elv2.md).
 
 | Runtime | Package | Repository version | Primary use |
 | --- | --- | ---: | --- |
-| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.4` | Django, Flask, and FastAPI protection |
-| Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.2` | Express and Node framework middleware |
-| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.3` | Native Python acceleration and JSON model inference |
-| WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.2` | Rust detection and model primitives for JavaScript |
+| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.5` | Django, Flask, and FastAPI protection |
+| Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.3` | Express and Node framework middleware |
+| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.4` | Native Python acceleration and JSON model inference |
+| WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.3` | Rust detection and model primitives for JavaScript |
 | Java | `io.github.aiwaf-project:aiwaf-java` | `1.3.3` | Spring MVC and Jakarta Servlet protection |
 
 Supported framework integrations include Django, Flask, FastAPI, Express, Fastify, Hapi, Koa, NestJS, Next.js API routes, AdonisJS, Sails.js, Spring MVC, and Jakarta Servlet.
@@ -98,7 +97,7 @@ pip install "aiwaf[django]"
 pip install "aiwaf[flask]"
 pip install "aiwaf[fastapi]"
 
-# Backward-compatible alias; Python 1.1.4 already installs aiwaf-rust
+# Backward-compatible alias; Python 1.1.5 already installs aiwaf-rust
 pip install "aiwaf[rust]"
 
 # Node.js middleware
@@ -122,7 +121,7 @@ Java 1.3.3, after it is published to Maven Central:
 
 The Python package requires Python 3.10 or newer. Framework dependencies are optional, so install only the extra needed by the application.
 
-Python 1.1.4 requires `aiwaf-rust>=0.2.3`; the `rust` extra remains an installation
+Python 1.1.5 requires `aiwaf-rust>=0.2.4`; the `rust` extra remains an installation
 alias. Publish the matching Rust wheel with `NativeCSVPipeline` support before
 the Python release. The Rust release workflow builds Linux x86_64/aarch64,
 musl x86_64, macOS x86_64/arm64 and Windows x86_64 wheels and checks the native
@@ -427,7 +426,7 @@ When `aiwaf_rust` is importable, supported acceleration paths are selected autom
 
 ### Rust-backed CSV runtime and training
 
-The Python 1.1.4 and `aiwaf-rust` 0.2.3 release candidates add native CSV storage,
+The Python 1.1.5 and `aiwaf-rust` 0.2.4 release candidates add native CSV storage,
 shared policy evaluation, and training preparation for Django, Flask, and FastAPI.
 Install matching Python and Rust builds and reload application workers to activate
 the new capabilities. Older extensions retain the compatible Python fallback.
@@ -1329,10 +1328,10 @@ Release versions and tags must match the relevant manifest.
 
 | Package | Manifest | Tag | Workflow |
 | --- | --- | --- | --- |
-| Python `aiwaf` | `pyproject.toml` | `python-v1.1.4` | `python-publish.yml` |
-| npm `aiwaf` | `js/package.json` | `js-v1.1.2` | `npm-publish.yml` |
-| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.3` | `rust-publish.yml` |
-| npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.2` | `wasm-publish.yml` |
+| Python `aiwaf` | `pyproject.toml` | `python-v1.1.5` | `python-publish.yml` |
+| npm `aiwaf` | `js/package.json` | `js-v1.1.3` | `npm-publish.yml` |
+| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.4` | `rust-publish.yml` |
+| npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.3` | `wasm-publish.yml` |
 | Maven `aiwaf-java` | `java/pom.xml` | `java-v1.3.3` | `java-publish.yml` |
 
 Python and Rust publish to PyPI with trusted publishing. The npm workflows use npm trusted publishing and stage packages for approval. Configure the trusted publisher with organization `aiwaf-project`, repository `aiwaf`, the exact workflow filename, and the environment used by that workflow.

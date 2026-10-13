@@ -1,6 +1,6 @@
 [project]
 name = "aiwaf"
-version = "1.1.4"
+version = "1.1.5"
 description = "AI-driven, self-learning Web Application Firewall for Python web applications"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
@@ -17,7 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
 ]
 dependencies = [
-    "aiwaf-rust>=0.2.3",
+    "aiwaf-rust>=0.2.4",
     "numpy>2",
     "pandas>2",
     "scikit-learn>=1.6.0",
@@ -41,7 +41,7 @@ fastapi = [
     "uvicorn>=0.20"
 ]
 rust = [
-    "aiwaf-rust>=0.2.3"
+    "aiwaf-rust>=0.2.4"
 ]
 
 [project.scripts]
