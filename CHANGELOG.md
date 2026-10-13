@@ -1,6 +1,27 @@
 # Changelog
 
-## Next releases — ELv2 migration (unreleased)
+## Node.js dependency security updates
+
+- Upgrade Jest, Fastify, and the NestJS test dependencies to patched releases.
+- Replace the direct deprecated glob 8 dependency with maintained glob 13.
+- Remove broad transitive overrides that forced incompatible parser versions;
+  apply targeted fixes for qs and the NYC loader's YAML dependency instead.
+- Audit development dependencies as well as production dependencies in npm
+  release validation.
+
+## Python 1.1.4 
+
+- Detect the single installed framework for bare CLI commands; require an
+  explicit choice when detection is ambiguous. Add the `fastapi` CLI alias.
+- Reuse existing project and user CSV directories in the Flask management CLI.
+- Standardize framework CSV initialization on shared policy files. Import
+  legacy runtime CSV data at startup, preserving expiry times and metadata,
+  retaining original sources and backups, and preventing migration replay.
+- Preserve keyword frequencies and runtime history in auxiliary metadata.
+- Use UTF-8 for Python fallback CSV I/O to match Rust reads and writes.
+- Retain `aiwaf-rust>=0.2.3`; no new native API is required for these changes.
+
+## Next releases — ELv2 migration
 
 - Python and Node.js 1.1.2, Rust/Python and WASM 0.2.2, and Java 1.3.3 adopt
   standard Elastic License 2.0 for original project code, with retained MIT

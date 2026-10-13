@@ -47,8 +47,8 @@ jobs:
           npm run test:wasm
           npm run test:native
 
-      - name: Audit production dependencies
-        run: npm audit --omit=dev
+      - name: Audit all dependencies
+        run: npm audit
 
       - name: Stage shared package assets
         run: |

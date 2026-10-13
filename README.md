@@ -40,12 +40,12 @@ the supported Redis backends when sharing limits across workers.
 
 Each package is versioned and released independently.
 
-Python 1.1.3, Rust/Python 0.2.3, Node.js 1.1.2, WASM 0.2.2, and Java 1.3.3 are local release candidates; see the
+Python 1.1.4, Rust/Python 0.2.3, Node.js 1.1.2, WASM 0.2.2, and Java 1.3.3 are local release candidates; see the
 [upgrade notes](docs/releases/2026-10-elv2.md).
 
 | Runtime | Package | Repository version | Primary use |
 | --- | --- | ---: | --- |
-| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.3` | Django, Flask, and FastAPI protection |
+| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.4` | Django, Flask, and FastAPI protection |
 | Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.2` | Express and Node framework middleware |
 | Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.3` | Native Python acceleration and JSON model inference |
 | WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.2` | Rust detection and model primitives for JavaScript |
@@ -66,7 +66,7 @@ Supported framework integrations include Django, Flask, FastAPI, Express, Fastif
 - Memory, file, CSV, SQLite, database, and cache-backed runtime state, depending on the runtime
 - Structured request logging and offline training
 - Six-feature anomaly models with Rust, JavaScript, and Java implementations
-- Required Rust runtime for Python 1.1.3 and optional WebAssembly acceleration for Node.js
+- Required Rust runtime for Python 1.1.4 and optional WebAssembly acceleration for Node.js
 
 The runtimes share policy intent and training feature names, but their framework adapters and model implementations remain language-native. Model artifacts are not generally interchangeable across languages.
 
@@ -98,7 +98,7 @@ pip install "aiwaf[django]"
 pip install "aiwaf[flask]"
 pip install "aiwaf[fastapi]"
 
-# Backward-compatible alias; Python 1.1.3 already installs aiwaf-rust
+# Backward-compatible alias; Python 1.1.4 already installs aiwaf-rust
 pip install "aiwaf[rust]"
 
 # Node.js middleware
@@ -122,7 +122,7 @@ Java 1.3.3, after it is published to Maven Central:
 
 The Python package requires Python 3.10 or newer. Framework dependencies are optional, so install only the extra needed by the application.
 
-Python 1.1.3 requires `aiwaf-rust>=0.2.3`; the `rust` extra remains an installation
+Python 1.1.4 requires `aiwaf-rust>=0.2.3`; the `rust` extra remains an installation
 alias. Publish the matching Rust wheel with `NativeCSVPipeline` support before
 the Python release. The Rust release workflow builds Linux x86_64/aarch64,
 musl x86_64, macOS x86_64/arm64 and Windows x86_64 wheels and checks the native
@@ -427,7 +427,7 @@ When `aiwaf_rust` is importable, supported acceleration paths are selected autom
 
 ### Rust-backed CSV runtime and training
 
-The Python 1.1.3 and `aiwaf-rust` 0.2.3 release candidates add native CSV storage,
+The Python 1.1.4 and `aiwaf-rust` 0.2.3 release candidates add native CSV storage,
 shared policy evaluation, and training preparation for Django, Flask, and FastAPI.
 Install matching Python and Rust builds and reload application workers to activate
 the new capabilities. Older extensions retain the compatible Python fallback.
@@ -1329,7 +1329,7 @@ Release versions and tags must match the relevant manifest.
 
 | Package | Manifest | Tag | Workflow |
 | --- | --- | --- | --- |
-| Python `aiwaf` | `pyproject.toml` | `python-v1.1.3` | `python-publish.yml` |
+| Python `aiwaf` | `pyproject.toml` | `python-v1.1.4` | `python-publish.yml` |
 | npm `aiwaf` | `js/package.json` | `js-v1.1.2` | `npm-publish.yml` |
 | PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.3` | `rust-publish.yml` |
 | npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.2` | `wasm-publish.yml` |
