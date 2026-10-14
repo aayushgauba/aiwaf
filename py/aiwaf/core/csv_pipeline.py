@@ -71,14 +71,17 @@ class CSVPipeline:
         if isinstance(directory, str) and directory:
             from .policy_csv_storage import PolicyCSVStorage
             PolicyCSVStorage(data_dir=directory)
-        profile_json = json.dumps(config, allow_nan=False)
+        wire_config = dict(config)
+        if 'soft_block_blocklist' in wire_config:
+            wire_config['soft_block_blacklist'] = wire_config.pop('soft_block_blocklist')
+        profile_json = json.dumps(wire_config, allow_nan=False)
         if honeypot_cache is None:
             self.native = factory(profile_json)
         else:
             try:
                 self.native = factory(profile_json, honeypot_cache)
             except TypeError as error:
-                raise RuntimeError("Cache honeypot timing requires aiwaf-rust>=0.2.6 with cache delegation support") from error
+                raise RuntimeError("Cache honeypot timing requires aiwaf-rust>=0.2.7 with cache delegation support") from error
         self.policy = _BufferPolicy(config.get("sql_mode", "block"), config.get("max_bytes", 65536))
         if model is not None:
             self.native.set_model(model)

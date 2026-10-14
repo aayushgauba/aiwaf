@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aiwaf.core.runtime_blacklist import BlacklistManager
+from aiwaf.core.runtime_blocklist import BlocklistManager
 from aiwaf.core import AIWAF
 
 
@@ -47,7 +47,7 @@ def test_aiwaf_integrates_with_fastapi_and_allows_valid_request(monkeypatch):
     assert response.json() == {"ok": True}
 
 
-def test_rate_limiting_blocks_without_blacklisting_by_default():
+def test_rate_limiting_blocks_without_blocklisting_by_default():
     app = _build_app()
     AIWAF(
         app,
@@ -62,7 +62,7 @@ def test_rate_limiting_blocks_without_blacklisting_by_default():
 
     assert first.status_code == 200
     assert second.status_code == 429
-    assert not BlacklistManager.is_blocked("testclient")
+    assert not BlocklistManager.is_blocked("testclient")
 
 
 def test_lifespan_registration_skips_if_already_present():
@@ -101,7 +101,7 @@ def test_core_statistics_activity_and_export_have_expected_shape():
 
     stats = aiwaf.get_statistics()
     assert "aiwaf" in stats
-    assert "blacklist" in stats
+    assert "blocklist" in stats
     assert "configuration" in stats
 
     activity = aiwaf.get_recent_activity(hours=1)
@@ -122,7 +122,7 @@ def test_core_health_check_reports_healthy_components():
     health = aiwaf.health_check()
     assert health["status"] in {"healthy", "degraded"}
     assert health["components"]["storage"] == "healthy"
-    assert health["components"]["blacklist"] == "healthy"
+    assert health["components"]["blocklist"] == "healthy"
     assert health["components"]["exemptions"] == "healthy"
 
     cleanup = aiwaf.cleanup()
@@ -161,7 +161,7 @@ def test_runtime_feature_controls_save_and_lifespan(tmp_path, monkeypatch):
         enable_feature=lambda name: setattr(config, "enabled", name),
         disable_feature=lambda name: setattr(config, "disabled", name),
         save_to_file=lambda path: setattr(config, "saved", path),
-        get=lambda key, default=None: True if key == "blacklist.auto_unblock_enabled" else "file",
+        get=lambda key, default=None: True if key == "blocklist.auto_unblock_enabled" else "file",
     )
     waf = runtime_fastapi.AIWAF.__new__(runtime_fastapi.AIWAF)
     waf.config = config
@@ -174,7 +174,7 @@ def test_runtime_feature_controls_save_and_lifespan(tmp_path, monkeypatch):
         str(tmp_path / "config.json"),
     )
 
-    monkeypatch.setattr(runtime_fastapi.BlacklistManager, "cleanup_expired", lambda: 1)
+    monkeypatch.setattr(runtime_fastapi.BlocklistManager, "cleanup_expired", lambda: 1)
     app = SimpleNamespace(router=SimpleNamespace(lifespan_context=None))
     waf._add_lifecycle_events(app)
 

@@ -12,8 +12,8 @@ from typing import Optional
 
 from .storage_schema import (
     CSV_HEADERS,
-    WHITELIST_CSV,
-    BLACKLIST_CSV,
+    ALLOWLIST_CSV,
+    BLOCKLIST_CSV,
     KEYWORDS_CSV,
     GEO_BLOCKED_COUNTRIES_CSV,
     PATH_EXEMPTIONS_CSV,
@@ -32,25 +32,25 @@ from .native_runtime import csv_function
 
 def ensure_all(data_dir: Path):
     ensure_csv_files(data_dir, CSV_HEADERS)
-    return _migrate_blacklist_csv(data_dir)
+    return _migrate_blocklist_csv(data_dir)
 
 
-def read_whitelist(data_dir: Path) -> set[str]:
-    return read_csv_set(data_dir, WHITELIST_CSV, "ip", CSV_HEADERS)
+def read_allowlist(data_dir: Path) -> set[str]:
+    return read_csv_set(data_dir, ALLOWLIST_CSV, "ip", CSV_HEADERS)
 
 
-def contains_whitelist(data_dir: Path, ip: str) -> bool:
+def contains_allowlist(data_dir: Path, ip: str) -> bool:
     native = csv_function('csv_contains')
     if native is not None:
         ensure_csv_files(data_dir, CSV_HEADERS)
-        return native(str(data_dir / WHITELIST_CSV), 'ip', ip, True)
-    return ip in read_whitelist(data_dir)
+        return native(str(data_dir / ALLOWLIST_CSV), 'ip', ip, True)
+    return ip in read_allowlist(data_dir)
 
 
-def append_whitelist(data_dir: Path, ip: str):
-    if native_policy_list_update(data_dir, WHITELIST_CSV, ip, [ip, now_iso()], False):
+def append_allowlist(data_dir: Path, ip: str):
+    if native_policy_list_update(data_dir, ALLOWLIST_CSV, ip, [ip, now_iso()], False):
         return
-    return append_csv_row(data_dir, WHITELIST_CSV, [ip, now_iso()], CSV_HEADERS)
+    return append_csv_row(data_dir, ALLOWLIST_CSV, [ip, now_iso()], CSV_HEADERS)
 
 
 def native_policy_list_update(data_dir, filename, key, row, remove, mode='exact'):
@@ -61,9 +61,9 @@ def native_policy_list_update(data_dir, filename, key, row, remove, mode='exact'
     return True
 
 
-def rewrite_whitelist(data_dir: Path, whitelist: set[str]):
-    rows = [[ip, now_iso()] for ip in whitelist]
-    return rewrite_csv_rows(data_dir, WHITELIST_CSV, rows, CSV_HEADERS)
+def rewrite_allowlist(data_dir: Path, allowlist: set[str]):
+    rows = [[ip, now_iso()] for ip in allowlist]
+    return rewrite_csv_rows(data_dir, ALLOWLIST_CSV, rows, CSV_HEADERS)
 
 
 def _parse_json(value, default):
@@ -95,7 +95,7 @@ def _parse_bool(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "permanent"}
 
 
-def _legacy_blacklist_entry(reason=None, migration_time=None, added_date=None) -> dict:
+def _legacy_blocklist_entry(reason=None, migration_time=None, added_date=None) -> dict:
     blocked_at = time.time() if migration_time is None else migration_time
     legacy_detail = str(reason or "").strip()
     reasons = ["legacy_blacklist"]
@@ -116,7 +116,7 @@ def _legacy_blacklist_entry(reason=None, migration_time=None, added_date=None) -
     }
 
 
-def _blacklist_entry_from_row(row: dict) -> dict:
+def _blocklist_entry_from_row(row: dict) -> dict:
     reason = row.get("reason", "") or "Blocked"
     added_date = row.get("added_date") or row.get("timestamp") or ""
     reasons = _parse_json(row.get("reasons"), [])
@@ -137,20 +137,20 @@ def _blacklist_entry_from_row(row: dict) -> dict:
     }
 
 
-def _migrate_blacklist_csv(data_dir: Path):
+def _migrate_blocklist_csv(data_dir: Path):
     def _migrate():
-        csv_file = data_dir / BLACKLIST_CSV
+        csv_file = data_dir / BLOCKLIST_CSV
         if not csv_file.exists():
             return
         native = csv_function('csv_headers_match')
         if native is not None:
-            if native(str(csv_file), CSV_HEADERS[BLACKLIST_CSV]):
+            if native(str(csv_file), CSV_HEADERS[BLOCKLIST_CSV]):
                 return
         with file_lock(csv_file, "r") as f:
             raw_rows = list(csv.reader(f))
-        current_headers = CSV_HEADERS[BLACKLIST_CSV]
+        current_headers = CSV_HEADERS[BLOCKLIST_CSV]
         if not raw_rows:
-            rewrite_csv_rows(data_dir, BLACKLIST_CSV, [], CSV_HEADERS)
+            rewrite_csv_rows(data_dir, BLOCKLIST_CSV, [], CSV_HEADERS)
             return
         fieldnames = raw_rows[0]
         if fieldnames == current_headers:
@@ -164,13 +164,13 @@ def _migrate_blacklist_csv(data_dir: Path):
                 if not ip:
                     continue
                 if "permanent" not in fieldnames and not row.get("expires_at") and not row.get("duration"):
-                    migrated[ip] = _legacy_blacklist_entry(
+                    migrated[ip] = _legacy_blocklist_entry(
                         row.get("reason"),
                         migration_time=migration_time,
                         added_date=row.get("added_date") or row.get("timestamp"),
                     )
                 else:
-                    migrated[ip] = _blacklist_entry_from_row(row)
+                    migrated[ip] = _blocklist_entry_from_row(row)
         else:
             for values in raw_rows:
                 if not values:
@@ -179,13 +179,13 @@ def _migrate_blacklist_csv(data_dir: Path):
                 if not ip:
                     continue
                 reason = values[1] if len(values) > 1 else None
-                migrated[ip] = _legacy_blacklist_entry(reason, migration_time=migration_time)
-        rewrite_csv_rows(data_dir, BLACKLIST_CSV, [_blacklist_row(ip, entry) for ip, entry in migrated.items()], CSV_HEADERS)
+                migrated[ip] = _legacy_blocklist_entry(reason, migration_time=migration_time)
+        rewrite_csv_rows(data_dir, BLOCKLIST_CSV, [_blocklist_row(ip, entry) for ip, entry in migrated.items()], CSV_HEADERS)
 
     return safe_csv_operation(_migrate)
 
 
-def _blacklist_row(ip: str, entry) -> list:
+def _blocklist_row(ip: str, entry) -> list:
     if isinstance(entry, dict):
         reason = str(entry.get("reason") or "Blocked")
         reputation_reason = str(entry.get("reputation_reason") or "")
@@ -209,10 +209,10 @@ def _blacklist_row(ip: str, entry) -> list:
     return [ip, str(entry or "Blocked"), "", now_iso(), "", "", "", "", "", "", "False", ""]
 
 
-def read_blacklist(data_dir: Path) -> dict[str, dict]:
+def read_blocklist(data_dir: Path) -> dict[str, dict]:
     def _read():
         ensure_all(data_dir)
-        csv_file = data_dir / BLACKLIST_CSV
+        csv_file = data_dir / BLOCKLIST_CSV
         items = {}
         native = csv_function('csv_read')
         if native is not None:
@@ -221,7 +221,7 @@ def read_blacklist(data_dir: Path) -> dict[str, dict]:
                 row = dict(zip(headers, values))
                 ip = (row.get('ip') or '').strip()
                 if ip:
-                    items[ip] = _blacklist_entry_from_row(row)
+                    items[ip] = _blocklist_entry_from_row(row)
             return items
         with file_lock(csv_file, "r") as f:
             reader = csv.DictReader(f)
@@ -229,51 +229,51 @@ def read_blacklist(data_dir: Path) -> dict[str, dict]:
                 ip = (row.get("ip") or "").strip()
                 if not ip:
                     continue
-                items[ip] = _blacklist_entry_from_row(row)
+                items[ip] = _blocklist_entry_from_row(row)
         return items
     return safe_csv_operation(_read)
 
 
-def read_blacklist_entry(data_dir: Path, ip: str):
+def read_blocklist_entry(data_dir: Path, ip: str):
     native = csv_function('csv_lookup')
     if native is not None:
         ensure_all(data_dir)
-        row = native(str(data_dir / BLACKLIST_CSV), 'ip', ip)
-        return _blacklist_entry_from_row(row) if row is not None else None
-    return read_blacklist(data_dir).get(ip)
+        row = native(str(data_dir / BLOCKLIST_CSV), 'ip', ip)
+        return _blocklist_entry_from_row(row) if row is not None else None
+    return read_blocklist(data_dir).get(ip)
 
 
-def native_block_blacklist(data_dir: Path, ip: str, reason: str, info=None, duration=None):
-    native = csv_function('csv_blacklist_block')
+def native_block_blocklist(data_dir: Path, ip: str, reason: str, info=None, duration=None):
+    native = csv_function('csv_blocklist_block')
     if native is None:
         return False
     ensure_all(data_dir)
     now = time.time()
-    native(str(data_dir / BLACKLIST_CSV), CSV_HEADERS[BLACKLIST_CSV], ip, reason,
+    native(str(data_dir / BLOCKLIST_CSV), CSV_HEADERS[BLOCKLIST_CSV], ip, reason,
            time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(now)),
            (json.dumps(info, separators=(',', ':'), ensure_ascii=False) if info else '') if info is not None else None,
            now, duration)
     return True
 
 
-def native_check_blacklist(data_dir: Path, ip: str, now: float):
-    native = csv_function('csv_blacklist_check')
+def native_check_blocklist(data_dir: Path, ip: str, now: float):
+    native = csv_function('csv_blocklist_check')
     if native is None:
         return None
     ensure_all(data_dir)
-    return native(str(data_dir / BLACKLIST_CSV), CSV_HEADERS[BLACKLIST_CSV], ip, now)
+    return native(str(data_dir / BLOCKLIST_CSV), CSV_HEADERS[BLOCKLIST_CSV], ip, now)
 
 
-def native_remove_blacklist(data_dir: Path, ip: str):
+def native_remove_blocklist(data_dir: Path, ip: str):
     native = csv_function('csv_remove_key')
     if native is None:
         return False
     ensure_all(data_dir)
-    native(str(data_dir / BLACKLIST_CSV), CSV_HEADERS[BLACKLIST_CSV], ip)
+    native(str(data_dir / BLOCKLIST_CSV), CSV_HEADERS[BLOCKLIST_CSV], ip)
     return True
 
 
-def append_blacklist(data_dir: Path, ip: str, reason: str, info_json: str, metadata: Optional[dict] = None):
+def append_blocklist(data_dir: Path, ip: str, reason: str, info_json: str, metadata: Optional[dict] = None):
     ensure_all(data_dir)
     entry = dict(metadata or {})
     entry.setdefault("reason", reason)
@@ -281,49 +281,49 @@ def append_blacklist(data_dir: Path, ip: str, reason: str, info_json: str, metad
         entry["extended_request_info"] = _parse_json(info_json, None)
     return append_csv_row(
         data_dir,
-        BLACKLIST_CSV,
-        _blacklist_row(ip, entry),
+        BLOCKLIST_CSV,
+        _blocklist_row(ip, entry),
         CSV_HEADERS,
     )
 
 
-def rewrite_blacklist(data_dir: Path, blacklist: dict):
-    rows = [_blacklist_row(ip, entry) for ip, entry in blacklist.items()]
-    return rewrite_csv_rows(data_dir, BLACKLIST_CSV, rows, CSV_HEADERS)
+def rewrite_blocklist(data_dir: Path, blocklist: dict):
+    rows = [_blocklist_row(ip, entry) for ip, entry in blocklist.items()]
+    return rewrite_csv_rows(data_dir, BLOCKLIST_CSV, rows, CSV_HEADERS)
 
 
-def is_legacy_blacklist_entry(entry) -> bool:
+def is_legacy_blocklist_entry(entry) -> bool:
     return isinstance(entry, dict) and (
         entry.get("reputation_reason") == "legacy_blacklist"
         or "legacy_blacklist" in [str(reason) for reason in (entry.get("reasons") or [])]
     )
 
 
-def legacy_blacklist_entries(data_dir: Path) -> dict[str, dict]:
-    blacklist = read_blacklist(data_dir)
-    return {ip: entry for ip, entry in blacklist.items() if is_legacy_blacklist_entry(entry)}
+def legacy_blocklist_entries(data_dir: Path) -> dict[str, dict]:
+    blocklist = read_blocklist(data_dir)
+    return {ip: entry for ip, entry in blocklist.items() if is_legacy_blocklist_entry(entry)}
 
 
-def convert_legacy_blacklist_entries(data_dir: Path, duration: Optional[int] = None, clear: bool = False) -> int:
-    blacklist = read_blacklist(data_dir)
+def convert_legacy_blocklist_entries(data_dir: Path, duration: Optional[int] = None, clear: bool = False) -> int:
+    blocklist = read_blocklist(data_dir)
     changed = 0
     now = time.time()
-    for ip in list(blacklist.keys()):
-        entry = blacklist[ip]
-        if not is_legacy_blacklist_entry(entry):
+    for ip in list(blocklist.keys()):
+        entry = blocklist[ip]
+        if not is_legacy_blocklist_entry(entry):
             continue
         changed += 1
         if clear:
-            del blacklist[ip]
+            del blocklist[ip]
             continue
         entry["permanent"] = duration is None
         entry["duration"] = duration
         entry["expires_at"] = now + duration if duration else None
         entry["blocked_at"] = entry.get("blocked_at") or now
         entry["reputation_reason"] = "legacy_blacklist_converted" if duration else "legacy_blacklist"
-        blacklist[ip] = entry
+        blocklist[ip] = entry
     if changed:
-        rewrite_blacklist(data_dir, blacklist)
+        rewrite_blocklist(data_dir, blocklist)
     return changed
 
 
@@ -382,3 +382,22 @@ def append_path_exemption(data_dir: Path, path: str, reason: str):
 def rewrite_path_exemptions(data_dir: Path, exemptions: dict[str, str]):
     rows = [[path, reason, now_iso()] for path, reason in exemptions.items()]
     return rewrite_csv_rows(data_dir, PATH_EXEMPTIONS_CSV, rows, CSV_HEADERS)
+
+
+# Compatibility aliases for callers using the previous terminology.
+WHITELIST_CSV = ALLOWLIST_CSV
+BLACKLIST_CSV = BLOCKLIST_CSV
+read_whitelist = read_allowlist
+contains_whitelist = contains_allowlist
+append_whitelist = append_allowlist
+rewrite_whitelist = rewrite_allowlist
+read_blacklist = read_blocklist
+read_blacklist_entry = read_blocklist_entry
+native_block_blacklist = native_block_blocklist
+native_check_blacklist = native_check_blocklist
+native_remove_blacklist = native_remove_blocklist
+append_blacklist = append_blocklist
+rewrite_blacklist = rewrite_blocklist
+is_legacy_blacklist_entry = is_legacy_blocklist_entry
+legacy_blacklist_entries = legacy_blocklist_entries
+convert_legacy_blacklist_entries = convert_legacy_blocklist_entries

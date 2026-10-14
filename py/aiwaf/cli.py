@@ -239,8 +239,8 @@ def main() -> None:
             )
             raise SystemExit(2)
 
-        if framework_args[:2] == ["blacklist", "migrate"]:
-            framework_args = ["aiwaf_migrate_blacklist"] + framework_args[2:]
+        if framework_args[:2] == ["blocklist", "migrate"]:
+            framework_args = ["aiwaf_migrate_blocklist"] + framework_args[2:]
         execute_from_command_line(["aiwaf django"] + list(framework_args))
         return
 

@@ -1,8 +1,8 @@
 # Flask-adapted RateLimitMiddleware
 import time
 from flask import request, jsonify, current_app
-from .utils import get_blacklist_extended_info, get_ip, is_exempt
-from .blacklist_manager import BlacklistManager
+from .utils import get_blocklist_extended_info, get_ip, is_exempt
+from .blocklist_manager import BlocklistManager
 from .exemption_decorators import should_apply_middleware, get_path_rule_overrides
 from aiwaf.core.exemptions import get_path_rule_for_path as core_get_path_rule_for_path
 from aiwaf.core.block_responses import blocked_response, throttle_response
@@ -61,7 +61,7 @@ class RateLimitMiddleware:
             window = app.config.get("AIWAF_RATE_WINDOW", 10)
             max_req = app.config.get("AIWAF_RATE_MAX", 20)
             flood = app.config.get("AIWAF_RATE_FLOOD", 40)
-            soft_block_blacklist = bool(app.config.get("AIWAF_RATE_SOFT_BLOCK_BLACKLIST", False))
+            soft_block_blocklist = bool(app.config.get('AIWAF_RATE_SOFT_BLOCK_BLOCKLIST', app.config.get('AIWAF_RATE_SOFT_BLOCK_BLACKLIST', False)))
             overrides = get_path_rule_overrides("RATE_LIMIT")
             if not overrides:
                 overrides = _resolve_rate_limit_overrides(app, request.path)
@@ -82,19 +82,19 @@ class RateLimitMiddleware:
                 return jsonify({'error': 'temporarily_unavailable'}), 503
 
             if decision.action == FLOOD_BLOCK:
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     "Flood pattern",
-                    extended_request_info=get_blacklist_extended_info(request),
+                    extended_request_info=get_blocklist_extended_info(request),
                 )
                 payload, status = blocked_response()
                 return jsonify(payload), status
             if decision.action == THROTTLE:
-                if soft_block_blacklist:
-                    BlacklistManager.block(
+                if soft_block_blocklist:
+                    BlocklistManager.block(
                         ip,
                         "Rate limit exceeded",
-                        extended_request_info=get_blacklist_extended_info(request),
+                        extended_request_info=get_blocklist_extended_info(request),
                     )
                 payload, status = throttle_response()
                 return jsonify(payload), status
@@ -130,3 +130,8 @@ def _resolve_rate_cache_backend(app):
         key_prefix = app.config.get("AIWAF_RATE_CACHE_KEY_PREFIX", "aiwaf:rate:")
         return make_cache_backend(CacheBackendConfig(backend="redis", redis_url=redis_url, key_prefix=key_prefix))
     raise ValueError("Unknown AIWAF_RATE_CACHE_BACKEND")
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_extended_info = get_blocklist_extended_info
+BlacklistManager = BlocklistManager

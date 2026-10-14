@@ -1,5 +1,5 @@
 const NodeCache = require('node-cache');
-const blacklistManager = require('./blacklistManager');
+const blocklistManager = require('./blocklistManager');
 
 let cacheBackend;
 let opts;
@@ -119,7 +119,7 @@ module.exports = {
       await cacheBackend.expire(key, effective.WINDOW_SEC * 2); // Extended TTL
       const count = await cacheBackend.lLen(key);
       if (count > effective.FLOOD_REQ) {
-        await blacklistManager.block(ip, 'flood');
+        await blocklistManager.block(ip, 'flood');
       }
     } catch (err) {
       console.warn('Rate cache unavailable in record().');
@@ -130,9 +130,9 @@ module.exports = {
   async isBlocked(ip, overrides = {}) {
     const effective = getEffectiveOpts(overrides);
     try {
-      if (await blacklistManager.isBlocked(ip)) return true;
+      if (await blocklistManager.isBlocked(ip)) return true;
     } catch (err) {
-      console.warn('Blacklist unavailable during rate check.');
+      console.warn('Blocklist unavailable during rate check.');
       if (opts.failureMode === 'closed') throw unavailable();
     }
 

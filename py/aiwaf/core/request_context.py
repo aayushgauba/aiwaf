@@ -236,7 +236,7 @@ def _enforce_payload_size_limit(payload: Dict[str, object], max_bytes: int, *, c
     return compact_fallback
 
 
-def extract_blacklist_extended_info_from_django_request(
+def extract_blocklist_extended_info_from_django_request(
     request,
     *,
     enabled: bool,
@@ -271,7 +271,7 @@ def extract_blacklist_extended_info_from_django_request(
     return info
 
 
-def extract_blacklist_extended_info_from_flask_request(
+def extract_blocklist_extended_info_from_flask_request(
     request,
     *,
     enabled: bool,
@@ -320,7 +320,7 @@ def extract_blacklist_extended_info_from_flask_request(
     )
 
 
-def extract_blacklist_extended_info_from_fastapi_request(
+def extract_blocklist_extended_info_from_fastapi_request(
     request,
     *,
     enabled: bool,
@@ -371,3 +371,9 @@ def _is_proxy_like_ip(ip: str) -> bool:
         )
     except ValueError:
         return False
+
+
+# Compatibility aliases for callers using the previous terminology.
+extract_blacklist_extended_info_from_django_request = extract_blocklist_extended_info_from_django_request
+extract_blacklist_extended_info_from_flask_request = extract_blocklist_extended_info_from_flask_request
+extract_blacklist_extended_info_from_fastapi_request = extract_blocklist_extended_info_from_fastapi_request

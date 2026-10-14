@@ -36,7 +36,8 @@ struct Profile {
     learning: bool,
     geo_allow: HashSet<String>,
     geo_block: HashSet<String>,
-    blacklist: HashMap<String, f64>,
+    #[serde(rename = "blacklist", alias = "blocklist")]
+    blocklist: HashMap<String, f64>,
     rate_window: f64,
     rate_max: usize,
     rate_flood: usize,
@@ -90,7 +91,7 @@ impl Default for Profile {
             learning: true,
             geo_allow: HashSet::new(),
             geo_block: HashSet::new(),
-            blacklist: HashMap::new(),
+            blocklist: HashMap::new(),
             rate_window: 10.0,
             rate_max: 20,
             rate_flood: 40,
@@ -205,8 +206,8 @@ impl Engine {
         {
             return Err("Invalid native timing".into());
         }
-        if p.blacklist.values().any(|v| !v.is_finite() || *v < 0.0) {
-            return Err("Invalid blacklist expiry (0 means permanent)".into());
+        if p.blocklist.values().any(|v| !v.is_finite() || *v < 0.0) {
+            return Err("Invalid blocklist expiry (0 means permanent)".into());
         }
         p.static_keywords = p
             .static_keywords
@@ -226,7 +227,7 @@ impl Engine {
             .collect();
         p.geo_allow = p.geo_allow.into_iter().map(|s| s.to_uppercase()).collect();
         p.geo_block = p.geo_block.into_iter().map(|s| s.to_uppercase()).collect();
-        let blocks = p.blacklist.clone();
+        let blocks = p.blocklist.clone();
         let learned = p
             .dynamic_keywords
             .iter()
@@ -362,7 +363,7 @@ impl Engine {
                 .is_some_and(|expiry| *expiry == 0.0 || *expiry > r.now)
             {
                 status = 403;
-                reason = "blacklist".into();
+                reason = "blocklist".into();
             } else if let Some(k) = validate_url(&r.path).or_else(|| validate_url(&r.query)) {
                 status = 403;
                 reason = k.into();
@@ -430,7 +431,7 @@ impl Engine {
                 .is_some_and(|e| *e == 0.0 || *e > r.now)
         {
             status = 403;
-            reason = "blacklist".into();
+            reason = "blocklist".into();
         }
         if status == 0 && apply.contains("honeypot") && !r.defer_body {
             if !p.allowed_methods.is_empty() && !p.allowed_methods.contains(&r.method) {
@@ -488,7 +489,7 @@ impl Engine {
                 reason = format!("header:{k}");
             }
         }
-        if status == 403 && reason != "blacklist" {
+        if status == 403 && reason != "blocklist" {
             self.blocks.insert(r.ip.clone(), r.now + p.block_duration);
         }
         // Only response facts are retained; streaming responses must not pin request payloads.
@@ -621,7 +622,7 @@ impl Engine {
         let r = &item.request;
         let c = self.clients.entry(r.ip.clone()).or_default();
         c.last = now;
-        let mut block = if item.status == 403 && item.reason != "blacklist" {
+        let mut block = if item.status == 403 && item.reason != "blocklist" {
             Some((
                 item.reason.clone(),
                 self.blocks
@@ -911,6 +912,16 @@ mod tests {
             r#"{"max_history":0}"#,
         ] {
             assert!(Engine::new(p).is_err());
+        }
+    }
+    #[test]
+    fn blocklist_and_previous_wire_key_enforce_identically() {
+        for key in ["blocklist", "blacklist"] {
+            let mut profile = json!({"enabled":["ip_keyword_block"], "exempt_paths":[]});
+            profile[key] = json!({"8.8.8.8": 1000.0});
+            let mut engine = Engine::new(&profile.to_string()).unwrap();
+            let decision = begin(&mut engine, request("8.8.8.8", "/api", "GET", 100.0, json!(null)));
+            assert_eq!(decision["status"], 403);
         }
     }
     #[test]

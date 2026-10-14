@@ -49,7 +49,7 @@ def function(name):
     backend = rust_backend.aiwaf_rust
     if backend is None or not enabled():
         return None
-    return getattr(backend, name, None)
+    return getattr(backend, name, None) or getattr(backend, name.replace('blocklist', 'blacklist').replace('allowlist', 'whitelist'), None)
 
 
 def csv_function(name):
@@ -60,7 +60,7 @@ def csv_function(name):
     if not all(hasattr(backend, item) for item in
                ('csv_read', 'csv_read_set', 'csv_read_dict', 'csv_contains', 'csv_write')):
         return None
-    return getattr(backend, name, None)
+    return getattr(backend, name, None) or getattr(backend, name.replace('blocklist', 'blacklist').replace('allowlist', 'whitelist'), None)
 
 
 def csv_values(row):

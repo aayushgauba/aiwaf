@@ -35,17 +35,17 @@ def doc_page(framework, page):
     return render_template(f'docs_{framework}_{page}.html')
 
 # Admin routes for managing CSV data
-@app.route('/admin/whitelist/<ip>')
-def whitelist_ip(ip):
-    from aiwaf.flask.storage import add_ip_whitelist
-    add_ip_whitelist(ip)
-    return f"IP {ip} added to whitelist (saved to CSV)"
+@app.route('/admin/allowlist/<ip>')
+def allowlist_ip(ip):
+    from aiwaf.flask.storage import add_ip_allowlist
+    add_ip_allowlist(ip)
+    return f"IP {ip} added to allowlist (saved to CSV)"
 
-@app.route('/admin/blacklist/<ip>')
-def blacklist_ip(ip):
-    from aiwaf.flask.storage import add_ip_blacklist
-    add_ip_blacklist(ip, "Admin blocked")
-    return f"IP {ip} added to blacklist (saved to CSV)"
+@app.route('/admin/blocklist/<ip>')
+def blocklist_ip(ip):
+    from aiwaf.flask.storage import add_ip_blocklist
+    add_ip_blocklist(ip, "Admin blocked")
+    return f"IP {ip} added to blocklist (saved to CSV)"
 
 @app.route('/admin/block-keyword/<keyword>')
 def block_keyword(keyword):
@@ -56,3 +56,7 @@ def block_keyword(keyword):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
+# Compatibility aliases for callers using the previous terminology.
+whitelist_ip = allowlist_ip
+blacklist_ip = blocklist_ip

@@ -5,7 +5,6 @@ use rand::{Rng, SeedableRng};
 use regex::{Regex, RegexSet};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::f64;
 
 /// Match literal keywords while preserving the configured keyword order.
 pub struct KeywordMatcher {

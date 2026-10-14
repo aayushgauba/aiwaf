@@ -3,11 +3,11 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 
-from ..blacklist import BlacklistManager
+from ..blocklist import BlocklistManager
 from ..decorators import should_apply_middleware
 from ..geoip import get_country_for_ip
 from ..storage import get_geo_block_store
-from ..utils import get_blacklist_extended_info, get_ip, is_exempt
+from ..utils import get_blocklist_extended_info, get_ip, is_exempt
 from aiwaf.core.geo_policy import evaluate_geo_policy, normalize_country_list
 from aiwaf.core.runtime_storage import GeoBlockStore, CSVStorage
 from aiwaf.core.policy_csv_storage import PolicyCSVStorage
@@ -67,9 +67,14 @@ class GeoBlockMiddleware(BaseHTTPMiddleware):
 
         if decision.should_block:
             reason = decision.reason
-            BlacklistManager.block(ip, reason, extended_request_info=get_blacklist_extended_info(request))
+            BlocklistManager.block(ip, reason, extended_request_info=get_blocklist_extended_info(request))
             request.state.aiwaf_blocked = True
             request.state.aiwaf_block_reason = reason
             return JSONResponse({"error": "blocked"}, status_code=403)
 
         return await call_next(request)
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager
+get_blacklist_extended_info = get_blocklist_extended_info

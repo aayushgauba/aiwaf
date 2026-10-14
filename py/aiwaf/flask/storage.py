@@ -13,15 +13,15 @@ from aiwaf.core.storage_schema import (
 )
 
 try:
-    from .db_models import db, WhitelistedIP, BlacklistedIP, Keyword, GeoBlockedCountry
+    from .db_models import db, AllowlistedIP, BlocklistedIP, Keyword, GeoBlockedCountry
     from flask import current_app
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
 
 # In-memory fallback storage
-_memory_whitelist = set()
-_memory_blacklist = {}
+_memory_allowlist = set()
+_memory_blocklist = {}
 _memory_keywords = set()
 _memory_geo_blocked_countries = set()
 _memory_path_exemptions = {}
@@ -50,44 +50,44 @@ def _get_storage_mode():
     return 'memory'
 
 
-def _database_blacklist_columns():
-    """Return deployed blacklist columns without selecting through the new model."""
+def _database_blocklist_columns():
+    """Return deployed blocklist columns without selecting through the new model."""
     from sqlalchemy import inspect
 
     return {
         column["name"]
-        for column in inspect(db.engine).get_columns(BlacklistedIP.__tablename__)
+        for column in inspect(db.engine).get_columns(BlocklistedIP.__tablename__)
     }
 
 
-def _database_has_current_blacklist_schema():
+def _database_has_current_blocklist_schema():
     required = {
         "reputation_reason", "reasons", "score", "offenses", "blocked_at",
         "expires_at", "duration", "permanent",
     }
     try:
-        return required.issubset(_database_blacklist_columns())
+        return required.issubset(_database_blocklist_columns())
     except Exception:
         return False
 
 
-def _legacy_database_is_blacklisted(ip):
+def _legacy_database_is_blocklisted(ip):
     from sqlalchemy import text
 
     row = db.session.execute(
-        text(f"SELECT 1 FROM {BlacklistedIP.__tablename__} WHERE ip = :ip LIMIT 1"),
+        text(f"SELECT 1 FROM {BlocklistedIP.__tablename__} WHERE ip = :ip LIMIT 1"),
         {"ip": ip},
     ).first()
     return row is not None
 
 
-def _legacy_database_add_blacklist(ip, reason, extended_request_info=None):
+def _legacy_database_add_blocklist(ip, reason, extended_request_info=None):
     """Use only columns present in a pre-reputation SQLAlchemy table."""
     from sqlalchemy import text
 
-    table = BlacklistedIP.__tablename__
-    columns = _database_blacklist_columns()
-    existing = _legacy_database_is_blacklisted(ip)
+    table = BlocklistedIP.__tablename__
+    columns = _database_blocklist_columns()
+    existing = _legacy_database_is_blocklisted(ip)
     values = {"ip": ip, "reason": reason}
     assignments = ["reason = :reason"]
     insert_columns = ["ip", "reason"]
@@ -113,11 +113,11 @@ def _legacy_database_add_blacklist(ip, reason, extended_request_info=None):
     db.session.commit()
 
 
-def _legacy_database_remove_blacklist(ip):
+def _legacy_database_remove_blocklist(ip):
     from sqlalchemy import text
 
     db.session.execute(
-        text(f"DELETE FROM {BlacklistedIP.__tablename__} WHERE ip = :ip"),
+        text(f"DELETE FROM {BlocklistedIP.__tablename__} WHERE ip = :ip"),
         {"ip": ip},
     )
     db.session.commit()
@@ -148,23 +148,23 @@ def _ensure_csv_files():
     data_dir = Path(_get_data_dir())
     return csv_impl.ensure_all(data_dir)
 
-def _read_csv_whitelist():
-    """Read whitelist from CSV with thread safety."""
+def _read_csv_allowlist():
+    """Read allowlist from CSV with thread safety."""
     data_dir = Path(_get_data_dir())
-    return csv_impl.read_whitelist(data_dir)
+    return csv_impl.read_allowlist(data_dir)
 
-def _append_csv_whitelist(ip):
-    """Append IP to whitelist CSV with thread safety and atomic operations."""
+def _append_csv_allowlist(ip):
+    """Append IP to allowlist CSV with thread safety and atomic operations."""
     data_dir = Path(_get_data_dir())
-    return csv_impl.append_whitelist(data_dir, ip)
+    return csv_impl.append_allowlist(data_dir, ip)
 
-def _read_csv_blacklist():
-    """Read blacklist from CSV with thread safety."""
+def _read_csv_blocklist():
+    """Read blocklist from CSV with thread safety."""
     data_dir = Path(_get_data_dir())
-    return csv_impl.read_blacklist(data_dir)
+    return csv_impl.read_blocklist(data_dir)
 
-def _append_csv_blacklist(ip, reason, extended_request_info=None):
-    """Append IP to blacklist CSV with thread safety."""
+def _append_csv_blocklist(ip, reason, extended_request_info=None):
+    """Append IP to blocklist CSV with thread safety."""
     info_json = ""
     if extended_request_info:
         try:
@@ -172,7 +172,7 @@ def _append_csv_blacklist(ip, reason, extended_request_info=None):
         except Exception:
             info_json = ""
     data_dir = Path(_get_data_dir())
-    return csv_impl.append_blacklist(data_dir, ip, reason, info_json)
+    return csv_impl.append_blocklist(data_dir, ip, reason, info_json)
 
 def _read_csv_keywords():
     """Read keywords from CSV with thread safety."""
@@ -217,12 +217,12 @@ def _rewrite_csv_path_exemptions(exemptions):
     data_dir = Path(_get_data_dir())
     return csv_impl.rewrite_path_exemptions(data_dir, exemptions)
 
-def _rewrite_csv_blacklist(blacklist):
-    """Rewrite blacklist CSV file with thread safety."""
+def _rewrite_csv_blocklist(blocklist):
+    """Rewrite blocklist CSV file with thread safety."""
     data_dir = Path(_get_data_dir())
-    return csv_impl.rewrite_blacklist(data_dir, blacklist)
+    return csv_impl.rewrite_blocklist(data_dir, blocklist)
 
-def _is_blacklist_entry_expired(entry, now=None):
+def _is_blocklist_entry_expired(entry, now=None):
     if not isinstance(entry, dict):
         return False
     expires_at = entry.get("expires_at")
@@ -233,7 +233,7 @@ def _is_blacklist_entry_expired(entry, now=None):
     except (TypeError, ValueError):
         return False
 
-def _blacklist_metadata(ip, reason=None, existing=None, duration=None, extended_request_info=None):
+def _blocklist_metadata(ip, reason=None, existing=None, duration=None, extended_request_info=None):
     now = time.time()
     decision = evaluate_reputation(
         existing=existing if isinstance(existing, dict) else {},
@@ -338,8 +338,8 @@ def get_keyword_store() -> KeywordStoreProtocol:
     return KeywordStore()
 
 # Public API functions
-def is_ip_whitelisted(ip):
-    """Check if IP is whitelisted."""
+def is_ip_allowlisted(ip):
+    """Check if IP is allowlisted."""
     storage_mode = _get_storage_mode()
     
     if storage_mode == 'database':
@@ -347,7 +347,7 @@ def is_ip_whitelisted(ip):
             # Additional check to ensure database is properly initialized
             from flask import current_app
             if hasattr(current_app, 'extensions') and 'sqlalchemy' in current_app.extensions:
-                return WhitelistedIP.query.filter_by(ip=ip).first() is not None
+                return AllowlistedIP.query.filter_by(ip=ip).first() is not None
             else:
                 storage_mode = 'csv'
         except Exception:
@@ -356,62 +356,62 @@ def is_ip_whitelisted(ip):
     
     if storage_mode == 'csv':
         if csv_function('csv_contains') is not None:
-            return csv_impl.contains_whitelist(Path(_get_data_dir()), ip)
-        return ip in _read_csv_whitelist()
+            return csv_impl.contains_allowlist(Path(_get_data_dir()), ip)
+        return ip in _read_csv_allowlist()
     else:
-        return ip in _memory_whitelist
+        return ip in _memory_allowlist
 
-def add_ip_whitelist(ip):
-    """Add IP to whitelist."""
-    if is_ip_whitelisted(ip):
+def add_ip_allowlist(ip):
+    """Add IP to allowlist."""
+    if is_ip_allowlisted(ip):
         return
     
     storage_mode = _get_storage_mode()
     
     if storage_mode == 'database':
         try:
-            db.session.add(WhitelistedIP(ip=ip))
+            db.session.add(AllowlistedIP(ip=ip))
             db.session.commit()
             return
         except Exception:
             storage_mode = 'csv'
     
     if storage_mode == 'csv':
-        _append_csv_whitelist(ip)
+        _append_csv_allowlist(ip)
     else:
-        _memory_whitelist.add(ip)
+        _memory_allowlist.add(ip)
 
-def remove_ip_whitelist(ip):
-    """Remove IP from whitelist."""
+def remove_ip_allowlist(ip):
+    """Remove IP from allowlist."""
     storage_mode = _get_storage_mode()
     
     if storage_mode == 'database':
         try:
-            entry = WhitelistedIP.query.filter_by(ip=ip).first()
+            entry = AllowlistedIP.query.filter_by(ip=ip).first()
             if entry:
                 db.session.delete(entry)
                 db.session.commit()
         except Exception:
             # Fallback to memory
-            _memory_whitelist.discard(ip)
+            _memory_allowlist.discard(ip)
     elif storage_mode == 'csv':
         # For CSV, we need to rewrite the file without the IP
-        if csv_impl.native_policy_list_update(Path(_get_data_dir()), csv_impl.WHITELIST_CSV,
+        if csv_impl.native_policy_list_update(Path(_get_data_dir()), csv_impl.ALLOWLIST_CSV,
                                              ip, [], True):
             return
-        whitelist = _read_csv_whitelist()
-        whitelist.discard(ip)
-        _rewrite_csv_whitelist(whitelist)
+        allowlist = _read_csv_allowlist()
+        allowlist.discard(ip)
+        _rewrite_csv_allowlist(allowlist)
     else:
-        _memory_whitelist.discard(ip)
+        _memory_allowlist.discard(ip)
 
-def _rewrite_csv_whitelist(whitelist):
-    """Rewrite whitelist CSV file."""
+def _rewrite_csv_allowlist(allowlist):
+    """Rewrite allowlist CSV file."""
     data_dir = Path(_get_data_dir())
-    return csv_impl.rewrite_whitelist(data_dir, whitelist)
+    return csv_impl.rewrite_allowlist(data_dir, allowlist)
 
-def is_ip_blacklisted(ip):
-    """Check if IP is blacklisted."""
+def is_ip_blocklisted(ip):
+    """Check if IP is blocklisted."""
     storage_mode = _get_storage_mode()
     now = time.time()
     
@@ -420,12 +420,12 @@ def is_ip_blacklisted(ip):
             # Additional check to ensure database is properly initialized
             from flask import current_app
             if hasattr(current_app, 'extensions') and 'sqlalchemy' in current_app.extensions:
-                if not _database_has_current_blacklist_schema():
-                    return _legacy_database_is_blacklisted(ip)
-                entry = BlacklistedIP.query.filter_by(ip=ip).first()
+                if not _database_has_current_blocklist_schema():
+                    return _legacy_database_is_blocklisted(ip)
+                entry = BlocklistedIP.query.filter_by(ip=ip).first()
                 if not entry:
                     return False
-                if _is_blacklist_entry_expired(_entry_to_dict(entry), now=now):
+                if _is_blocklist_entry_expired(_entry_to_dict(entry), now=now):
                     db.session.delete(entry)
                     db.session.commit()
                     return False
@@ -437,45 +437,45 @@ def is_ip_blacklisted(ip):
             storage_mode = 'csv'
     
     if storage_mode == 'csv':
-        native_result = csv_impl.native_check_blacklist(Path(_get_data_dir()), ip, now)
+        native_result = csv_impl.native_check_blocklist(Path(_get_data_dir()), ip, now)
         if native_result is not None:
             return native_result
-        blacklist = _read_csv_blacklist()
-        entry = blacklist.get(ip)
-        if _is_blacklist_entry_expired(entry, now=now):
-            blacklist.pop(ip, None)
-            _rewrite_csv_blacklist(blacklist)
+        blocklist = _read_csv_blocklist()
+        entry = blocklist.get(ip)
+        if _is_blocklist_entry_expired(entry, now=now):
+            blocklist.pop(ip, None)
+            _rewrite_csv_blocklist(blocklist)
             return False
         return entry is not None
     else:
-        entry = _memory_blacklist.get(ip)
-        if _is_blacklist_entry_expired(entry, now=now):
-            _memory_blacklist.pop(ip, None)
+        entry = _memory_blocklist.get(ip)
+        if _is_blocklist_entry_expired(entry, now=now):
+            _memory_blocklist.pop(ip, None)
             return False
         return entry is not None
 
-def add_ip_blacklist(ip, reason=None, extended_request_info=None, duration=None):
-    """Add IP to blacklist."""
+def add_ip_blocklist(ip, reason=None, extended_request_info=None, duration=None):
+    """Add IP to blocklist."""
     storage_mode = _get_storage_mode()
     reason = reason or "Blocked"
     
     if storage_mode == 'database':
         try:
-            if not _database_has_current_blacklist_schema():
-                _legacy_database_add_blacklist(
+            if not _database_has_current_blocklist_schema():
+                _legacy_database_add_blocklist(
                     ip,
                     reason,
                     extended_request_info=extended_request_info,
                 )
                 return
-            entry = BlacklistedIP.query.filter_by(ip=ip).first()
+            entry = BlocklistedIP.query.filter_by(ip=ip).first()
             existing = _entry_to_dict(entry) if entry else {}
-            if _is_blacklist_entry_expired(existing):
+            if _is_blocklist_entry_expired(existing):
                 db.session.delete(entry)
                 db.session.flush()
                 entry = None
                 existing = {}
-            metadata = _blacklist_metadata(
+            metadata = _blocklist_metadata(
                 ip,
                 reason=reason,
                 existing=existing,
@@ -483,7 +483,7 @@ def add_ip_blacklist(ip, reason=None, extended_request_info=None, duration=None)
                 extended_request_info=extended_request_info,
             )
             if entry is None:
-                entry = BlacklistedIP(ip=ip)
+                entry = BlocklistedIP(ip=ip)
                 db.session.add(entry)
             _apply_entry_metadata(entry, metadata)
             db.session.commit()
@@ -492,26 +492,26 @@ def add_ip_blacklist(ip, reason=None, extended_request_info=None, duration=None)
             storage_mode = 'csv'
     
     if storage_mode == 'csv':
-        if csv_impl.native_block_blacklist(Path(_get_data_dir()), ip, reason,
+        if csv_impl.native_block_blocklist(Path(_get_data_dir()), ip, reason,
                                            extended_request_info, duration):
             return
-        blacklist = _read_csv_blacklist()
-        existing = blacklist.get(ip) or {}
-        if _is_blacklist_entry_expired(existing):
+        blocklist = _read_csv_blocklist()
+        existing = blocklist.get(ip) or {}
+        if _is_blocklist_entry_expired(existing):
             existing = {}
-        blacklist[ip] = _blacklist_metadata(
+        blocklist[ip] = _blocklist_metadata(
             ip,
             reason=reason,
             existing=existing,
             duration=duration,
             extended_request_info=extended_request_info,
         )
-        _rewrite_csv_blacklist(blacklist)
+        _rewrite_csv_blocklist(blocklist)
     else:
-        existing = _memory_blacklist.get(ip) or {}
-        if _is_blacklist_entry_expired(existing):
+        existing = _memory_blocklist.get(ip) or {}
+        if _is_blocklist_entry_expired(existing):
             existing = {}
-        _memory_blacklist[ip] = _blacklist_metadata(
+        _memory_blocklist[ip] = _blocklist_metadata(
             ip,
             reason=reason,
             existing=existing,
@@ -519,16 +519,16 @@ def add_ip_blacklist(ip, reason=None, extended_request_info=None, duration=None)
             extended_request_info=extended_request_info,
         )
 
-def remove_ip_blacklist(ip):
-    """Remove IP from blacklist."""
+def remove_ip_blocklist(ip):
+    """Remove IP from blocklist."""
     storage_mode = _get_storage_mode()
     
     if storage_mode == 'database':
         try:
-            if not _database_has_current_blacklist_schema():
-                _legacy_database_remove_blacklist(ip)
+            if not _database_has_current_blocklist_schema():
+                _legacy_database_remove_blocklist(ip)
                 return
-            entry = BlacklistedIP.query.filter_by(ip=ip).first()
+            entry = BlocklistedIP.query.filter_by(ip=ip).first()
             if entry:
                 db.session.delete(entry)
                 db.session.commit()
@@ -537,15 +537,15 @@ def remove_ip_blacklist(ip):
             storage_mode = 'csv'
     
     if storage_mode == 'csv':
-        if csv_impl.native_remove_blacklist(Path(_get_data_dir()), ip):
+        if csv_impl.native_remove_blocklist(Path(_get_data_dir()), ip):
             return
         # For CSV, we need to rewrite the file without the IP
-        blacklist = _read_csv_blacklist()
-        if ip in blacklist:
-            del blacklist[ip]
-            _rewrite_csv_blacklist(blacklist)
+        blocklist = _read_csv_blocklist()
+        if ip in blocklist:
+            del blocklist[ip]
+            _rewrite_csv_blocklist(blocklist)
     else:
-        _memory_blacklist.pop(ip, None)
+        _memory_blocklist.pop(ip, None)
 
 def _normalize_country_code(country_code):
     if not country_code:
@@ -767,3 +767,12 @@ def get_top_keywords(n=10):
         return list(keywords)[:n]
     else:
         return list(_memory_keywords)[:n]
+
+
+# Compatibility aliases for callers using the previous terminology.
+is_ip_whitelisted = is_ip_allowlisted
+add_ip_whitelist = add_ip_allowlist
+remove_ip_whitelist = remove_ip_allowlist
+is_ip_blacklisted = is_ip_blocklisted
+add_ip_blacklist = add_ip_blocklist
+remove_ip_blacklist = remove_ip_blocklist

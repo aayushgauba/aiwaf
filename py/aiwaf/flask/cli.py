@@ -3,7 +3,7 @@
 AIWAF Flask CLI Management Tool
 
 Provides command-line functions for managing AIWAF data:
-- Add/remove IPs from whitelist/blacklist
+- Add/remove IPs from allowlist/blocklist
 - View current lists
 - Clear data
 - Import/export configurations
@@ -45,30 +45,30 @@ def get_storage_instance():
                 # Fallback to original logic if auto_config not available
                 return os.environ.get('AIWAF_DATA_DIR', 'aiwaf_data')
         
-        def _read_csv_whitelist():
-            """Read whitelist from CSV."""
+        def _read_csv_allowlist():
+            """Read allowlist from CSV."""
             data_dir = Path(_get_data_dir())
             data_dir.mkdir(parents=True, exist_ok=True)
-            whitelist_file = data_dir / 'whitelist.csv'
+            allowlist_file = data_dir / 'whitelist.csv'
             
-            whitelist = set()
-            if whitelist_file.exists():
-                with open(whitelist_file, 'r', newline='') as f:
+            allowlist = set()
+            if allowlist_file.exists():
+                with open(allowlist_file, 'r', newline='') as f:
                     reader = csv.reader(f)
                     next(reader, None)  # Skip header
                     for row in reader:
                         if row and len(row) > 0:
-                            whitelist.add(row[0])
-            return whitelist
+                            allowlist.add(row[0])
+            return allowlist
         
-        def _read_csv_blacklist():
-            """Read blacklist from CSV."""
+        def _read_csv_blocklist():
+            """Read blocklist from CSV."""
             data_dir = Path(_get_data_dir())
-            blacklist = csv_impl.read_blacklist(data_dir)
+            blocklist = csv_impl.read_blocklist(data_dir)
             now = time.time()
             active = {
                 ip: entry
-                for ip, entry in blacklist.items()
+                for ip, entry in blocklist.items()
                 if not entry.get("expires_at") or float(entry.get("expires_at")) > now
             }
             # Listing is read-only. A worker/trainer may have added or refreshed
@@ -126,29 +126,29 @@ def get_storage_instance():
                             countries.add(row[0].upper())
             return countries
         
-        def _append_csv_whitelist(ip):
-            """Add IP to whitelist CSV."""
+        def _append_csv_allowlist(ip):
+            """Add IP to allowlist CSV."""
             data_dir = Path(_get_data_dir())
             data_dir.mkdir(exist_ok=True)
-            whitelist_file = data_dir / 'whitelist.csv'
+            allowlist_file = data_dir / 'whitelist.csv'
             
             # Check if file exists and has header
-            file_exists = whitelist_file.exists()
-            with open(whitelist_file, 'a', newline='') as f:
+            file_exists = allowlist_file.exists()
+            with open(allowlist_file, 'a', newline='') as f:
                 writer = csv.writer(f)
                 if not file_exists:
                     writer.writerow(['ip', 'timestamp'])
                 writer.writerow([ip, datetime.now().isoformat()])
         
-        def _append_csv_blacklist(ip, reason="Manual addition"):
-            """Add IP to blacklist CSV."""
+        def _append_csv_blocklist(ip, reason="Manual addition"):
+            """Add IP to blocklist CSV."""
             data_dir = Path(_get_data_dir())
-            blacklist = csv_impl.read_blacklist(data_dir)
-            existing = blacklist.get(ip) or {}
+            blocklist = csv_impl.read_blocklist(data_dir)
+            existing = blocklist.get(ip) or {}
             now = time.time()
             decision = evaluate_reputation(existing=existing, reason=reason, now=now)
             duration = decision.duration or FIRST_BLOCK_SECONDS
-            blacklist[ip] = {
+            blocklist[ip] = {
                 "ip": ip,
                 "reason": reason,
                 "reputation_reason": format_block_reason(decision),
@@ -161,12 +161,12 @@ def get_storage_instance():
                 "expires_at": now + duration,
                 "permanent": False,
             }
-            csv_impl.rewrite_blacklist(data_dir, blacklist)
+            csv_impl.rewrite_blocklist(data_dir, blocklist)
 
-        def _rewrite_csv_blacklist(blacklist):
-            """Rewrite blacklist CSV."""
+        def _rewrite_csv_blocklist(blocklist):
+            """Rewrite blocklist CSV."""
             data_dir = Path(_get_data_dir())
-            return csv_impl.rewrite_blacklist(data_dir, blacklist)
+            return csv_impl.rewrite_blocklist(data_dir, blocklist)
         
         def _append_csv_keyword(keyword):
             """Add keyword to keywords CSV."""
@@ -232,19 +232,19 @@ def get_storage_instance():
                     writer.writerow([code, datetime.now().isoformat()])
         
         return {
-            'read_whitelist': _read_csv_whitelist,
-            'read_blacklist': _read_csv_blacklist,
+            'read_allowlist': _read_csv_allowlist,
+            'read_blocklist': _read_csv_blocklist,
             'read_keywords': _read_csv_keywords,
             'read_geo_blocked_countries': _read_csv_geo_blocked_countries,
             'read_path_exemptions': _read_csv_path_exemptions,
-            'add_whitelist': _append_csv_whitelist,
-            'add_blacklist': _append_csv_blacklist,
+            'add_allowlist': _append_csv_allowlist,
+            'add_blocklist': _append_csv_blocklist,
             'add_keyword': _append_csv_keyword,
             'add_geo_blocked_country': _append_csv_geo_blocked_country,
             'rewrite_geo_blocked_countries': _rewrite_csv_geo_blocked_countries,
             'add_path_exemption': _append_csv_path_exemption,
             'rewrite_path_exemptions': _rewrite_csv_path_exemptions,
-            'rewrite_blacklist': _rewrite_csv_blacklist,
+            'rewrite_blocklist': _rewrite_csv_blocklist,
             'data_dir': _get_data_dir,
             'mode': 'CSV'
         }
@@ -278,22 +278,22 @@ class AIWAFManager:
         from aiwaf.core.policy_csv_storage import PolicyCSVStorage
         self.policy_storage = PolicyCSVStorage(data_dir=self.storage['data_dir']())
     
-    def list_whitelist(self) -> List[str]:
-        """Get all whitelisted IPs."""
+    def list_allowlist(self) -> List[str]:
+        """Get all allowlisted IPs."""
         try:
-            whitelist = self.storage['read_whitelist']()
-            return sorted(list(whitelist))
+            allowlist = self.storage['read_allowlist']()
+            return sorted(list(allowlist))
         except Exception as e:
-            print(f" Error reading whitelist: {e}")
+            print(f" Error reading allowlist: {e}")
             return []
     
-    def list_blacklist(self) -> Dict[str, Any]:
-        """Get all blacklisted IPs with timestamps."""
+    def list_blocklist(self) -> Dict[str, Any]:
+        """Get all blocklisted IPs with timestamps."""
         try:
-            blacklist = self.storage['read_blacklist']()
-            return dict(sorted(blacklist.items()))
+            blocklist = self.storage['read_blocklist']()
+            return dict(sorted(blocklist.items()))
         except Exception as e:
-            print(f" Error reading blacklist: {e}")
+            print(f" Error reading blocklist: {e}")
             return {}
     
     def list_keywords(self) -> List[str]:
@@ -350,24 +350,24 @@ class AIWAFManager:
                 print(str(result))
         return True
     
-    def add_to_whitelist(self, ip: str) -> bool:
-        """Add IP to whitelist."""
+    def add_to_allowlist(self, ip: str) -> bool:
+        """Add IP to allowlist."""
         try:
-            self.storage['add_whitelist'](ip)
-            print(f" Added {ip} to whitelist")
+            self.storage['add_allowlist'](ip)
+            print(f" Added {ip} to allowlist")
             return True
         except Exception as e:
-            print(f" Error adding {ip} to whitelist: {e}")
+            print(f" Error adding {ip} to allowlist: {e}")
             return False
     
-    def add_to_blacklist(self, ip: str, reason: str = "Manual CLI addition") -> bool:
-        """Add IP to blacklist."""
+    def add_to_blocklist(self, ip: str, reason: str = "Manual CLI addition") -> bool:
+        """Add IP to blocklist."""
         try:
-            self.storage['add_blacklist'](ip, reason)
-            print(f" Added {ip} to blacklist")
+            self.storage['add_blocklist'](ip, reason)
+            print(f" Added {ip} to blocklist")
             return True
         except Exception as e:
-            print(f" Error adding {ip} to blacklist: {e}")
+            print(f" Error adding {ip} to blocklist: {e}")
             return False
     
     def add_keyword(self, keyword: str) -> bool:
@@ -460,115 +460,115 @@ class AIWAFManager:
             print(f" Error removing geo blocked country '{code}': {e}")
             return False
     
-    def remove_from_whitelist(self, ip: str) -> bool:
-        """Remove IP from whitelist."""
+    def remove_from_allowlist(self, ip: str) -> bool:
+        """Remove IP from allowlist."""
         try:
             data_dir = Path(self.storage['data_dir']())
-            whitelist_file = data_dir / 'whitelist.csv'
+            allowlist_file = data_dir / 'whitelist.csv'
             
-            if not whitelist_file.exists():
-                print(f" Whitelist file not found")
+            if not allowlist_file.exists():
+                print(f" Allowlist file not found")
                 return False
             
             # Read current data
-            current = self.list_whitelist()
+            current = self.list_allowlist()
             if ip not in current:
-                print(f"  {ip} not found in whitelist")
+                print(f"  {ip} not found in allowlist")
                 return False
             
             # Rewrite file without the IP
             import csv
-            with open(whitelist_file, 'w', newline='') as f:
+            with open(allowlist_file, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['ip', 'timestamp'])
                 for existing_ip in current:
                     if existing_ip != ip:
                         writer.writerow([existing_ip, datetime.now().isoformat()])
             
-            print(f" Removed {ip} from whitelist")
+            print(f" Removed {ip} from allowlist")
             return True
         except Exception as e:
-            print(f" Error removing {ip} from whitelist: {e}")
+            print(f" Error removing {ip} from allowlist: {e}")
             return False
     
-    def remove_from_blacklist(self, ip: str) -> bool:
-        """Remove IP from blacklist."""
+    def remove_from_blocklist(self, ip: str) -> bool:
+        """Remove IP from blocklist."""
         try:
-            current = self.list_blacklist()
+            current = self.list_blocklist()
             if ip not in current:
-                print(f"  {ip} not found in blacklist")
+                print(f"  {ip} not found in blocklist")
                 return False
 
             del current[ip]
-            self.storage['rewrite_blacklist'](current)
+            self.storage['rewrite_blocklist'](current)
             
-            print(f" Removed {ip} from blacklist")
+            print(f" Removed {ip} from blocklist")
             return True
         except Exception as e:
-            print(f" Error removing {ip} from blacklist: {e}")
+            print(f" Error removing {ip} from blocklist: {e}")
             return False
     
     def show_stats(self):
         """Display statistics about current AIWAF data."""
-        whitelist = self.list_whitelist()
-        blacklist = self.list_blacklist()
+        allowlist = self.list_allowlist()
+        blocklist = self.list_blocklist()
         keywords = self.list_keywords()
         
         print("\n AIWAF Statistics")
         print("=" * 50)
-        print(f"Whitelisted IPs: {len(whitelist)}")
-        print(f"Blacklisted IPs: {len(blacklist)}")
+        print(f"Allowlisted IPs: {len(allowlist)}")
+        print(f"Blocklisted IPs: {len(blocklist)}")
         print(f"Blocked Keywords: {len(keywords)}")
         print(f"Storage Mode: {self.storage['mode']}")
         print(f"Data Directory: {self.storage['data_dir']()}")
 
-    def clear_blacklist(self) -> bool:
+    def clear_blocklist(self) -> bool:
         """Clear all blocked IPs."""
         try:
-            self.storage['rewrite_blacklist']({})
+            self.storage['rewrite_blocklist']({})
             print(" Cleared blocked IPs")
             return True
         except Exception as e:
             print(f" Error clearing blocked IPs: {e}")
             return False
 
-    def legacy_blacklist(self) -> Dict[str, Any]:
-        """Get legacy-imported blacklist entries."""
+    def legacy_blocklist(self) -> Dict[str, Any]:
+        """Get legacy-imported blocklist entries."""
         return {
             ip: entry
-            for ip, entry in self.list_blacklist().items()
-            if csv_impl.is_legacy_blacklist_entry(entry)
+            for ip, entry in self.list_blocklist().items()
+            if csv_impl.is_legacy_blocklist_entry(entry)
         }
 
-    def show_legacy_blacklist(self) -> None:
-        legacy = self.legacy_blacklist()
-        print(f"\n Legacy Blacklist Entries ({len(legacy)}):")
+    def show_legacy_blocklist(self) -> None:
+        legacy = self.legacy_blocklist()
+        print(f"\n Legacy Blocklist Entries ({len(legacy)}):")
         for ip, entry in legacy.items():
             print(f"   {ip} - {entry.get('reason', 'legacy_import')} ({entry.get('reputation_reason', 'legacy_blacklist')})")
 
-    def migrate_blacklist(self) -> int:
-        """Force CSV blacklist migration and report legacy entries."""
-        blacklist = self.list_blacklist()
+    def migrate_blocklist(self) -> int:
+        """Force CSV blocklist migration and report legacy entries."""
+        blocklist = self.list_blocklist()
         legacy_count = len([
-            entry for entry in blacklist.values()
-            if csv_impl.is_legacy_blacklist_entry(entry)
+            entry for entry in blocklist.values()
+            if csv_impl.is_legacy_blocklist_entry(entry)
         ])
-        print("Legacy blacklist detected." if legacy_count else "No legacy blacklist entries detected.")
+        print("Legacy blocklist detected." if legacy_count else "No legacy blocklist entries detected.")
         print(f"{legacy_count} permanent entries imported.")
         if legacy_count:
             print("Options:")
             print("1. Keep as permanent")
-            print("2. Convert to temporary blocks: aiwaf blacklist convert-legacy --duration 24h")
-            print("3. Clear legacy blocks: aiwaf blacklist clear-legacy")
+            print("2. Convert to temporary blocks: aiwaf blocklist convert-legacy --duration 24h")
+            print("3. Clear legacy blocks: aiwaf blocklist clear-legacy")
         return legacy_count
 
-    def convert_legacy_blacklist(self, duration_seconds: Optional[int] = None, clear: bool = False) -> int:
-        current = self.list_blacklist()
+    def convert_legacy_blocklist(self, duration_seconds: Optional[int] = None, clear: bool = False) -> int:
+        current = self.list_blocklist()
         changed = 0
         now = datetime.now().timestamp()
         for ip in list(current.keys()):
             entry = current[ip]
-            if not csv_impl.is_legacy_blacklist_entry(entry):
+            if not csv_impl.is_legacy_blocklist_entry(entry):
                 continue
             changed += 1
             if clear:
@@ -581,9 +581,9 @@ class AIWAFManager:
             entry["reputation_reason"] = "legacy_blacklist_converted" if duration_seconds else "legacy_blacklist"
             current[ip] = entry
         if changed:
-            self.storage['rewrite_blacklist'](current)
+            self.storage['rewrite_blocklist'](current)
         if clear:
-            print(f" Cleared {changed} legacy blacklist entries")
+            print(f" Cleared {changed} legacy blocklist entries")
         elif duration_seconds:
             print(f" Converted {changed} legacy entries to {duration_seconds} second temporary blocks")
         else:
@@ -594,8 +594,8 @@ class AIWAFManager:
         """Export current configuration to JSON file."""
         try:
             config = {
-                'whitelist': self.list_whitelist(),
-                'blacklist': self.list_blacklist(),
+                'allowlist': self.list_allowlist(),
+                'blocklist': self.list_blocklist(),
                 'keywords': self.list_keywords(),
                 'exported_at': datetime.now().isoformat(),
                 'storage_mode': self.storage['mode']
@@ -618,15 +618,15 @@ class AIWAFManager:
             
             success_count = 0
             
-            # Import whitelist
-            for ip in config.get('whitelist', []):
-                if self.add_to_whitelist(ip):
+            # Import allowlist
+            for ip in config.get('allowlist', config.get('whitelist', [])):
+                if self.add_to_allowlist(ip):
                     success_count += 1
             
-            # Import blacklist
-            for ip, data in config.get('blacklist', {}).items():
+            # Import blocklist
+            for ip, data in config.get('blocklist', config.get('blacklist', {})).items():
                 reason = data.get('reason', 'Imported from config') if isinstance(data, dict) else 'Imported from config'
-                if self.add_to_blacklist(ip, reason):
+                if self.add_to_blocklist(ip, reason):
                     success_count += 1
             
             # Import keywords
@@ -1130,19 +1130,19 @@ def main():
     
     # List commands
     list_parser = subparsers.add_parser('list', help='List current data')
-    list_parser.add_argument('type', choices=['whitelist', 'blacklist', 'keywords', 'all'], 
+    list_parser.add_argument('type', choices=['allowlist', 'blocklist', 'keywords', 'all'],
                            help='Type of data to list')
     
     # Add commands
     add_parser = subparsers.add_parser('add', help='Add item to list')
-    add_parser.add_argument('type', choices=['whitelist', 'blacklist', 'keyword'], 
+    add_parser.add_argument('type', choices=['allowlist', 'blocklist', 'keyword'],
                           help='Type of list to add to')
     add_parser.add_argument('value', help='IP address or keyword to add')
-    add_parser.add_argument('--reason', help='Reason for blacklisting (blacklist only)')
+    add_parser.add_argument('--reason', help='Reason for blocklisting (blocklist only)')
     
     # Remove commands
     remove_parser = subparsers.add_parser('remove', help='Remove item from list')
-    remove_parser.add_argument('type', choices=['whitelist', 'blacklist'], 
+    remove_parser.add_argument('type', choices=['allowlist', 'blocklist'],
                              help='Type of list to remove from')
     remove_parser.add_argument('value', help='IP address to remove')
 
@@ -1167,20 +1167,20 @@ def main():
     unblock_parser.add_argument('ip', help='IP address to unblock')
     subparsers.add_parser('clear', help='Clear all blocked IPs')
 
-    blacklist_parser = subparsers.add_parser('blacklist', help='Manage blacklist migrations')
-    blacklist_subparsers = blacklist_parser.add_subparsers(dest='blacklist_command')
-    blacklist_migrate_parser = blacklist_subparsers.add_parser(
-        'migrate', help='Detect and migrate the configured blacklist backend'
+    blocklist_parser = subparsers.add_parser('blocklist', help='Manage blocklist migrations')
+    blocklist_subparsers = blocklist_parser.add_subparsers(dest='blocklist_command')
+    blocklist_migrate_parser = blocklist_subparsers.add_parser(
+        'migrate', help='Detect and migrate the configured blocklist backend'
     )
-    blacklist_migrate_parser.add_argument(
+    blocklist_migrate_parser.add_argument(
         '--app', help='Flask app import path for detecting SQLAlchemy/CSV configuration'
     )
-    blacklist_list_parser = blacklist_subparsers.add_parser('list', help='List blacklist entries')
-    blacklist_list_parser.add_argument('--legacy', action='store_true', help='Only show legacy imported entries')
-    convert_parser = blacklist_subparsers.add_parser('convert-legacy', help='Convert legacy permanent blocks')
+    blocklist_list_parser = blocklist_subparsers.add_parser('list', help='List blocklist entries')
+    blocklist_list_parser.add_argument('--legacy', action='store_true', help='Only show legacy imported entries')
+    convert_parser = blocklist_subparsers.add_parser('convert-legacy', help='Convert legacy permanent blocks')
     convert_parser.add_argument('--duration', type=_parse_duration, default=24 * 60 * 60,
                                 help='Temporary duration, e.g. 24h, 1d, 60m (default: 24h)')
-    blacklist_subparsers.add_parser('clear-legacy', help='Clear legacy imported blocks')
+    blocklist_subparsers.add_parser('clear-legacy', help='Clear legacy imported blocks')
     
     # Log analysis command
     logs_parser = subparsers.add_parser('logs', help='Analyze request logs')
@@ -1237,7 +1237,15 @@ def main():
     whois_parser = subparsers.add_parser('whois', help='Run WHOIS ownership lookup')
     whois_parser.add_argument('target', help='Domain or IP address')
     
-    args = parser.parse_args()
+    # Preserve old command spellings while advertising the new terminology.
+    argv = list(sys.argv[1:])
+    command_index = 2 if argv[:1] == ['--data-dir'] else 1 if argv and argv[0].startswith('--data-dir=') else 0
+    if len(argv) > command_index and argv[command_index] == 'blacklist':
+        argv[command_index] = 'blocklist'
+    if len(argv) > command_index + 1 and argv[command_index] in {'list', 'add', 'remove'}:
+        i = command_index + 1
+        argv[i] = {'blacklist': 'blocklist', 'whitelist': 'allowlist'}.get(argv[i], argv[i])
+    args = parser.parse_args(argv)
     
     if not args.command:
         parser.print_help()
@@ -1248,16 +1256,16 @@ def main():
     
     # Execute commands
     if args.command == 'list':
-        if args.type == 'whitelist' or args.type == 'all':
-            whitelist = manager.list_whitelist()
-            print(f"\n Whitelisted IPs ({len(whitelist)}):")
-            for ip in whitelist:
+        if args.type == 'allowlist' or args.type == 'all':
+            allowlist = manager.list_allowlist()
+            print(f"\n Allowlisted IPs ({len(allowlist)}):")
+            for ip in allowlist:
                 print(f"   {ip}")
         
-        if args.type == 'blacklist' or args.type == 'all':
-            blacklist = manager.list_blacklist()
-            print(f"\n Blacklisted IPs ({len(blacklist)}):")
-            for ip, data in blacklist.items():
+        if args.type == 'blocklist' or args.type == 'all':
+            blocklist = manager.list_blocklist()
+            print(f"\n Blocklisted IPs ({len(blocklist)}):")
+            for ip, data in blocklist.items():
                 if isinstance(data, dict):
                     reason = data.get('reason', 'Unknown')
                     timestamp = data.get('added_date') or data.get('timestamp') or 'Unknown'
@@ -1272,19 +1280,19 @@ def main():
                 print(f"   {keyword}")
     
     elif args.command == 'add':
-        if args.type == 'whitelist':
-            manager.add_to_whitelist(args.value)
-        elif args.type == 'blacklist':
+        if args.type == 'allowlist':
+            manager.add_to_allowlist(args.value)
+        elif args.type == 'blocklist':
             reason = args.reason or "Manual CLI addition"
-            manager.add_to_blacklist(args.value, reason)
+            manager.add_to_blocklist(args.value, reason)
         elif args.type == 'keyword':
             manager.add_keyword(args.value)
     
     elif args.command == 'remove':
-        if args.type == 'whitelist':
-            manager.remove_from_whitelist(args.value)
-        elif args.type == 'blacklist':
-            manager.remove_from_blacklist(args.value)
+        if args.type == 'allowlist':
+            manager.remove_from_allowlist(args.value)
+        elif args.type == 'blocklist':
+            manager.remove_from_blocklist(args.value)
 
     elif args.command == 'geo':
         if args.action == 'list':
@@ -1324,9 +1332,9 @@ def main():
         manager.show_stats()
 
     elif args.command == 'blocked':
-        blacklist = manager.list_blacklist()
-        print(f"\n Blocked IPs ({len(blacklist)}):")
-        for ip, data in blacklist.items():
+        blocklist = manager.list_blocklist()
+        print(f"\n Blocked IPs ({len(blocklist)}):")
+        for ip, data in blocklist.items():
             if isinstance(data, dict):
                 reason = data.get('reason', 'Unknown')
                 timestamp = data.get('added_date') or data.get('timestamp') or 'Unknown'
@@ -1337,13 +1345,13 @@ def main():
                 print(f"   {ip}")
 
     elif args.command == 'unblock':
-        manager.remove_from_blacklist(args.ip)
+        manager.remove_from_blocklist(args.ip)
 
     elif args.command == 'clear':
-        manager.clear_blacklist()
+        manager.clear_blocklist()
 
-    elif args.command == 'blacklist':
-        if args.blacklist_command == 'migrate':
+    elif args.command == 'blocklist':
+        if args.blocklist_command == 'migrate':
             if args.app:
                 app = _load_flask_app(args.app)
                 with app.app_context():
@@ -1351,11 +1359,11 @@ def main():
 
                     if _get_storage_mode() == "database":
                         from sqlalchemy import inspect, or_
-                        from aiwaf.flask.db_models import BlacklistedIP, db
+                        from aiwaf.flask.db_models import BlocklistedIP, db
 
                         columns = {
                             column["name"]
-                            for column in inspect(db.engine).get_columns(BlacklistedIP.__tablename__)
+                            for column in inspect(db.engine).get_columns(BlocklistedIP.__tablename__)
                         }
                         required = {
                             "reputation_reason", "reasons", "score", "offenses",
@@ -1364,47 +1372,47 @@ def main():
                         missing = sorted(required - columns)
                         if missing:
                             parser.error(
-                                "SQLAlchemy blacklist table is missing columns: "
+                                "SQLAlchemy blocklist table is missing columns: "
                                 + ", ".join(missing)
                                 + ". Run `flask db migrate` and `flask db upgrade`, then rerun."
                             )
-                        changed = BlacklistedIP.query.filter(
+                        changed = BlocklistedIP.query.filter(
                             or_(
-                                BlacklistedIP.reputation_reason == "",
-                                BlacklistedIP.reputation_reason.is_(None),
+                                BlocklistedIP.reputation_reason == "",
+                                BlocklistedIP.reputation_reason.is_(None),
                             ),
-                            BlacklistedIP.blocked_at.is_(None),
+                            BlocklistedIP.blocked_at.is_(None),
                         ).update(
                             {
-                                BlacklistedIP.reputation_reason: "legacy_blacklist",
-                                BlacklistedIP.reasons: ["legacy_blacklist"],
-                                BlacklistedIP.score: 100,
-                                BlacklistedIP.offenses: 1,
-                                BlacklistedIP.permanent: True,
+                                BlocklistedIP.reputation_reason: "legacy_blacklist",
+                                BlocklistedIP.reasons: ["legacy_blacklist"],
+                                BlocklistedIP.score: 100,
+                                BlocklistedIP.offenses: 1,
+                                BlocklistedIP.permanent: True,
                             },
                             synchronize_session=False,
                         )
                         db.session.commit()
-                        print(f" Flask SQLAlchemy blacklist upgraded: {changed} legacy entries updated")
+                        print(f" Flask SQLAlchemy blocklist upgraded: {changed} legacy entries updated")
                     else:
                         configured_dir = app.config.get("AIWAF_DATA_DIR") or args.data_dir
-                        AIWAFManager(configured_dir).migrate_blacklist()
+                        AIWAFManager(configured_dir).migrate_blocklist()
             else:
-                manager.migrate_blacklist()
-        elif args.blacklist_command == 'list':
+                manager.migrate_blocklist()
+        elif args.blocklist_command == 'list':
             if args.legacy:
-                manager.show_legacy_blacklist()
+                manager.show_legacy_blocklist()
             else:
-                blacklist = manager.list_blacklist()
-                print(f"\n Blacklist Entries ({len(blacklist)}):")
-                for ip, data in blacklist.items():
+                blocklist = manager.list_blocklist()
+                print(f"\n Blocklist Entries ({len(blocklist)}):")
+                for ip, data in blocklist.items():
                     print(f"   {ip} - {data.get('reason', 'Unknown') if isinstance(data, dict) else data}")
-        elif args.blacklist_command == 'convert-legacy':
-            manager.convert_legacy_blacklist(duration_seconds=args.duration)
-        elif args.blacklist_command == 'clear-legacy':
-            manager.convert_legacy_blacklist(clear=True)
+        elif args.blocklist_command == 'convert-legacy':
+            manager.convert_legacy_blocklist(duration_seconds=args.duration)
+        elif args.blocklist_command == 'clear-legacy':
+            manager.convert_legacy_blocklist(clear=True)
         else:
-            blacklist_parser.print_help()
+            blocklist_parser.print_help()
     
     elif args.command == 'logs':
         log_format = getattr(args, 'format', 'combined')
@@ -1456,3 +1464,17 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+# Compatibility aliases for callers using the previous terminology.
+AIWAFManager.list_whitelist = AIWAFManager.__dict__['list_allowlist']
+AIWAFManager.list_blacklist = AIWAFManager.__dict__['list_blocklist']
+AIWAFManager.add_to_whitelist = AIWAFManager.__dict__['add_to_allowlist']
+AIWAFManager.add_to_blacklist = AIWAFManager.__dict__['add_to_blocklist']
+AIWAFManager.remove_from_whitelist = AIWAFManager.__dict__['remove_from_allowlist']
+AIWAFManager.remove_from_blacklist = AIWAFManager.__dict__['remove_from_blocklist']
+AIWAFManager.clear_blacklist = AIWAFManager.__dict__['clear_blocklist']
+AIWAFManager.legacy_blacklist = AIWAFManager.__dict__['legacy_blocklist']
+AIWAFManager.show_legacy_blacklist = AIWAFManager.__dict__['show_legacy_blocklist']
+AIWAFManager.migrate_blacklist = AIWAFManager.__dict__['migrate_blocklist']
+AIWAFManager.convert_legacy_blacklist = AIWAFManager.__dict__['convert_legacy_blocklist']

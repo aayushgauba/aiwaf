@@ -49,8 +49,8 @@ class HoneypotEnhancementsTestCase(AIWAFMiddlewareTestCase):
         with patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=True):
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=True):
             response = middleware.process_request(request)
 
         self.assertIsNotNone(response)
@@ -93,8 +93,8 @@ class HoneypotEnhancementsTestCase(AIWAFMiddlewareTestCase):
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
              patch("aiwaf.django.middleware.time", new=fake_time), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=True), \
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=True), \
              patch("aiwaf.django.middleware._raise_blocked") as mock_raise:
             self.assertIsNone(middleware.process_request(get_req))
             middleware.process_request(post_req)

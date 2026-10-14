@@ -39,7 +39,7 @@ class PolicyCSVStorage(StorageBackend):
                 self._migrate(source.absolute())
 
     def _get_block(self, ip):
-        entry = policy.read_blacklist_entry(self.data_dir, ip)
+        entry = policy.read_blocklist_entry(self.data_dir, ip)
         if entry is None:
             return None
         expiry = entry.get('expires_at')
@@ -51,7 +51,7 @@ class PolicyCSVStorage(StorageBackend):
         if key.startswith('blocked:'):
             return self._get_block(key[len('blocked:'):])
         if key == 'exemptions':
-            values = policy.read_whitelist(self.data_dir)
+            values = policy.read_allowlist(self.data_dir)
             return {'ips': sorted(v for v in values if not self._is_pattern(v)),
                     'patterns': sorted(v for v in values if self._is_pattern(v))}
         if key == 'keyword_counts':
@@ -73,7 +73,7 @@ class PolicyCSVStorage(StorageBackend):
 
     def _set(self, key, value, ttl=None):
         if key.startswith('blocked:'):
-            from .blacklist_migration import legacy_metadata
+            from .blocklist_migration import legacy_metadata
             ip = key[len('blocked:'):]
             entry = dict(value) if isinstance(value, dict) else legacy_metadata(value)
             if ttl is not None:
@@ -83,12 +83,12 @@ class PolicyCSVStorage(StorageBackend):
             entry.setdefault('permanent', entry.get('expires_at') is None)
             # Native list update replaces this IP while retaining other rows.
             if not policy.native_policy_list_update(self.data_dir, 'blacklist.csv', ip,
-                    policy._blacklist_row(ip, entry), False):
-                blocks = policy.read_blacklist(self.data_dir)
+                    policy._blocklist_row(ip, entry), False):
+                blocks = policy.read_blocklist(self.data_dir)
                 blocks[ip] = entry
-                policy.rewrite_blacklist(self.data_dir, blocks)
+                policy.rewrite_blocklist(self.data_dir, blocks)
         elif key == 'exemptions':
-            policy.rewrite_whitelist(self.data_dir, set(value.get('ips', [])) | set(value.get('patterns', [])))
+            policy.rewrite_allowlist(self.data_dir, set(value.get('ips', [])) | set(value.get('patterns', [])))
         elif key == 'keyword_counts':
             policy.rewrite_keywords(self.data_dir, set(value))
             self.metadata.set(key, value)
@@ -105,10 +105,10 @@ class PolicyCSVStorage(StorageBackend):
             if key.startswith('blocked:'):
                 existed = self.get(key) is not None
                 ip = key[len('blocked:'):]
-                if not policy.native_remove_blacklist(self.data_dir, ip):
-                    blocks = policy.read_blacklist(self.data_dir)
+                if not policy.native_remove_blocklist(self.data_dir, ip):
+                    blocks = policy.read_blocklist(self.data_dir)
                     blocks.pop(ip, None)
-                    policy.rewrite_blacklist(self.data_dir, blocks)
+                    policy.rewrite_blocklist(self.data_dir, blocks)
                 return existed
             if key in {'exemptions', 'keyword_counts', 'geo_blocked_countries', 'path_exemptions'}:
                 self._set(key, {} if key != 'geo_blocked_countries' else [])
@@ -120,14 +120,14 @@ class PolicyCSVStorage(StorageBackend):
 
     def get_all_keys(self, pattern='*'):
         keys = set(self.metadata.get_all_keys())
-        keys.update('blocked:' + ip for ip in policy.read_blacklist(self.data_dir) if self._get_block(ip))
+        keys.update('blocked:' + ip for ip in policy.read_blocklist(self.data_dir) if self._get_block(ip))
         keys.update(('exemptions', 'keyword_counts', 'geo_blocked_countries', 'path_exemptions'))
         return sorted(key for key in keys if fnmatch.fnmatchcase(key, pattern))
 
     def block_ip(self, ip, reason, info=None, duration=None):
         # Same Rust reputation and CSV mutation used by Flask.
         with file_lock(self.lock_path, 'a+'):
-            if not policy.native_block_blacklist(self.data_dir, ip, reason, info, duration):
+            if not policy.native_block_blocklist(self.data_dir, ip, reason, info, duration):
                 from .reputation import evaluate_reputation, format_block_reason, FIRST_BLOCK_SECONDS
                 now = time.time()
                 decision = evaluate_reputation(existing=self._get_block(ip) or {}, reason=reason, now=now)
@@ -143,12 +143,12 @@ class PolicyCSVStorage(StorageBackend):
 
     def update_exemption(self, operation, value):
         remove = operation.startswith('remove_')
-        existed = value in policy.read_whitelist(self.data_dir)
+        existed = value in policy.read_allowlist(self.data_dir)
         if not policy.native_policy_list_update(self.data_dir, 'whitelist.csv', value, [value, now_iso()], remove):
             with file_lock(self.lock_path, 'a+'):
-                values = policy.read_whitelist(self.data_dir)
+                values = policy.read_allowlist(self.data_dir)
                 values.discard(value) if remove else values.add(value)
-                policy.rewrite_whitelist(self.data_dir, values)
+                policy.rewrite_allowlist(self.data_dir, values)
         return existed if remove else True
 
     def update_keywords(self, added=(), removed=()):
@@ -197,7 +197,7 @@ class PolicyCSVStorage(StorageBackend):
                 if key.startswith('blocked:'):
                     if self.get(key) is not None:
                         continue  # Existing canonical policy wins conflicts.
-                    from .blacklist_migration import legacy_metadata
+                    from .blocklist_migration import legacy_metadata
                     entry = dict(value) if isinstance(value, dict) else legacy_metadata(value, now=now)
                     limits = [float(v) for v in (expiry, entry.get('expires_at')) if v is not None]
                     entry['expires_at'] = min(limits) if limits else None

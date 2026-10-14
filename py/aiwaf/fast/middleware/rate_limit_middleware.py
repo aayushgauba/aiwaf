@@ -4,9 +4,9 @@ import time
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 
-from ..blacklist import BlacklistManager
+from ..blocklist import BlocklistManager
 from ..decorators import get_path_rule_overrides, should_apply_middleware
-from ..utils import get_blacklist_extended_info, get_ip, is_exempt
+from ..utils import get_blocklist_extended_info, get_ip, is_exempt
 from ...core.cache_backend import (
     CacheBackend,
     CacheBackendConfig,
@@ -36,7 +36,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         flood_threshold=40,
         path_rules=None,
         key_mode="ip_path",
-        soft_block_blacklist=False,
+        soft_block_blocklist=False,
         cache_backend: CacheBackend | None = None,
     ):
         super().__init__(app)
@@ -45,7 +45,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.flood_threshold = flood_threshold
         self.path_rules = path_rules or []
         self.key_mode = normalize_rate_key_mode(key_mode)
-        self.soft_block_blacklist = bool(soft_block_blacklist)
+        self.soft_block_blocklist = bool(soft_block_blocklist)
         self.cache_backend = cache_backend
         self._explicit_cache_backend = cache_backend is not None
         self._initial_app = app
@@ -142,17 +142,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return JSONResponse({'error': 'temporarily_unavailable'}, status_code=503)
 
         if decision.action == FLOOD_BLOCK:
-            BlacklistManager.block(ip, "Flood pattern", extended_request_info=get_blacklist_extended_info(request))
+            BlocklistManager.block(ip, "Flood pattern", extended_request_info=get_blocklist_extended_info(request))
             request.state.aiwaf_blocked = True
             request.state.aiwaf_block_reason = "Flood pattern"
             payload, status = blocked_response()
             return JSONResponse(payload, status_code=status)
         if decision.action == THROTTLE:
-            if self.soft_block_blacklist:
-                BlacklistManager.block(
+            if self.soft_block_blocklist:
+                BlocklistManager.block(
                     ip,
                     "Rate limit exceeded",
-                    extended_request_info=get_blacklist_extended_info(request),
+                    extended_request_info=get_blocklist_extended_info(request),
                 )
             request.state.aiwaf_blocked = True
             request.state.aiwaf_block_reason = "Rate limit exceeded"
@@ -160,3 +160,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return JSONResponse(payload, status_code=status)
 
         return await call_next(request)
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager
+get_blacklist_extended_info = get_blocklist_extended_info

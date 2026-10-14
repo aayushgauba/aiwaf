@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests for blacklist extended request info storage.
+Tests for blocklist extended request info storage.
 """
 
 import os
@@ -16,13 +16,13 @@ django.setup()
 
 from django.test import override_settings
 from tests.django.base_test import AIWAFStorageTestCase, AIWAFTestCase
-from aiwaf.django.storage import get_blacklist_store
-from aiwaf.django.middleware import _collect_request_headers, _get_blacklist_extended_info
+from aiwaf.django.storage import get_blocklist_store
+from aiwaf.django.middleware import _collect_request_headers, _get_blocklist_extended_info
 
 
-class BlacklistExtendedInfoStorageTests(AIWAFStorageTestCase):
-    def test_blacklist_store_persists_extended_info(self):
-        store = get_blacklist_store()
+class BlocklistExtendedInfoStorageTests(AIWAFStorageTestCase):
+    def test_blocklist_store_persists_extended_info(self):
+        store = get_blocklist_store()
         info = {"url": "https://example.com/", "headers": {"User-Agent": "Test"}}
         store.block_ip("203.0.113.55", "Test reason", extended_request_info=info)
 
@@ -37,18 +37,18 @@ class BlacklistExtendedInfoStorageTests(AIWAFStorageTestCase):
         self.assertIsNotNone(entry.get("expires_at"))
 
 
-class BlacklistExtendedInfoCaptureTests(AIWAFTestCase):
-    @override_settings(AIWAF_BLACKLIST_STORE_EXTENDED_INFO=False)
+class BlocklistExtendedInfoCaptureTests(AIWAFTestCase):
+    @override_settings(AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=False)
     def test_extended_info_disabled_returns_none(self):
         request = self.create_request("/test/")
-        info = _get_blacklist_extended_info(request)
+        info = _get_blocklist_extended_info(request)
         self.assertIsNone(info)
 
     @override_settings(
-        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
-        AIWAF_BLACKLIST_REDACT_HEADERS=["Authorization"],
-        AIWAF_BLACKLIST_MAX_HEADERS=50,
-        AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH=5,
+        AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLOCKLIST_REDACT_HEADERS=["Authorization"],
+        AIWAF_BLOCKLIST_MAX_HEADERS=50,
+        AIWAF_BLOCKLIST_MAX_HEADER_VALUE_LENGTH=5,
     )
     def test_collect_request_headers_redacts_and_truncates(self):
         request = self.create_request(
@@ -68,7 +68,7 @@ class BlacklistExtendedInfoCaptureTests(AIWAFTestCase):
         self.assertIsNotNone(long_value)
         self.assertTrue(long_value.endswith("...(truncated)"))
 
-    @override_settings(AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True)
+    @override_settings(AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True)
     def test_extended_info_includes_url_and_headers(self):
         request = self.create_request(
             "/magic/",
@@ -77,7 +77,7 @@ class BlacklistExtendedInfoCaptureTests(AIWAFTestCase):
                 "HTTP_ACCEPT": "text/html",
             },
         )
-        info = _get_blacklist_extended_info(request)
+        info = _get_blocklist_extended_info(request)
         self.assertIsNotNone(info)
         self.assertEqual(info.get("path"), "/magic/")
         self.assertIn("headers", info)
@@ -89,9 +89,9 @@ if __name__ == "__main__":
 
     unittest.main()
 
-class BlacklistExtendedInfoEdgeCaseTests(AIWAFStorageTestCase):
+class BlocklistExtendedInfoEdgeCaseTests(AIWAFStorageTestCase):
     def test_extended_info_sets_if_missing_on_existing_entry(self):
-        store = get_blacklist_store()
+        store = get_blocklist_store()
         store.block_ip("203.0.113.56", "First", extended_request_info={})
 
         info = {"url": "https://example.com/x", "headers": {"User-Agent": "UA"}}
@@ -104,10 +104,10 @@ class BlacklistExtendedInfoEdgeCaseTests(AIWAFStorageTestCase):
         self.assertGreaterEqual(entry.get("offenses", 0), 2)
 
 
-class BlacklistHeaderLimitsTests(AIWAFTestCase):
+class BlocklistHeaderLimitsTests(AIWAFTestCase):
     @override_settings(
-        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
-        AIWAF_BLACKLIST_MAX_HEADERS=2,
+        AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLOCKLIST_MAX_HEADERS=2,
     )
     def test_max_header_count_limits_headers(self):
         request = self.create_request(
@@ -123,8 +123,8 @@ class BlacklistHeaderLimitsTests(AIWAFTestCase):
         self.assertLessEqual(len(headers), 2)
 
     @override_settings(
-        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
-        AIWAF_BLACKLIST_REDACT_HEADERS=["authorization"],
+        AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLOCKLIST_REDACT_HEADERS=["authorization"],
     )
     def test_redact_headers_is_case_insensitive(self):
         request = self.create_request(

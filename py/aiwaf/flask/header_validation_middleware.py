@@ -1,8 +1,8 @@
 # Flask-adapted HeaderValidationMiddleware
 import re
 from flask import request, jsonify, current_app
-from .utils import get_blacklist_extended_info, get_ip, is_exempt
-from .blacklist_manager import BlacklistManager
+from .utils import get_blocklist_extended_info, get_ip, is_exempt
+from .blocklist_manager import BlocklistManager
 from .exemption_decorators import should_apply_middleware
 from aiwaf.core import rust_backend
 from aiwaf.core import header_validation
@@ -50,12 +50,17 @@ class HeaderValidationMiddleware:
                 )
 
             if reason:
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     reason,
-                    extended_request_info=get_blacklist_extended_info(request),
+                    extended_request_info=get_blocklist_extended_info(request),
                 )
                 logger = getattr(current_app, "aiwaf_logger", None)
                 if logger is not None:
                     logger.mark_request_blocked(reason)
                 return jsonify({"error": "blocked"}), 403
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_extended_info = get_blocklist_extended_info
+BlacklistManager = BlocklistManager

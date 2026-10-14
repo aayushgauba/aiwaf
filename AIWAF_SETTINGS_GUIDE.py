@@ -57,14 +57,14 @@ AIWAF_REQUIRED_HEADERS = None
 # Minimum header quality score (0 disables score blocking when required headers are empty).
 AIWAF_HEADER_QUALITY_MIN_SCORE = 3
 
-# Blacklist extended request info (optional)
-# Stores URL + headers alongside blacklist entries for later analysis.
-AIWAF_BLACKLIST_STORE_EXTENDED_INFO = False
+# Blocklist extended request info (optional)
+# Stores URL + headers alongside blocklist entries for later analysis.
+AIWAF_BLOCKLIST_STORE_EXTENDED_INFO = False
 # Redact sensitive headers before storing.
-AIWAF_BLACKLIST_REDACT_HEADERS = ["Authorization", "Cookie", "Set-Cookie"]
+AIWAF_BLOCKLIST_REDACT_HEADERS = ["Authorization", "Cookie", "Set-Cookie"]
 # Limit the number and size of stored headers to avoid bloating the DB.
-AIWAF_BLACKLIST_MAX_HEADERS = 50
-AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH = 512
+AIWAF_BLOCKLIST_MAX_HEADERS = 50
+AIWAF_BLOCKLIST_MAX_HEADER_VALUE_LENGTH = 512
 
 # Learning thresholds
 AIWAF_KEYWORD_THRESHOLD = 3

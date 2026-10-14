@@ -50,7 +50,7 @@ class ExemptionSimpleTestCase(AIWAFMiddlewareTestCase):
             request = self.create_request("/rl/", headers={"REMOTE_ADDR": "203.0.113.10"})
             with patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
                  patch("aiwaf.django.middleware.is_exempt", return_value=False), \
-                 patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block:
+                 patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block:
                 response = middleware(request)
             self.assertIsNotNone(response)
             mock_block.assert_not_called()

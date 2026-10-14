@@ -1,11 +1,11 @@
 from flask import request, g, has_request_context
-from .storage import is_ip_whitelisted, get_path_exemptions
+from .storage import is_ip_allowlisted, get_path_exemptions
 from aiwaf.core.defaults import DEFAULT_EXEMPT_PATHS_FLASK
 from aiwaf.core.exemptions import is_path_exempt as core_is_path_exempt
 from aiwaf.core.exemptions import native_path_rules, normalize_path
 from aiwaf.core.native_runtime import csv_function
 from aiwaf.core.request_context import (
-    extract_blacklist_extended_info_from_flask_request,
+    extract_blocklist_extended_info_from_flask_request,
     extract_ip_from_flask_request,
 )
 
@@ -13,9 +13,9 @@ from aiwaf.core.request_context import (
 def _csv_exemption_signature(data_dir, ip, path):
     """Validate each reuse against external writes/replacements, even mid-request."""
     from flask import current_app
-    from aiwaf.core.storage_schema import WHITELIST_CSV, PATH_EXEMPTIONS_CSV
+    from aiwaf.core.storage_schema import ALLOWLIST_CSV, PATH_EXEMPTIONS_CSV
     stamps = []
-    for filename in (WHITELIST_CSV, PATH_EXEMPTIONS_CSV):
+    for filename in (ALLOWLIST_CSV, PATH_EXEMPTIONS_CSV):
         try:
             meta = (data_dir / filename).stat()
         except FileNotFoundError:
@@ -35,7 +35,7 @@ def is_exempt(request):
     if native is not None:
         from pathlib import Path
         from aiwaf.core.storage_ops import ensure_csv_files
-        from aiwaf.core.storage_schema import CSV_HEADERS, WHITELIST_CSV
+        from aiwaf.core.storage_schema import CSV_HEADERS, ALLOWLIST_CSV
         from flask import current_app
         data_dir = Path(_get_data_dir())
         path = normalize_path(request.path) if request.path else ''
@@ -47,7 +47,7 @@ def is_exempt(request):
         else:
             ensure_csv_files(data_dir, CSV_HEADERS)
             before = _csv_exemption_signature(data_dir, ip, path) if reuse else None
-            result = native(str(data_dir / WHITELIST_CSV), ip, path,
+            result = native(str(data_dir / ALLOWLIST_CSV), ip, path,
                             native_path_rules(get_exempt_paths()))
             after = _csv_exemption_signature(data_dir, ip, path) if reuse else None
             if reuse and before is not None and before == after:
@@ -57,7 +57,7 @@ def is_exempt(request):
     else:
         result = None
     if result is None:
-        if is_ip_whitelisted(ip) or is_path_exempt(request.path):
+        if is_ip_allowlisted(ip) or is_path_exempt(request.path):
             return True
     
     # Decorator-based exemption
@@ -103,23 +103,26 @@ def get_default_exempt_paths():
     return set(DEFAULT_EXEMPT_PATHS_FLASK)
 
 
-def get_blacklist_extended_info(request):
-    """Build optional extended-request-info payload for blacklist entries."""
+def get_blocklist_extended_info(request):
+    """Build optional extended-request-info payload for blocklist entries."""
     try:
         from flask import current_app
         enabled = bool(
-            current_app.config.get("AIWAF_BLACKLIST_STORE_EXTENDED_INFO", False)
+            current_app.config.get('AIWAF_BLOCKLIST_STORE_EXTENDED_INFO', current_app.config.get('AIWAF_BLACKLIST_STORE_EXTENDED_INFO', False))
             or current_app.config.get("AIWAF_CAPTURE_EXTENDED_REQUEST_INFO", False)
         )
-        return extract_blacklist_extended_info_from_flask_request(
+        return extract_blocklist_extended_info_from_flask_request(
             request,
             enabled=enabled,
-            max_headers=int(current_app.config.get("AIWAF_BLACKLIST_MAX_HEADERS", 50)),
-            max_value_len=int(current_app.config.get("AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH", 512)),
-            redact_headers=current_app.config.get(
-                "AIWAF_BLACKLIST_REDACT_HEADERS",
-                ["Authorization", "Cookie", "Set-Cookie"],
-            ),
+            max_headers=int(current_app.config.get('AIWAF_BLOCKLIST_MAX_HEADERS', current_app.config.get('AIWAF_BLACKLIST_MAX_HEADERS', 50))),
+            max_value_len=int(current_app.config.get('AIWAF_BLOCKLIST_MAX_HEADER_VALUE_LENGTH', current_app.config.get('AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH', 512))),
+            redact_headers=current_app.config.get('AIWAF_BLOCKLIST_REDACT_HEADERS', current_app.config.get('AIWAF_BLACKLIST_REDACT_HEADERS', ["Authorization", "Cookie", "Set-Cookie"])),
         )
     except Exception:
         return None
+
+
+# Compatibility aliases for callers using the previous terminology.
+is_ip_whitelisted = is_ip_allowlisted
+extract_blacklist_extended_info_from_flask_request = extract_blocklist_extended_info_from_flask_request
+get_blacklist_extended_info = get_blocklist_extended_info

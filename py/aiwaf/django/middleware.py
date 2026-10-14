@@ -30,7 +30,7 @@ except ImportError:
 from .geoip import lookup_country
 
 from .trainer import STATIC_KW, STATUS_IDX, path_exists_in_django
-from .blacklist_manager import BlacklistManager
+from .blocklist_manager import BlocklistManager
 from .models import IPExemption
 from .utils import (
     is_exempt,
@@ -90,7 +90,7 @@ from ..core.geo_policy import evaluate_geo_policy, normalize_country_list
 _DEFAULT_GEO_POLICY = evaluate_geo_policy
 from ..core.block_responses import throttle_response
 from ..core.request_context import (
-    extract_blacklist_extended_info_from_django_request,
+    extract_blocklist_extended_info_from_django_request,
     extract_ip_from_django_request,
     extract_query_keys_from_django_request,
 )
@@ -264,37 +264,29 @@ def get_ip(request):
 
 
 def _collect_request_headers(request):
-    info = extract_blacklist_extended_info_from_django_request(
+    info = extract_blocklist_extended_info_from_django_request(
         request,
         enabled=True,
-        max_headers=getattr(settings, "AIWAF_BLACKLIST_MAX_HEADERS", 50),
-        max_value_len=getattr(settings, "AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH", 512),
-        redact_headers=getattr(
-            settings,
-            "AIWAF_BLACKLIST_REDACT_HEADERS",
-            ["Authorization", "Cookie", "Set-Cookie"],
-        ),
+        max_headers=getattr(settings, 'AIWAF_BLOCKLIST_MAX_HEADERS', getattr(settings, 'AIWAF_BLACKLIST_MAX_HEADERS', 50)),
+        max_value_len=getattr(settings, 'AIWAF_BLOCKLIST_MAX_HEADER_VALUE_LENGTH', getattr(settings, 'AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH', 512)),
+        redact_headers=getattr(settings, 'AIWAF_BLOCKLIST_REDACT_HEADERS', getattr(settings, 'AIWAF_BLACKLIST_REDACT_HEADERS', ["Authorization", "Cookie", "Set-Cookie"])),
     )
     return dict(info.get("headers", {})) if info else {}
 
 
-def _get_blacklist_extended_info(request):
-    if not getattr(settings, "AIWAF_BLACKLIST_STORE_EXTENDED_INFO", False):
+def _get_blocklist_extended_info(request):
+    if not getattr(settings, 'AIWAF_BLOCKLIST_STORE_EXTENDED_INFO', getattr(settings, 'AIWAF_BLACKLIST_STORE_EXTENDED_INFO', False)):
         return None
-    cache_attr = "_aiwaf_blacklist_extended_info"
+    cache_attr = "_aiwaf_blocklist_extended_info"
     cached = getattr(request, cache_attr, None)
     if cached is not None:
         return cached
-    info = extract_blacklist_extended_info_from_django_request(
+    info = extract_blocklist_extended_info_from_django_request(
         request,
         enabled=True,
-        max_headers=getattr(settings, "AIWAF_BLACKLIST_MAX_HEADERS", 50),
-        max_value_len=getattr(settings, "AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH", 512),
-        redact_headers=getattr(
-            settings,
-            "AIWAF_BLACKLIST_REDACT_HEADERS",
-            ["Authorization", "Cookie", "Set-Cookie"],
-        ),
+        max_headers=getattr(settings, 'AIWAF_BLOCKLIST_MAX_HEADERS', getattr(settings, 'AIWAF_BLACKLIST_MAX_HEADERS', 50)),
+        max_value_len=getattr(settings, 'AIWAF_BLOCKLIST_MAX_HEADER_VALUE_LENGTH', getattr(settings, 'AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH', 512)),
+        redact_headers=getattr(settings, 'AIWAF_BLOCKLIST_REDACT_HEADERS', getattr(settings, 'AIWAF_BLACKLIST_REDACT_HEADERS', ["Authorization", "Cookie", "Set-Cookie"])),
     )
     setattr(request, cache_attr, info)
     return info
@@ -521,9 +513,9 @@ class IPAndKeywordBlockMiddleware:
         if is_ip_exempted(ip):
             return self.get_response(request)
         
-        # BlacklistManager handles exemption checking internally
-        if BlacklistManager.is_blocked(ip):
-            _raise_blocked(request, "IP already blacklisted", status_code=403)
+        # BlocklistManager handles exemption checking internally
+        if BlocklistManager.is_blocked(ip):
+            _raise_blocked(request, "IP already blocklisted", status_code=403)
         
         # Check if path exists in Django - if yes, be more lenient
         from aiwaf.core.sql_injection import inspect_wsgi_request
@@ -583,12 +575,12 @@ class IPAndKeywordBlockMiddleware:
                 keyword_store.add_keyword(seg)
 
         if decision.block_reason and not is_ip_exempted(ip):
-            BlacklistManager.block(
+            BlocklistManager.block(
                 ip,
                 decision.block_reason,
-                extended_request_info=_get_blacklist_extended_info(request),
+                extended_request_info=_get_blocklist_extended_info(request),
             )
-            if BlacklistManager.is_blocked(ip):
+            if BlocklistManager.is_blocked(ip):
                 _raise_blocked(request, decision.block_reason, status_code=403)
         return self.get_response(request)
 
@@ -603,7 +595,7 @@ class RateLimitMiddleware:
         self.MAX = getattr(settings, "AIWAF_RATE_MAX", 20)        # soft limit
         self.FLOOD = getattr(settings, "AIWAF_RATE_FLOOD", 40)    # hard limit
         self.KEY_MODE = normalize_rate_key_mode(getattr(settings, "AIWAF_RATE_KEY_MODE", "ip_path"))
-        self.SOFT_BLOCK_BLACKLIST = bool(getattr(settings, "AIWAF_RATE_SOFT_BLOCK_BLACKLIST", False))
+        self.SOFT_BLOCK_BLOCKLIST = bool(getattr(settings, 'AIWAF_RATE_SOFT_BLOCK_BLOCKLIST', getattr(settings, 'AIWAF_RATE_SOFT_BLOCK_BLACKLIST', False)))
 
     def __call__(self, request):
         if is_middleware_disabled(request, self.__class__):
@@ -646,20 +638,20 @@ class RateLimitMiddleware:
         if decision.action == FLOOD_BLOCK:
             # Double-check exemption before blocking
             if not is_ip_exempted(ip):
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     "Flood pattern",
-                    extended_request_info=_get_blacklist_extended_info(request),
+                    extended_request_info=_get_blocklist_extended_info(request),
                 )
                 # Check if actually blocked (exempted IPs won't be blocked)
-                if BlacklistManager.is_blocked(ip):
+                if BlocklistManager.is_blocked(ip):
                     _raise_blocked(request, "Flood pattern", status_code=403)
         if decision.action == THROTTLE:
-            if self.SOFT_BLOCK_BLACKLIST:
-                BlacklistManager.block(
+            if self.SOFT_BLOCK_BLOCKLIST:
+                BlocklistManager.block(
                     ip,
                     "Rate limit exceeded",
-                    extended_request_info=_get_blacklist_extended_info(request),
+                    extended_request_info=_get_blocklist_extended_info(request),
                 )
             payload, status = throttle_response()
             return JsonResponse(payload, status=status)
@@ -723,12 +715,12 @@ class GeoBlockMiddleware(MiddlewareMixin):
 
         if decision.should_block:
             reason = f"Geo-blocked country: {decision.country}"
-            BlacklistManager.block(
+            BlocklistManager.block(
                 ip,
                 reason,
-                extended_request_info=_get_blacklist_extended_info(request),
+                extended_request_info=_get_blocklist_extended_info(request),
             )
-            if BlacklistManager.is_blocked(ip):
+            if BlocklistManager.is_blocked(ip):
                 _raise_blocked(request, reason, status_code=403)
         return None
 
@@ -886,9 +878,9 @@ class AIAnomalyMiddleware(MiddlewareMixin):
         if is_ip_exempted(ip):
             return None
             
-        # BlacklistManager handles exemption checking internally
-        if BlacklistManager.is_blocked(ip):
-            _raise_blocked(request, "IP already blacklisted", status_code=403)
+        # BlocklistManager handles exemption checking internally
+        if BlocklistManager.is_blocked(ip):
+            _raise_blocked(request, "IP already blocklisted", status_code=403)
         return None
 
     def process_response(self, request, response):
@@ -947,12 +939,12 @@ class AIAnomalyMiddleware(MiddlewareMixin):
 
         if outcome.block and outcome.reason:
             if not is_ip_exempted(ip):
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     outcome.reason,
-                    extended_request_info=_get_blacklist_extended_info(request),
+                    extended_request_info=_get_blocklist_extended_info(request),
                 )
-                if BlacklistManager.is_blocked(ip):
+                if BlocklistManager.is_blocked(ip):
                     _raise_blocked(request, outcome.reason, status_code=403)
 
         # Persist request data for IsolationForest training when DB logger middleware
@@ -1088,12 +1080,12 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 accepts_method=self._view_accepts_method(request, request.method),
             )
             if decision.action == METHOD_BLOCK and not is_ip_exempted(ip):
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     decision.reason,
-                    extended_request_info=_get_blacklist_extended_info(request),
+                    extended_request_info=_get_blocklist_extended_info(request),
                 )
-                if BlacklistManager.is_blocked(ip):
+                if BlocklistManager.is_blocked(ip):
                     _log_block(request, decision.reason, status_code=decision.status_code)
                     return JsonResponse({"error": "blocked", "message": decision.message}, status=decision.status_code)
             
@@ -1114,12 +1106,12 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 accepts_method=self._view_accepts_method(request, request.method),
             )
             if decision.action == METHOD_BLOCK and not is_ip_exempted(ip):
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     decision.reason,
-                    extended_request_info=_get_blacklist_extended_info(request),
+                    extended_request_info=_get_blocklist_extended_info(request),
                 )
-                if BlacklistManager.is_blocked(ip):
+                if BlocklistManager.is_blocked(ip):
                     _log_block(request, decision.reason, status_code=decision.status_code)
                     return JsonResponse({"error": "blocked", "message": decision.message}, status=decision.status_code)
             
@@ -1145,13 +1137,13 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 if decision.action == ACTION_BLOCK:
                     # Double-check exemption before blocking
                     if not is_ip_exempted(ip):
-                        BlacklistManager.block(
+                        BlocklistManager.block(
                             ip,
                             decision.reason or "Form submitted too quickly",
-                            extended_request_info=_get_blacklist_extended_info(request),
+                            extended_request_info=_get_blocklist_extended_info(request),
                         )
                         # Check if actually blocked (exempted IPs won't be blocked)
-                        if BlacklistManager.is_blocked(ip):
+                        if BlocklistManager.is_blocked(ip):
                             _raise_blocked(
                                 request,
                                 decision.reason or "Form submitted too quickly",
@@ -1167,12 +1159,12 @@ class HoneypotTimingMiddleware(MiddlewareMixin):
                 accepts_method=self._view_accepts_method(request, request.method),
             )
             if decision.action == METHOD_BLOCK and not is_ip_exempted(ip):
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     decision.reason,
-                    extended_request_info=_get_blacklist_extended_info(request),
+                    extended_request_info=_get_blocklist_extended_info(request),
                 )
-                if BlacklistManager.is_blocked(ip):
+                if BlocklistManager.is_blocked(ip):
                     _log_block(request, decision.reason, status_code=decision.status_code)
                     return JsonResponse({"error": "blocked", "message": decision.message}, status=decision.status_code)
         
@@ -1212,13 +1204,13 @@ class UUIDTamperMiddleware(MiddlewareMixin):
         if is_malformed_uuid(uid) and not is_ip_exempted(ip):
             decision = record_uuid_signal(ip, "malformed", config=self._score_config())
             reason = f"UUID tampering score={decision['score']}"
-            BlacklistManager.block(
+            BlocklistManager.block(
                 ip,
                 reason,
-                extended_request_info=_get_blacklist_extended_info(request),
+                extended_request_info=_get_blocklist_extended_info(request),
             )
             # Check if actually blocked (exempted IPs won't be blocked)
-            if BlacklistManager.is_blocked(ip):
+            if BlocklistManager.is_blocked(ip):
                 _raise_blocked(request, reason, status_code=403)
         return None
 
@@ -1238,12 +1230,12 @@ class UUIDTamperMiddleware(MiddlewareMixin):
             decision = record_uuid_signal(ip, "not_found", config=self._score_config())
             if decision["blocked"]:
                 reason = f"UUID tampering score={decision['score']}"
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     reason,
-                    extended_request_info=_get_blacklist_extended_info(request),
+                    extended_request_info=_get_blocklist_extended_info(request),
                 )
-                if BlacklistManager.is_blocked(ip):
+                if BlocklistManager.is_blocked(ip):
                     _raise_blocked(request, reason, status_code=403)
         elif response.status_code < 400:
             record_uuid_signal(ip, "success", config=self._score_config())
@@ -1302,7 +1294,7 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         # Note: exact "Mozilla/5.0" is common; avoid flagging it as suspicious.
     ]
     
-    # Known legitimate bot user agents to whitelist
+    # Known legitimate bot user agents to allowlist
     LEGITIMATE_BOTS = [
         r'googlebot',
         r'bingbot', 
@@ -1579,14 +1571,19 @@ class HeaderValidationMiddleware(MiddlewareMixin):
         """Block the request and raise PermissionDenied"""
         # Double-check exemption before blocking
         if not is_ip_exempted(ip):
-            BlacklistManager.block(
+            BlocklistManager.block(
                 ip,
                 f"Header validation: {reason}",
-                extended_request_info=_get_blacklist_extended_info(request),
+                extended_request_info=_get_blocklist_extended_info(request),
             )
             
             # Check if actually blocked (exempted IPs won't be blocked)
-            if BlacklistManager.is_blocked(ip):
+            if BlocklistManager.is_blocked(ip):
                 _raise_blocked(request, f"Header validation: {reason}", status_code=403)
                 
         return None
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager
+extract_blacklist_extended_info_from_django_request = extract_blocklist_extended_info_from_django_request

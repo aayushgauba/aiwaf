@@ -1,6 +1,6 @@
 const rateLimiter = require('./rateLimiter');
 const { createInspector } = require('./sqlInjection');
-const blacklistManager = require('./blacklistManager');
+const blocklistManager = require('./blocklistManager');
 const keywordDetector = require('./keywordDetector');
 const dynamicKeyword = require('./dynamicKeyword');
 const dynamicKeywordStore = require('./dynamicKeywordStore');
@@ -182,7 +182,7 @@ module.exports = function aiwaf(rawOpts = {}) {
 
   if (opts.AIWAF_CLEAR_STATE_ON_START) {
     Promise.allSettled([
-      blacklistManager.clear(),
+      blocklistManager.clear(),
       requestLogStore.clear(),
       dynamicKeywordStore.clear()
     ]).catch(() => {});
@@ -229,7 +229,7 @@ module.exports = function aiwaf(rawOpts = {}) {
     }
     const routePlan = createRoutePlan(path, pathRules, req.aiwafRoute || {});
     const shouldApply = name => enabledMiddlewares.has(normalizeMiddlewareName(name)) && routePlan.shouldApply(name);
-    const blockIp = reason => blacklistManager.block(ip, reason, {
+    const blockIp = reason => blocklistManager.block(ip, reason, {
       extendedRequestInfo: extractExtendedRequestInfo(req, {
         enabled: opts.AIWAF_CAPTURE_EXTENDED_REQUEST_INFO,
         maxHeaders: opts.AIWAF_EXTENDED_INFO_MAX_HEADERS,
@@ -278,11 +278,11 @@ module.exports = function aiwaf(rawOpts = {}) {
       return next();
     }
 
-    if (shouldApply('ip_keyword_block') && await blacklistManager.isBlocked(ip)) {
+    if (shouldApply('ip_keyword_block') && await blocklistManager.isBlocked(ip)) {
       if (process.env.AIWAF_DEBUG_MIDDLEWARE) {
-        console.error(`[AIWAF-BLOCK-BLACKLIST] ip=${ip}`);
+        console.error(`[AIWAF-BLOCK-BLOCKLIST] ip=${ip}`);
       }
-      return deny(403, 'blocked', 'blacklist');
+      return deny(403, 'blocked', 'blocklist');
     }
 
     const payloadFinding = await inspectPayload(req);
@@ -410,8 +410,8 @@ module.exports = function aiwaf(rawOpts = {}) {
           if (process.env.AIWAF_DEBUG_MIDDLEWARE) {
             console.error(`[AIWAF-BLOCK-RATE] ip=${ip}`);
           }
-          if (await blacklistManager.isBlocked(ip)) {
-            return deny(403, 'blocked', 'flood_or_blacklist');
+          if (await blocklistManager.isBlocked(ip)) {
+            return deny(403, 'blocked', 'flood_or_blocklist');
           }
           return deny(429, 'too_many_requests', 'rate_limit');
         }

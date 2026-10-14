@@ -500,7 +500,7 @@ fn mutate<T>(
 }
 
 #[pyfunction]
-pub fn csv_blacklist_check(
+pub fn csv_blocklist_check(
     py: Python<'_>,
     path: String,
     headers: Vec<String>,
@@ -542,7 +542,7 @@ pub fn csv_blacklist_check(
 #[pyfunction]
 #[pyo3(signature = (path, headers, ip, reason, added_date, info_json, now, duration))]
 #[allow(clippy::too_many_arguments)]
-pub fn csv_blacklist_block(
+pub fn csv_blocklist_block(
     py: Python<'_>,
     path: String,
     headers: Vec<String>,
@@ -1208,16 +1208,16 @@ pub fn csv_keywords_update(
     })
 }
 
-/// One Python/native boundary for whitelist and path exemption decisions.
+/// One Python/native boundary for allowlist and path exemption decisions.
 #[pyfunction]
 pub fn csv_request_exempt(
     py: Python<'_>,
-    whitelist: String,
+    allowlist: String,
     ip: String,
     path: String,
     rules: Vec<(String, Option<String>)>,
 ) -> PyResult<Option<bool>> {
-    if csv_contains(py, whitelist, "ip".into(), ip, true)? {
+    if csv_contains(py, allowlist, "ip".into(), ip, true)? {
         return Ok(Some(true));
     }
     if path.is_empty() {
@@ -1301,7 +1301,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(csv_runtime_block, m)?)?;
     m.add_function(wrap_pyfunction!(csv_runtime_keyword, m)?)?;
     m.add_function(wrap_pyfunction!(csv_set_update, m)?)?;
-    m.add_function(wrap_pyfunction!(csv_blacklist_check, m)?)?;
+    m.add_function(wrap_pyfunction!(csv_blocklist_check, m)?)?;
+    m.add("csv_blacklist_check", m.getattr("csv_blocklist_check")?)?;
     m.add_function(wrap_pyfunction!(csv_read, m)?)?;
     m.add_function(wrap_pyfunction!(csv_read_set, m)?)?;
     m.add_function(wrap_pyfunction!(csv_read_dict, m)?)?;
@@ -1309,7 +1310,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(csv_write, m)?)?;
     m.add_function(wrap_pyfunction!(csv_headers_match, m)?)?;
     m.add_function(wrap_pyfunction!(csv_lookup, m)?)?;
-    m.add_function(wrap_pyfunction!(csv_blacklist_block, m)?)?;
+    m.add_function(wrap_pyfunction!(csv_blocklist_block, m)?)?;
+    m.add("csv_blacklist_block", m.getattr("csv_blocklist_block")?)?;
     m.add_function(wrap_pyfunction!(csv_remove_key, m)?)?;
     m.add_function(wrap_pyfunction!(csv_kv_get, m)?)?;
     m.add_function(wrap_pyfunction!(csv_kv_keys, m)?)?;

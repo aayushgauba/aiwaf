@@ -10,7 +10,7 @@ class TestTrainerGeoSummary(AIWAFTestCase):
     def test_geo_summary_uses_country_names(self):
         from aiwaf.django import trainer
 
-        class FakeBlacklistStore:
+        class FakeBlocklistStore:
             def get_all_blocked_ips(self):
                 return ["1.1.1.1", "8.8.8.8"]
 
@@ -19,7 +19,7 @@ class TestTrainerGeoSummary(AIWAFTestCase):
 
         with self.assertLogs("aiwaf.django.trainer", level="INFO") as captured, \
              patch("aiwaf.django.trainer.os.path.exists", return_value=True), \
-             patch("aiwaf.django.trainer.get_blacklist_store", return_value=FakeBlacklistStore()), \
+             patch("aiwaf.django.trainer.get_blocklist_store", return_value=FakeBlocklistStore()), \
              patch("aiwaf.django.trainer.lookup_country_name", side_effect=fake_lookup_country_name):
             trainer._print_geoip_blocklist_summary()
 

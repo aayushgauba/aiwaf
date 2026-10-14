@@ -1,11 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
 
-from aiwaf.fast.storage import get_blacklist_store, initialize_storage
+from aiwaf.fast.storage import get_blocklist_store, initialize_storage
 
 
-def test_concurrent_blacklist_writes_memory_backend():
+def test_concurrent_blocklist_writes_memory_backend():
     initialize_storage(backend="memory")
-    store = get_blacklist_store()
+    store = get_blocklist_store()
     ips = [f"203.0.113.{idx}" for idx in range(1, 21)]
 
     def _add(ip):

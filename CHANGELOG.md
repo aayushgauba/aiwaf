@@ -1,5 +1,16 @@
 # Changelog
 
+## Python 1.1.8 / Rust-Python 0.2.7 / Node.js 1.1.5 / WASM 0.2.5 / Java 1.3.5 — prepared release
+
+- Update package versions and matching native dependency requirements for the next release.
+- Remove benchmark/profiling utilities and consolidate release documentation into README/CHANGELOG.
+- Remove the deprecated Rust floating-point module import.
+- Use blocklist/allowlist in Python, JavaScript, Rust/WASM, Java, CLI help and
+  website documentation. Retain prior import, method and command aliases.
+- Preserve existing CSV filenames, Django database/model identity, stored legacy
+  reason tags and native wire compatibility. Accept older configuration exports
+  without discarding blocks or exemptions.
+
 ## Python 1.1.7 / aiwaf-rust 0.2.6 — native honeypot cache
 
 - Add opt-in Redis and supplied-cache honeypot timing to Flask and FastAPI's
@@ -16,11 +27,11 @@
   GET refresh. Until the next GET or cache expiry, repeated expired-page POSTs
   continue to return 409. Existing timestamps are not migrated between backends.
 
-## Node.js 1.1.4 / Java 1.3.4 — blacklist expiry concurrency fixes
+## Node.js 1.1.4 / Java 1.3.4 — blocklist expiry concurrency fixes
 
-- Make Node blacklist request checks read-only. Database cleanup deletes only
+- Make Node blocklist request checks read-only. Database cleanup deletes only
   rows still expired when the delete executes; CSV cleanup checks the latest
-  rows under the same cross-process lock used by blacklist writes.
+  rows under the same cross-process lock used by blocklist writes.
 - Reload Java CSV and file storage under a shared JVM and OS file lock for each
   operation. Listing filters expiry without rewriting disk; mutations preserve
   updates from other instances and processes and report persistence failures.
@@ -29,12 +40,12 @@
 
 ## Python 1.1.6 / aiwaf-rust 0.2.5 — training replay protection
 
-- Make Flask CLI blacklist listing read-only. Expiry filtering no longer writes
+- Make Flask CLI blocklist listing read-only. Expiry filtering no longer writes
   an older snapshot over blocks concurrently added or refreshed by a trainer.
 - Display the canonical block date in CLI output instead of reporting Unknown
   when CSV entries use `added_date` rather than the old `timestamp` field.
 
-- Persist Rust-owned enforcement receipts independently of blacklist expiry and
+- Persist Rust-owned enforcement receipts independently of blocklist expiry and
   manual unblocking. Reusing handled requests cannot extend or recreate a block.
 - Apply 404 thresholds and anomaly enforcement to fresh evidence in Flask,
   FastAPI, and Django, while retaining full history for model fitting and learning.
@@ -50,7 +61,7 @@
   404 and anomaly evidence must independently satisfy enforcement thresholds.
 - Persist Node receipts across restarts and serialize offline trainers. Report
   missing native APIs, invalid state, and storage failures with a CLI failure.
-- Keep Java model training free of blacklist side effects, verified by a new
+- Keep Java model training free of blocklist side effects, verified by a new
   runtime-state regression test. File storage concurrency is fixed separately.
 
 - Upgrade Jest, Fastify, and the NestJS test dependencies to patched releases.
@@ -126,7 +137,7 @@ and the release automation section for validation requirements.
 
 - Added reputation-based IP blocking with weighted offenses, progressive
   temporary blocks, expiration handling, and richer stored metadata.
-- Added automatic legacy blacklist compatibility and backend-aware migration
+- Added automatic legacy blocklist compatibility and backend-aware migration
   commands for Django, Flask, and FastAPI.
 - Added legacy CSV schema detection and safe conversion of imported permanent
   blocks.

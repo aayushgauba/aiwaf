@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 
 from aiwaf.core.request_context import (
-    extract_blacklist_extended_info_from_django_request,
-    extract_blacklist_extended_info_from_fastapi_request,
-    extract_blacklist_extended_info_from_flask_request,
+    extract_blocklist_extended_info_from_django_request,
+    extract_blocklist_extended_info_from_fastapi_request,
+    extract_blocklist_extended_info_from_flask_request,
     extract_headers_from_django_request,
     extract_headers_from_fastapi_request,
     extract_headers_from_flask_request,
@@ -160,7 +160,7 @@ def test_extract_logging_context_from_fastapi_request():
     assert ctx["user_agent"] == "UA3"
 
 
-def test_extract_blacklist_extended_info_from_django_request():
+def test_extract_blocklist_extended_info_from_django_request():
     req = SimpleNamespace(
         method="POST",
         path="/login",
@@ -173,7 +173,7 @@ def test_extract_blacklist_extended_info_from_django_request():
         build_absolute_uri=lambda: "https://example.test/login?a=1",
         get_host=lambda: "example.test",
     )
-    info = extract_blacklist_extended_info_from_django_request(
+    info = extract_blocklist_extended_info_from_django_request(
         req,
         enabled=True,
         max_headers=10,
@@ -185,7 +185,7 @@ def test_extract_blacklist_extended_info_from_django_request():
     assert info["headers"]["Authorization"] == "[redacted]"
 
 
-def test_extract_blacklist_extended_info_from_flask_request():
+def test_extract_blocklist_extended_info_from_flask_request():
     req = SimpleNamespace(
         url="https://example.test/login?a=1",
         path="/login",
@@ -195,7 +195,7 @@ def test_extract_blacklist_extended_info_from_flask_request():
         headers={"User-Agent": "UA", "Authorization": "secret"},
         remote_addr="203.0.113.6",
     )
-    info = extract_blacklist_extended_info_from_flask_request(
+    info = extract_blocklist_extended_info_from_flask_request(
         req,
         enabled=True,
         max_bytes=8192,
@@ -207,7 +207,7 @@ def test_extract_blacklist_extended_info_from_flask_request():
     assert info["headers"]["Authorization"] == "[REDACTED]"
 
 
-def test_extract_blacklist_extended_info_from_fastapi_request():
+def test_extract_blocklist_extended_info_from_fastapi_request():
     req = SimpleNamespace(
         method="GET",
         url=SimpleNamespace(path="/x", query="k=1", netloc="example.test"),
@@ -215,7 +215,7 @@ def test_extract_blacklist_extended_info_from_fastapi_request():
         client=SimpleNamespace(host="8.8.8.8"),
         scope={"http_version": "1.1"},
     )
-    info = extract_blacklist_extended_info_from_fastapi_request(
+    info = extract_blocklist_extended_info_from_fastapi_request(
         req,
         enabled=True,
         max_headers=10,

@@ -39,21 +39,21 @@ the supported Redis backends when sharing limits across workers.
 
 Each package is versioned and released independently.
 
-Python 1.1.7, Rust/Python 0.2.6, Node.js 1.1.4, WASM 0.2.4, and Java 1.3.4 are local source targets. See the package table below and [CHANGELOG](CHANGELOG.md) for release changes.
+Python 1.1.8, Rust/Python 0.2.7, Node.js 1.1.5, WASM 0.2.5, and Java 1.3.5 are local source targets. See the package table below and [CHANGELOG](CHANGELOG.md) for release changes.
 
 | Runtime | Package | Repository version | Primary use |
 | --- | --- | ---: | --- |
-| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.7` | Django, Flask, and FastAPI protection |
-| Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.4` | Express and Node framework middleware |
-| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.6` | Native Python acceleration and JSON model inference |
-| WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.4` | Rust detection and model primitives for JavaScript |
-| Java | `io.github.aiwaf-project:aiwaf-java` | `1.3.4` | Spring MVC and Jakarta Servlet protection |
+| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.8` | Django, Flask, and FastAPI protection |
+| Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.5` | Express and Node framework middleware |
+| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.7` | Native Python acceleration and JSON model inference |
+| WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.5` | Rust detection and model primitives for JavaScript |
+| Java | `io.github.aiwaf-project:aiwaf-java` | `1.3.5` | Spring MVC and Jakarta Servlet protection |
 
 Supported framework integrations include Django, Flask, FastAPI, Express, Fastify, Hapi, Koa, NestJS, Next.js API routes, AdonisJS, Sails.js, Spring MVC, and Jakarta Servlet.
 
 ## What AIWAF provides
 
-- IP blacklist, exemption, reputation, expiry, and progressive-block handling
+- IP blocklist, exemption, reputation, expiry, and progressive-block handling
 - Sliding-window rate limiting and flood detection
 - Header, method, request-size, content-type, and parameter validation
 - Static and learned malicious keyword detection
@@ -95,7 +95,7 @@ pip install "aiwaf[django]"
 pip install "aiwaf[flask]"
 pip install "aiwaf[fastapi]"
 
-# Backward-compatible alias; Python 1.1.7 already installs aiwaf-rust
+# Backward-compatible alias; Python 1.1.8 already installs aiwaf-rust
 pip install "aiwaf[rust]"
 
 # Node.js middleware
@@ -105,13 +105,13 @@ npm install aiwaf
 npm install aiwaf-wasm
 ```
 
-Java 1.3.4, after it is published to Maven Central:
+Java 1.3.5, after it is published to Maven Central:
 
 ```xml
 <dependency>
   <groupId>io.github.aiwaf-project</groupId>
   <artifactId>aiwaf-java</artifactId>
-  <version>1.3.4</version>
+  <version>1.3.5</version>
 </dependency>
 ```
 
@@ -119,7 +119,7 @@ Java 1.3.4, after it is published to Maven Central:
 
 The Python package requires Python 3.10 or newer. Framework dependencies are optional, so install only the extra needed by the application.
 
-Python 1.1.7 requires `aiwaf-rust>=0.2.6`; the `rust` extra remains an installation
+Python 1.1.8 requires `aiwaf-rust>=0.2.7`; the `rust` extra remains an installation
 alias. Publish the matching Rust wheel with `NativeCSVPipeline` support before
 the Python release. The Rust release workflow builds Linux x86_64/aarch64,
 musl x86_64, macOS x86_64/arm64 and Windows x86_64 wheels and checks the native
@@ -134,7 +134,7 @@ Install it **instead of the existing eight-middleware chain**. The existing
 they do not switch automatically to this pipeline.
 
 Rust owns the immutable configuration, enforcement order, SQL and keyword
-inspection, geo and blacklist decisions, rate buckets, form timing state, UUID
+inspection, geo and blocklist decisions, rate buckets, form timing state, UUID
 scores, anomaly inference/history, keyword learning and CSV logging. Python
 supplies framework routing/authentication facts, obtains GeoIP country data,
 buffers a bounded body prefix and constructs responses. Each request crosses
@@ -183,15 +183,15 @@ Common profile keys and defaults:
 | Setting | Default / meaning |
 | --- | --- |
 | `enabled` | All eight names: `geo_block`, `ip_keyword_block`, `rate_limit`, `ai_anomaly`, `honeypot`, `uuid_tamper`, `header_validation`, `logging` |
-| `data_dir` | `aiwaf_data`; policy CSVs use the shared whitelist/blacklist/keyword/geo/path schemas |
+| `data_dir` | `aiwaf_data`; policy CSVs use the shared allowlist/blocklist/keyword/geo/path schemas |
 | `exempt_paths`, `exempt_ips` | `/health`, `/robots.txt`, `/sitemap.xml`; empty IP list. Paths are literal, case-insensitive prefixes, not globs. Stored path exemptions use the same literal-prefix rule |
 | `sql_mode`, `max_bytes` | `block`, `65536`; `off` supported, `monitor` rejected. Structured JSON/form bodies and nested escaped strings are inspected with bounded traversal |
 | `learning`, `top_n` | `True`, `10`; presence keywords use a sorted, stable subset instead of Python set iteration order |
 | `static_keywords`, `legitimate_keywords`, `exempt_keywords`, `safe_prefixes` | Native policy defaults or explicit arrays; set route-specific safe vocabulary in the profile |
 | `geo_allow`, `geo_block` | Empty lists; includes stored blocked countries. Unknown country remains allowed |
 | `rate_backend`, `rate_key_mode` | `memory`, `ip_path`; `csv` shares buckets across workers; `ip` aggregates paths. Redis is rejected |
-| `rate_window`, `rate_max`, `rate_flood` | `10`, `20`, `40`; throttle at 429, flood at 403 with blacklist persistence |
-| `soft_block_blacklist`, `ip_blocking`, `block_duration` | `False`, `True`, reputation-based duration; explicit seconds or nonpositive permanent duration |
+| `rate_window`, `rate_max`, `rate_flood` | `10`, `20`, `40`; throttle at 429, flood at 403 with blocklist persistence |
+| `soft_block_blocklist`, `ip_blocking`, `block_duration` | `False`, `True`, reputation-based duration; explicit seconds or nonpositive permanent duration |
 | `honeypot_backend` | Django defaults to `django_cache`; Flask/FastAPI and direct construction default to `csv`. Optional `memory` is local to one engine; `redis` and `cache` delegate timestamp I/O while Rust enforces timing |
 | `honeypot_cache_alias` | Django-only; `default`. Uses the named `CACHES` entry for honeypot timestamps, not other policy or rate state |
 | `honeypot_redis_url` | Required for `honeypot_backend="redis"`; stripped before native profile serialization. `rediss://` requires redis-py |
@@ -215,7 +215,7 @@ timestamps in an expiring map and evaluates/clears POST timing atomically,
 avoiding a durable CSV rewrite on each GET. Timing state is isolated per engine,
 is not shared across workers and resets on restart. Backend switches do not
 transfer timestamps automatically. Keep `csv` for shared or persistent timing;
-CSV writes remain immediately synced. Blacklist, keyword, geo and whitelist
+CSV writes remain immediately synced. Blocklist, keyword, geo and allowlist
 policy files and immediate request logging keep their configured CSV behavior.
 
 ### Flask and FastAPI native honeypot cache
@@ -482,7 +482,7 @@ the new capabilities. Older extensions retain the compatible Python fallback.
 
 - **CSV storage:** bounded snapshot caches and indexed IP/key lookups avoid repeated
   parsing and copying entire tables into Python. Native readers validate file
-  metadata and use shared OS locks; mutations use exclusive locks. Blacklist
+  metadata and use shared OS locks; mutations use exclusive locks. Blocklist
   reputation updates, keyword increments/removals, exemptions, audit entries, and
   geo-list changes use atomic transactions. Unchanged policy rows skip rewriting
   and disk synchronization. Changed policy writes still synchronize to disk.
@@ -490,7 +490,7 @@ the new capabilities. Older extensions retain the compatible Python fallback.
   signatures, geo decisions, rate-window filtering, form timing, UUID format
   validation, reputation scoring, wildcard/CIDR exemptions, and longest-prefix
   route plans. Flask CSV keyword retrieval, evaluation, and learning share one
-  native call. SQL checks and blacklist updates retain their existing order;
+  native call. SQL checks and blocklist updates retain their existing order;
   custom evaluators and unsupported Unicode behavior use the Python adapter.
 - **Exemption reuse:** Flask reuses CSV exemption results within a request and
   checks file identity, size, timestamps, and configuration before each reuse.
@@ -568,7 +568,7 @@ extra policy input. ORM-only Django operation remains separate. FastAPI geo
 middleware honors its `use_rust` option, passed from the application's Rust flags.
 Dynamic-only FastAPI policy and custom getters/evaluators retain their fallback
 path. Native reads respect TTLs and observe updates/removals; disabled native geo
-reads refresh the Python CSV snapshot. Exemptions and blacklist writes still run
+reads refresh the Python CSV snapshot. Exemptions and blocklist writes still run
 at their original stages. Rebuild the extension from this checkout to test these
 unpublished capabilities.
 
@@ -628,7 +628,7 @@ rebuild the profile; CSV state remains live. Flask/FastAPI can use one native ca
 for supported query requests. Django keeps SQL inspection before route resolution,
 then uses the compiled keyword/CSV stage with the resolved route facts.
 
-Framework extraction, body buffering/replay, exemptions, blacklist enforcement,
+Framework extraction, body buffering/replay, exemptions, blocklist enforcement,
 rate limits, honeypot/UUID hooks, header enforcement, and response processing keep
 their existing positions. Structured SQL bodies, Unicode paths/decoding, monitor
 mode, custom policy/storage hooks, custom Django converters, older extensions,
@@ -638,7 +638,7 @@ path. The engine does not replace the whole eight-middleware chain.
 ```bash
 # Auto-detected CLI (one supported framework installed)
 aiwaf --help
-aiwaf blacklist migrate
+aiwaf blocklist migrate
 aiwaf status
 
 # Django management commands
@@ -848,7 +848,7 @@ All eight stages are enabled by default. Native defaults include:
 | `exempt_paths`, `exempt_ips` | `/health`, `/robots.txt`, `/sitemap.xml`; no IPs; literal case-insensitive path prefixes |
 | `sql_mode`, `max_bytes` | `block`, `65536`; `off` supported, monitor rejected; bounded nested JSON/form values and double URL decoding |
 | `static_keywords`, `dynamic_keywords`, `legitimate_keywords`, `learning` | Native vocabulary, empty dynamic set, legitimate exact route names, `true`; learned probe segments capped at 4096 |
-| `geo_allow`, `geo_block`, `blacklist` | Empty; blacklist maps IP to Unix expiry seconds (`0` permanent) |
+| `geo_allow`, `geo_block`, `blocklist` | Empty; blocklist maps IP to Unix expiry seconds (`0` permanent) |
 | `rate_window`, `rate_max`, `rate_flood`, `rate_key_mode` | `10` seconds, `20`, `40`, `ip_path`; `ip` also supported |
 | `min_form_time`, `max_page_time`, `skip_authenticated`, `honeypot_field` | `1.0`, `240` seconds, `true`, empty field; local Rust timing state |
 | `allowed_methods`, `uuid_prefix`, `uuid_window`, `uuid_threshold` | Empty method restriction, `/user/`, `60` seconds, `5` repeated UUID 404s; malformed UUID denied immediately |
@@ -909,8 +909,8 @@ cd js
 
 AIWAF_ACCESS_LOG=/path/to/access.log npm run train
 npm run aiwaf -- status
-npm run aiwaf -- list blacklist
-npm run aiwaf -- add blacklist 203.0.113.9 "manual block"
+npm run aiwaf -- list blocklist
+npm run aiwaf -- add blocklist 203.0.113.9 "manual block"
 npm run aiwaf -- add ip-exemption 203.0.113.10 "trusted monitor"
 npm run aiwaf -- geo summary
 npm run aiwaf -- model info
@@ -1027,7 +1027,7 @@ cp -R ../licenses crates/aiwaf_wasm/pkg/
 
 ## Java package
 
-AIWAF Java 1.3.4 targets Java 17, Spring Framework 7.0, and Jakarta Servlet 6.1. It is a native Java implementation and does not load the Rust library.
+AIWAF Java 1.3.5 targets Java 17, Spring Framework 7.0, and Jakarta Servlet 6.1. It is a native Java implementation and does not load the Rust library.
 
 ### Core engine
 
@@ -1116,7 +1116,7 @@ UUID protection uses Python-compatible weighted signals: malformed input, valid 
 Generate a route manifest from the live Spring application rather than supplying controller methods manually:
 
 ```bash
-java -cp "your-app.jar:aiwaf-java-1.3.4.jar" \
+java -cp "your-app.jar:aiwaf-java-1.3.5.jar" \
   com.aiwaf.cli.AiwafConsole init \
   --app com.example.Application \
   --output .aiwaf/paths.json
@@ -1153,9 +1153,9 @@ The generic servlet filter uses request-time evaluation. Spring applications sho
 | Storage | `storageBackend`, `storageFilePath`, `storageRedisUrl`, `storageKeyPrefix`, `storageRedisFailureMode`, Redis timeout and pool limits |
 | Telemetry | `observabilityEnabled` |
 
-GeoIP uses the bundled MMDB through the native Java reader; it does not require the external `mmdblookup` executable. A valid `X-Country` value is accepted only from a peer in `trustedProxyCidrs`; otherwise AIWAF resolves the client address itself. Default blacklist calls use Python-compatible reputation scoring and temporary escalation (15 minutes, 1 hour, then 24 hours). Use `BlacklistManager.blockPermanent(ip, reason)` for an explicit permanent administrative block.
+GeoIP uses the bundled MMDB through the native Java reader; it does not require the external `mmdblookup` executable. A valid `X-Country` value is accepted only from a peer in `trustedProxyCidrs`; otherwise AIWAF resolves the client address itself. Default blocklist calls use Python-compatible reputation scoring and temporary escalation (15 minutes, 1 hour, then 24 hours). Use `BlocklistManager.blockPermanent(ip, reason)` for an explicit permanent administrative block.
 
-`storageBackend="redis"` makes rate-limit buckets, honeypot timing, weighted UUID scores, recent-request anomaly state, blacklist data, exemptions, geo policy, and learned keywords visible to every application instance using the same key prefix. Redis enforcement updates use atomic server-side scripts. Memory, file, CSV, and SQLite engines keep request state isolated per `AiwafEngine`; constructing another engine no longer replaces an existing engine's stores. The static `RuntimeStorage` and `BlacklistManager` methods remain compatibility facades for command-line and administrative code.
+`storageBackend="redis"` makes rate-limit buckets, honeypot timing, weighted UUID scores, recent-request anomaly state, blocklist data, exemptions, geo policy, and learned keywords visible to every application instance using the same key prefix. Redis enforcement updates use atomic server-side scripts. Memory, file, CSV, and SQLite engines keep request state isolated per `AiwafEngine`; constructing another engine no longer replaces an existing engine's stores. The static `RuntimeStorage` and `BlocklistManager` methods remain compatibility facades for command-line and administrative code.
 
 The Java 1.3 Redis backend supports **standalone Redis only**. Sentinel and Cluster configurations are rejected during validation instead of silently operating with incomplete semantics. `fail_closed` is the default: an unavailable Redis instance prevents startup or raises a request-path storage failure, which results in the application denying availability rather than bypassing protection. `fail_open` permits startup and returns non-blocking enforcement fallbacks while Redis is unavailable; failed mutations return `false` at the `StorageBackend` boundary. Connection, socket, pool size, and pool wait limits are bounded and configurable. `RedisStorage.diagnostics()` reports operation/failure counts, latency, and live pool utilization.
 
@@ -1198,13 +1198,13 @@ Replaying old logs cannot extend an active block or recreate one after expiry
 or manual removal. Fresh traffic must independently satisfy the blocking rules.
 
 CLI listing filters expired blocks for display without rewriting its snapshot
-back to the blacklist. This prevents concurrent training updates from being
+back to the blocklist. This prevents concurrent training updates from being
 erased by an older cleanup snapshot. Default first blocks last 900 seconds.
 
-Keep the receipt file across restarts, log rotation, and blacklist clearing.
+Keep the receipt file across restarts, log rotation, and blocklist clearing.
 Receipts do not expire and grow with the distinct requests used in block
 decisions. `AIWAF_TRAINING_STATE_DIR` can select a durable shared directory;
-trainers sharing a blacklist must also share this directory. Missing native
+trainers sharing a blocklist must also share this directory. Missing native
 capabilities or corrupt receipt state stop training visibly. A crash between
 writing a block and committing its receipt can still require recovery; the two
 writes are not a single transaction.
@@ -1219,9 +1219,9 @@ disappearing before its expiry.
 Node.js 1.1.4 with aiwaf-wasm 0.2.4 uses the same Rust receipt algorithm as
 Python. The shared trainer applies this protection across JavaScript framework
 adapters. The WASM `NativeTrainingEvidence` API hashes and filters evidence;
-Node persists `node_training_evidence.json` in the blacklist CSV directory, or
+Node persists `node_training_evidence.json` in the blocklist CSV directory, or
 the directory selected by `AIWAF_TRAINING_STATE_DIR`. Preserve this file across
-expiry, unblocking, blacklist clearing, and log rotation. Sharing a blacklist
+expiry, unblocking, blocklist clearing, and log rotation. Sharing a blocklist
 also requires sharing the evidence directory. Model fitting and keyword learning
 still use full history; 404 and anomaly enforcement use fresh evidence only.
 Log records without a valid stable timestamp are excluded from training.
@@ -1238,15 +1238,15 @@ storage errors. Programmatic callers can await `require('aiwaf/train')()`.
 Publish the matching WASM package before the Node package; `test:wasm-real`
 checks receipt restoration against the installed dependency, not just a fixture.
 
-Java's `train-model` operation fits and saves a model without adding blacklist
+Java's `train-model` operation fits and saves a model without adding blocklist
 entries. Servlet and Spring use that shared Java core. Retraining alone therefore
 cannot extend or recreate their runtime blocks; a regression test verifies this.
 
-Blacklist expiry is also protected against concurrent updates. Node request
+Blocklist expiry is also protected against concurrent updates. Node request
 checks and listings do not delete expired snapshots. Explicit cleanup checks
 expiry in the database DELETE, or inside the CSV mutation lock after reading
-the current rows. CSV blacklist writers use the same lock and atomically replace
-the file. A crashed writer can leave `<blacklist CSV path>.lock`; stop its owner
+the current rows. CSV blocklist writers use the same lock and atomically replace
+the file. A crashed writer can leave `<blocklist CSV path>.lock`; stop its owner
 before removing that lock directory. Lock acquisition times out after 60 seconds
 and reports an error rather than proceeding without protection.
 
@@ -1285,7 +1285,7 @@ Do not train directly on unreviewed sensitive request bodies or authentication h
 
 - Configure the application to trust forwarding headers only from known proxy CIDRs.
 - Configure the outermost proxy to overwrite client-supplied forwarding headers.
-- Use Redis, a database, or another shared backend when multiple workers must share rate-limit, blacklist, or exemption state.
+- Use Redis, a database, or another shared backend when multiple workers must share rate-limit, blocklist, or exemption state.
 - Keep health checks, static assets, and trusted webhook routes explicitly scoped instead of disabling protection globally.
 - Start anomaly detection in observe-only or conservative mode and tune it with representative normal traffic.
 - Rotate logs and exclude secrets, authorization headers, cookies, and personal data.
@@ -1347,11 +1347,11 @@ Release versions and tags must match the relevant manifest.
 
 | Package | Manifest | Tag | Workflow |
 | --- | --- | --- | --- |
-| Python `aiwaf` | `pyproject.toml` | `python-v1.1.7` | `python-publish.yml` |
-| npm `aiwaf` | `js/package.json` | `js-v1.1.4` | `npm-publish.yml` |
-| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.6` | `rust-publish.yml` |
-| npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.4` | `wasm-publish.yml` |
-| Maven `aiwaf-java` | `java/pom.xml` | `java-v1.3.4` | `java-publish.yml` |
+| Python `aiwaf` | `pyproject.toml` | `python-v1.1.8` | `python-publish.yml` |
+| npm `aiwaf` | `js/package.json` | `js-v1.1.5` | `npm-publish.yml` |
+| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.7` | `rust-publish.yml` |
+| npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.5` | `wasm-publish.yml` |
+| Maven `aiwaf-java` | `java/pom.xml` | `java-v1.3.5` | `java-publish.yml` |
 
 Python and Rust publish to PyPI with trusted publishing. The npm workflows use npm trusted publishing and stage packages for approval. Configure the trusted publisher with organization `aiwaf-project`, repository `aiwaf`, the exact workflow filename, and the environment used by that workflow.
 
@@ -1359,8 +1359,8 @@ Java publishing uses the protected `maven-publish` environment plus `GPG_PRIVATE
 
 Registry releases are immutable. Increment the relevant manifest version before publishing another release.
 
-For the replay fix, publish `aiwaf-rust 0.2.5` before Python `aiwaf 1.1.6`, and
-`aiwaf-wasm 0.2.4` before npm `aiwaf 1.1.4`. After WASM publication, refresh the
+For this release, publish `aiwaf-rust 0.2.7` before Python `aiwaf 1.1.8`, and
+`aiwaf-wasm 0.2.5` before npm `aiwaf 1.1.5`. After WASM publication, refresh the
 npm lockfile against the registry to record the actual companion checksum, then
 run `npm ci` and the release checks. The prepared future WASM lock entry has no
 integrity checksum; it cannot be installed until that package is published.

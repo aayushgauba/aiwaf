@@ -38,7 +38,7 @@ def test_python_keyword_probe_context_is_enforced(tmp_path):
         environ_base={'REMOTE_ADDR': '203.0.113.55'})
     assert response.status_code == 403
     with app.app_context():
-        assert storage.is_ip_blacklisted('203.0.113.55')
+        assert storage.is_ip_blocklisted('203.0.113.55')
 
 
 def test_csv_logger_close_and_reopen_preserves_rows(tmp_path):

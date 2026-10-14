@@ -45,8 +45,8 @@ class RateLimitingTestCase(AIWAFMiddlewareTestCase):
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
              patch("aiwaf.django.middleware.get_rate_limit_overrides", return_value={}), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=True), \
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=True), \
              patch("aiwaf.django.middleware.time", new=fake_time):
             # First 5 requests are allowed; the 6th exceeds flood=5 and blocks.
             for _ in range(5):
@@ -60,10 +60,10 @@ class RateLimitingTestCase(AIWAFMiddlewareTestCase):
         AIWAF_RATE_WINDOW=10,
         AIWAF_RATE_MAX=1,
         AIWAF_RATE_FLOOD=100,
-        AIWAF_RATE_SOFT_BLOCK_BLACKLIST=False,
+        AIWAF_RATE_SOFT_BLOCK_BLOCKLIST=False,
     )
-    def test_soft_limit_default_does_not_blacklist(self):
-        """Default behavior: 429 on soft limit without blacklisting."""
+    def test_soft_limit_default_does_not_blocklist(self):
+        """Default behavior: 429 on soft limit without blocklisting."""
         request = self.create_request("/rl-soft-default/", headers={"REMOTE_ADDR": "203.0.113.210"})
         middleware = RateLimitMiddleware(self.mock_get_response)
         ticks = iter([0, 1])
@@ -73,7 +73,7 @@ class RateLimitingTestCase(AIWAFMiddlewareTestCase):
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
              patch("aiwaf.django.middleware.get_rate_limit_overrides", return_value={}), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
              patch("aiwaf.django.middleware.time", new=fake_time):
             first = middleware(request)
             second = middleware(request)
@@ -87,10 +87,10 @@ class RateLimitingTestCase(AIWAFMiddlewareTestCase):
         AIWAF_RATE_WINDOW=10,
         AIWAF_RATE_MAX=1,
         AIWAF_RATE_FLOOD=100,
-        AIWAF_RATE_SOFT_BLOCK_BLACKLIST=True,
+        AIWAF_RATE_SOFT_BLOCK_BLOCKLIST=True,
     )
-    def test_soft_limit_legacy_blacklists_when_enabled(self):
-        """Legacy mode: soft-limit 429 also triggers blacklist call."""
+    def test_soft_limit_legacy_blocklists_when_enabled(self):
+        """Legacy mode: soft-limit 429 also triggers blocklist call."""
         request = self.create_request("/rl-soft-legacy/", headers={"REMOTE_ADDR": "203.0.113.211"})
         middleware = RateLimitMiddleware(self.mock_get_response)
         ticks = iter([0, 1])
@@ -100,7 +100,7 @@ class RateLimitingTestCase(AIWAFMiddlewareTestCase):
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
              patch("aiwaf.django.middleware.get_rate_limit_overrides", return_value={}), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
              patch("aiwaf.django.middleware.time", new=fake_time):
             _ = middleware(request)
             second = middleware(request)

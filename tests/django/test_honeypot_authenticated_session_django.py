@@ -26,8 +26,8 @@ class HoneypotAuthenticatedSessionTestCase(AIWAFMiddlewareTestCase):
         super().setUp()
         cache.clear()
 
-    @patch('aiwaf.django.middleware.BlacklistManager.block')
-    @patch('aiwaf.django.middleware.BlacklistManager.is_blocked', return_value=False)
+    @patch('aiwaf.django.middleware.BlocklistManager.block')
+    @patch('aiwaf.django.middleware.BlocklistManager.is_blocked', return_value=False)
     def test_authenticated_session_skips_timing(self, mock_is_blocked, mock_block):
         cache.set('honeypot_get:127.0.0.1', time.time(), timeout=300)
 

@@ -15,7 +15,7 @@ django.setup()
 
 from django.core.management import call_command
 from tests.django.base_test import AIWAFStorageTestCase
-from aiwaf.django.storage import get_blacklist_store
+from aiwaf.django.storage import get_blocklist_store
 from aiwaf.django.management.commands.aiwaf_list import _print_table
 
 
@@ -23,7 +23,7 @@ class AIWAFListExtendedInfoTests(AIWAFStorageTestCase):
     def test_table_formatter(self):
         _print_table([["203.0.113.1", "test"]], ["IP", "Reason"])
     def test_aiwaf_list_json_includes_extended_info(self):
-        store = get_blacklist_store()
+        store = get_blocklist_store()
         info = {"url": "https://example.com/", "headers": {"User-Agent": "Test"}}
         store.block_ip("203.0.113.57", "Reason", extended_request_info=info)
 

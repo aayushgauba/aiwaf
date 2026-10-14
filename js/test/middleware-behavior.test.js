@@ -2,7 +2,7 @@ const request = require('supertest');
 const express = require('express');
 const aiwaf = require('../index');
 const db = require('../utils/db');
-const blacklistManager = require('../lib/blacklistManager');
+const blocklistManager = require('../lib/blocklistManager');
 
 describe('AIWAF middleware behavior', () => {
   it('returns text response when JSON errors are disabled and request is non-JSON', async () => {
@@ -70,7 +70,7 @@ describe('AIWAF middleware behavior', () => {
       .expect(200, 'ok');
   });
 
-  it('captures redacted extended request information for blacklist decisions', async () => {
+  it('captures redacted extended request information for blocklist decisions', async () => {
     const ip = '198.51.120.40';
     const app = express();
     app.use(aiwaf({
@@ -85,10 +85,10 @@ describe('AIWAF middleware behavior', () => {
       .set('User-Agent', 'Mozilla/5.0')
       .expect(403);
 
-    const info = await blacklistManager.getBlockInfo(ip);
+    const info = await blocklistManager.getBlockInfo(ip);
     expect(info.extended_request_info.headers.authorization).toBe('[redacted]');
     expect(info.extended_request_info.path).toBe('/secret.php');
-    await blacklistManager.unblock(ip);
+    await blocklistManager.unblock(ip);
   });
 });
 

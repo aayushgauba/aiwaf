@@ -529,7 +529,13 @@ async function createRequestPipeline(profile = {}, model = null) {
   if (!mod || typeof mod.NativeRequestPipeline !== 'function') {
     throw new Error('Native pipeline requires aiwaf-wasm with NativeRequestPipeline support; no fallback');
   }
-  const native = new mod.NativeRequestPipeline(JSON.stringify(profile));
+  // Retain the existing wire key so published WASM companions remain compatible.
+  const wireProfile = { ...profile };
+  if (Object.hasOwn(wireProfile, 'blocklist')) {
+    wireProfile.blacklist = wireProfile.blocklist;
+    delete wireProfile.blocklist;
+  }
+  const native = new mod.NativeRequestPipeline(JSON.stringify(wireProfile));
   if (['begin','finish','inspect_payload','inspect_body','set_model','clear_model','diagnostics'].some(name => typeof native[name] !== 'function')) {
     native.free();
     throw new Error('Incompatible NativeRequestPipeline API; install the matching WASM build');

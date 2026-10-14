@@ -56,7 +56,7 @@ def evaluate_rate_limit(
     Actions:
     - allow: request is allowed
     - throttle: request exceeds soft limit (429)
-    - flood_block: request exceeds hard limit (403 + blacklist)
+    - flood_block: request exceeds hard limit (403 + blocklist)
     """
     window = max(float(window_seconds), 1.0)
     native = native_function('policy_rate')

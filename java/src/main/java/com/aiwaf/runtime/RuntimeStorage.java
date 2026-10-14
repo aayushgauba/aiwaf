@@ -6,7 +6,7 @@ public final class RuntimeStorage {
         private final RuntimeState state;
         private final ExemptionStore exemptionStore;
         private final PathExemptionStore pathExemptionStore;
-        private final BlacklistStore blacklistStore;
+        private final BlocklistStore blocklistStore;
         private final KeywordStore keywordStore;
         private final GeoBlockStore geoBlockStore;
 
@@ -15,7 +15,7 @@ public final class RuntimeStorage {
             this.state = state;
             this.exemptionStore = new ExemptionStore(storage);
             this.pathExemptionStore = new PathExemptionStore(storage);
-            this.blacklistStore = new BlacklistStore(storage);
+            this.blocklistStore = new BlacklistStore(storage);
             this.keywordStore = new KeywordStore(storage);
             this.geoBlockStore = new GeoBlockStore(storage);
         }
@@ -24,7 +24,9 @@ public final class RuntimeStorage {
         public RuntimeState state() { return state; }
         public ExemptionStore exemptionStore() { return exemptionStore; }
         public PathExemptionStore pathExemptionStore() { return pathExemptionStore; }
-        public BlacklistStore blacklistStore() { return blacklistStore; }
+        public BlocklistStore blocklistStore() { return blocklistStore; }
+        @Deprecated
+        public BlacklistStore blacklistStore() { return (BlacklistStore) blocklistStore; }
         public KeywordStore keywordStore() { return keywordStore; }
         public GeoBlockStore geoBlockStore() { return geoBlockStore; }
     }
@@ -94,8 +96,8 @@ public final class RuntimeStorage {
         return getContext().exemptionStore();
     }
 
-    public static synchronized BlacklistStore getBlacklistStore() {
-        return getContext().blacklistStore();
+    public static synchronized BlocklistStore getBlocklistStore() {
+        return getContext().blocklistStore();
     }
 
     public static synchronized PathExemptionStore getPathExemptionStore() {
@@ -109,4 +111,8 @@ public final class RuntimeStorage {
     public static synchronized GeoBlockStore getGeoBlockStore() {
         return getContext().geoBlockStore();
     }
+
+    // Compatibility aliases for the previous API names.
+    @Deprecated
+    public static synchronized BlacklistStore getBlacklistStore() { return (BlacklistStore) getBlocklistStore(); }
 }

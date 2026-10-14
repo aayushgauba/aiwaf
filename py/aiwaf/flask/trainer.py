@@ -40,8 +40,8 @@ AI_AVAILABLE = PANDAS_AVAILABLE
 from flask import Flask, current_app
 
 # AIWAF imports
-from .storage import get_exemption_store, get_keyword_store, _get_storage_mode, _read_csv_blacklist, _get_data_dir
-from .blacklist_manager import BlacklistManager
+from .storage import get_exemption_store, get_keyword_store, _get_storage_mode, _read_csv_blocklist, _get_data_dir
+from .blocklist_manager import BlocklistManager
 from .utils import is_exempt, is_path_exempt
 from .geoip import lookup_country_name
 from aiwaf.core.constants import STATUS_IDX as CORE_STATUS_IDX
@@ -539,7 +539,7 @@ class FlaskAITrainer:
         # Remove exempt keywords first
         self.remove_exempt_keywords()
         
-        # Remove any IPs in exemption from the blacklist
+        # Remove any IPs in exemption from the blocklist
         # Note: Current storage system uses in-memory exemptions only
         exemption_store = get_exemption_store()
         # For now, we'll rely on the existing exemption system during blocking
@@ -595,7 +595,7 @@ class FlaskAITrainer:
                 
                 if count > login_404s:
                     if self.get_config('AIWAF_ENABLE_IP_BLOCKING', True) and not exemption_store.is_exempted(ip):
-                        blocked_404_count += evidence.block(ip, lambda: BlacklistManager.block(ip, f"Excessive 404s (>=6 non-login, {count}/{total_404s})"))
+                        blocked_404_count += evidence.block(ip, lambda: BlocklistManager.block(ip, f"Excessive 404s (>=6 non-login, {count}/{total_404s})"))
         
         if blocked_404_count > 0:
             logger.info(f" Blocked {blocked_404_count} IPs for excessive 404 errors")
@@ -717,7 +717,7 @@ class FlaskAITrainer:
                             continue
                         
                         # Block if it shows clear signs of malicious behavior
-                        blocked_count += evidence.block(ip, lambda: BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})"))
+                        blocked_count += evidence.block(ip, lambda: BlocklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})"))
                         logger.info(f"    {ip}: Blocked for suspicious behavior")
                     
                     logger.info(f" Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs")
@@ -919,14 +919,14 @@ def _get_blocked_ips():
 
     if storage_mode == "database":
         try:
-            from .db_models import BlacklistedIP
-            return [row.ip for row in BlacklistedIP.query.all()]
+            from .db_models import BlocklistedIP
+            return [row.ip for row in BlocklistedIP.query.all()]
         except Exception:
             return []
 
     if storage_mode == "csv":
         try:
-            return list(_read_csv_blacklist().keys())
+            return list(_read_csv_blocklist().keys())
         except Exception:
             return []
 
@@ -938,3 +938,7 @@ def _print_geoip_blocklist_summary():
     if not blocked_ips:
         return
     _print_geoip_summary(blocked_ips, "GeoIP summary for blocked IPs (top 10):")
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager

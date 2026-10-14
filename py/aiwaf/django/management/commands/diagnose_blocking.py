@@ -2,8 +2,8 @@
 
 from django.core.management.base import BaseCommand
 from django.core.cache import cache
-from aiwaf.django.blacklist_manager import BlacklistManager
-from aiwaf.django.storage import get_exemption_store, get_blacklist_store
+from aiwaf.django.blocklist_manager import BlocklistManager
+from aiwaf.django.storage import get_exemption_store, get_blocklist_store
 from aiwaf.django.utils import get_ip
 from django.test import RequestFactory
 
@@ -29,19 +29,19 @@ class Command(BaseCommand):
         is_exempted = exemption_store.is_exempted(test_ip)
         self.stdout.write(f"1.  IP exempted in storage: {is_exempted}")
         
-        # 2. Check blacklist status
-        blacklist_store = get_blacklist_store()
-        is_in_blacklist = blacklist_store.is_blocked(test_ip)
-        self.stdout.write(f"2.  IP in blacklist storage: {is_in_blacklist}")
+        # 2. Check blocklist status
+        blocklist_store = get_blocklist_store()
+        is_in_blocklist = blocklist_store.is_blocked(test_ip)
+        self.stdout.write(f"2.  IP in blocklist storage: {is_in_blocklist}")
         
-        # 3. Check BlacklistManager final decision
-        manager_blocked = BlacklistManager.is_blocked(test_ip)
-        self.stdout.write(f"3.  BlacklistManager says blocked: {manager_blocked}")
+        # 3. Check BlocklistManager final decision
+        manager_blocked = BlocklistManager.is_blocked(test_ip)
+        self.stdout.write(f"3.  BlocklistManager says blocked: {manager_blocked}")
         
-        # 4. Check Django cache for blacklist entries
-        cache_key = f"blacklist:{test_ip}"
+        # 4. Check Django cache for blocklist entries
+        cache_key = f"blocklist:{test_ip}"
         cached_value = cache.get(cache_key)
-        self.stdout.write(f"4.  Cache value for blacklist:{test_ip}: {cached_value}")
+        self.stdout.write(f"4.  Cache value for blocklist:{test_ip}: {cached_value}")
         
         # 5. Test what IP would be detected from a request
         factory = RequestFactory()
@@ -94,3 +94,8 @@ class Command(BaseCommand):
         self.stdout.write(f"\n To clear all caches and reset:")
         self.stdout.write(f"   python manage.py shell -c \"from django.core.cache import cache; cache.clear()\"")
         self.stdout.write(f"=" * 60)
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager
+get_blacklist_store = get_blocklist_store

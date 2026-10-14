@@ -29,7 +29,7 @@ def test_end_to_end_rate_limit_behavior():
     assert client.get("/path-a").status_code == 200
     assert client.get("/path-a").status_code == 429
     # New default behavior is path-scoped rate limiting without soft-limit
-    # blacklist escalation, so a different path remains allowed.
+    # blocklist escalation, so a different path remains allowed.
     assert client.get("/path-b").status_code == 200
     assert client.get("/path-b").status_code == 429
 
@@ -58,7 +58,7 @@ def test_end_to_end_rate_limit_legacy_ip_mode():
     assert client.get("/path-b").status_code == 429
 
 
-def test_end_to_end_rate_limit_legacy_soft_blacklist_toggle():
+def test_end_to_end_rate_limit_legacy_soft_blocklist_toggle():
     app = FastAPI()
 
     @app.get("/path-a")
@@ -72,7 +72,7 @@ def test_end_to_end_rate_limit_legacy_soft_blacklist_toggle():
             "enabled": True,
             "max_requests": 1,
             "window_seconds": 60,
-            "soft_block_blacklist": True,
+            "soft_block_blocklist": True,
         },
         exemptions={"private_ips_exempted": False, "auto_exempt_patterns": []},
     )
@@ -80,7 +80,7 @@ def test_end_to_end_rate_limit_legacy_soft_blacklist_toggle():
 
     assert client.get("/path-a").status_code == 200
     assert client.get("/path-a").status_code == 429
-    # Legacy soft blacklist mode should escalate to a persistent block.
+    # Legacy soft blocklist mode should escalate to a persistent block.
     assert client.get("/path-a").status_code == 403
 
 

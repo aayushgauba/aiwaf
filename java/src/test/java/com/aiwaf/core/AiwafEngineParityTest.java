@@ -1,7 +1,7 @@
 package com.aiwaf.core;
 
 import com.aiwaf.runtime.RuntimeStorage;
-import com.aiwaf.runtime.BlacklistManager;
+import com.aiwaf.runtime.BlocklistManager;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -338,7 +338,7 @@ class AiwafEngineParityTest {
         AiwafDecision d = engine.evaluate(req("GET", "/wp-admin/.env", ip, headers, Map.of("cmd", "id"), "US"));
         assertEquals(403, d.statusCode());
 
-        Map<String, Object> block = BlacklistManager.getBlockInfo(ip);
+        Map<String, Object> block = BlocklistManager.getBlockInfo(ip);
         @SuppressWarnings("unchecked")
         Map<String, Object> ext = (Map<String, Object>) block.get("extended_request_info");
         @SuppressWarnings("unchecked")

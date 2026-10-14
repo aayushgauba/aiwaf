@@ -1,7 +1,7 @@
 # Flask-adapted UUIDTamperMiddleware (stub)
 from flask import request, jsonify, g, make_response
-from .utils import get_blacklist_extended_info, get_ip
-from .blacklist_manager import BlacklistManager
+from .utils import get_blocklist_extended_info, get_ip
+from .blocklist_manager import BlocklistManager
 from .exemption_decorators import should_apply_middleware
 from aiwaf.core.uuid_tamper import is_malformed_uuid, is_valid_uuid, record_uuid_signal
 
@@ -35,10 +35,10 @@ class UUIDTamperMiddleware:
             if is_malformed_uuid(uuid_val):
                 decision = record_uuid_signal(ip, "malformed", config=_score_config())
                 reason = f"UUID tampering score={decision['score']}"
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     reason,
-                    extended_request_info=get_blacklist_extended_info(request),
+                    extended_request_info=get_blocklist_extended_info(request),
                 )
                 return jsonify({"error": "blocked"}), 403
 
@@ -54,12 +54,17 @@ class UUIDTamperMiddleware:
                 decision = record_uuid_signal(ip, "not_found", config=_score_config())
                 if decision["blocked"]:
                     reason = f"UUID tampering score={decision['score']}"
-                    BlacklistManager.block(
+                    BlocklistManager.block(
                         ip,
                         reason,
-                        extended_request_info=get_blacklist_extended_info(request),
+                        extended_request_info=get_blocklist_extended_info(request),
                     )
                     return make_response(jsonify({"error": "blocked"}), 403)
             elif response.status_code < 400:
                 record_uuid_signal(ip, "success", config=_score_config())
             return response
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_extended_info = get_blocklist_extended_info
+BlacklistManager = BlocklistManager

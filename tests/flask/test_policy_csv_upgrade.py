@@ -23,5 +23,5 @@ def test_flask_startup_and_cli_import_legacy_runtime_policies(tmp_path, monkeypa
     monkeypatch.setenv('AIWAF_DATA_DIR', str(tmp_path))
     manager = AIWAFManager(str(tmp_path))
     assert 'old-keyword' in manager.storage['read_keywords']()
-    assert '203.0.113.9' in manager.storage['read_blacklist']()
+    assert '203.0.113.9' in manager.storage['read_blocklist']()
     assert source.read_bytes() == original

@@ -20,6 +20,10 @@ class FeatureSample(models.Model):
         ]
 
 class BlacklistEntry(models.Model):
+    class Meta:
+        verbose_name = "Blocklist entry"
+        verbose_name_plural = "Blocklist entries"
+
     ip_address = models.GenericIPAddressField(unique=True, db_index=True)
     reason     = models.CharField(max_length=100)
     extended_request_info = models.JSONField(blank=True, default=dict)
@@ -45,7 +49,7 @@ class DynamicKeyword(models.Model):
         ordering = ['-count']
 
 
-# Model to store IP addresses that are exempt from blacklisting
+# Model to store IP addresses that are exempt from blocklisting
 class IPExemption(models.Model):
     ip_address = models.GenericIPAddressField(unique=True, db_index=True)
     reason     = models.CharField(max_length=100, blank=True, default="")
@@ -123,3 +127,7 @@ class GeoBlockedCountry(models.Model):
 
     def __str__(self):
         return self.country_code
+
+
+# Preserve the registered database model identity on existing installations.
+BlocklistEntry = BlacklistEntry

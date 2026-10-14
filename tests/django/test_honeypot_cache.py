@@ -165,7 +165,7 @@ class NativeHoneypotCacheTests(SimpleTestCase):
         def old_constructor(profile):
             raise AssertionError('old constructor should reject the second argument')
         with patch.object(aiwaf_rust, 'NativeCSVPipeline', old_constructor):
-            with self.assertRaisesRegex(RuntimeError, 'aiwaf-rust>=0.2.6'):
+            with self.assertRaisesRegex(RuntimeError, 'aiwaf-rust>=0.2.7'):
                 self.middleware()
 
     def test_fail_open_cache_configuration_rejected(self):

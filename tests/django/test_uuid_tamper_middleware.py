@@ -51,8 +51,8 @@ class UUIDTamperMiddlewareTestCase(AIWAFTestCase):
                  patch("aiwaf.django.middleware.is_exempt", return_value=False), \
                  patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
                  patch("aiwaf.django.middleware.get_ip", return_value="10.0.0.1"), \
-                 patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
-                 patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=is_blocked):
+                 patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
+                 patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=is_blocked):
                 middleware = UUIDTamperMiddleware(MagicMock())
                 try:
                     response = middleware.process_view(request, view_func, [], {"uuid": uuid_value})

@@ -28,7 +28,7 @@ const STAGES: [&str; 8] = [
     "header_validation",
     "logging",
 ];
-const BLACKLIST_HEADERS: [&str; 12] = [
+const BLOCKLIST_HEADERS: [&str; 12] = [
     "ip",
     "reason",
     "reputation_reason",
@@ -78,7 +78,8 @@ struct Profile {
     rate_window: f64,
     rate_max: i64,
     rate_flood: i64,
-    soft_block_blacklist: bool,
+    #[serde(alias = "soft_block_blacklist")]
+    soft_block_blocklist: bool,
     ip_blocking: bool,
     block_duration: Option<i64>,
     min_form_time: f64,
@@ -149,7 +150,7 @@ impl Default for Profile {
             rate_window: 10.0,
             rate_max: 20,
             rate_flood: 40,
-            soft_block_blacklist: false,
+            soft_block_blocklist: false,
             ip_blocking: true,
             block_duration: None,
             min_form_time: 1.0,
@@ -619,12 +620,12 @@ impl NativeCSVPipeline {
             .to_string_lossy()
             .into_owned()
     }
-    fn blacklist(&self, py: Python<'_>, f: &Facts, reason: &str) -> PyResult<()> {
+    fn blocklist(&self, py: Python<'_>, f: &Facts, reason: &str) -> PyResult<()> {
         if self.profile.ip_blocking && !f.exempt {
-            csv::csv_blacklist_block(
+            csv::csv_blocklist_block(
                 py,
                 self.file("blacklist.csv"),
-                strings(&BLACKLIST_HEADERS),
+                strings(&BLOCKLIST_HEADERS),
                 f.ip.clone(),
                 reason.into(),
                 f.date.clone(),
@@ -679,7 +680,7 @@ impl NativeCSVPipeline {
     ) -> PyResult<(i32, Value, String)> {
         let p = &self.profile;
         let block = |reason: String, status: i32, message: Option<String>| -> PyResult<_> {
-            self.blacklist(py, f, &reason)?;
+            self.blocklist(py, f, &reason)?;
             let payload = message
                 .map(|m| json!({"error":"blocked", "message":m}))
                 .unwrap_or(json!({"error":"blocked"}));
@@ -700,10 +701,10 @@ impl NativeCSVPipeline {
         }
         if f.active.contains("ip_keyword_block") {
             if p.ip_blocking
-                && csv::csv_blacklist_check(
+                && csv::csv_blocklist_check(
                     py,
                     self.file("blacklist.csv"),
-                    strings(&BLACKLIST_HEADERS),
+                    strings(&BLOCKLIST_HEADERS),
                     f.ip.clone(),
                     f.now,
                 )?
@@ -711,7 +712,7 @@ impl NativeCSVPipeline {
                 return Ok((
                     403,
                     json!({"error":"blocked"}),
-                    format!("IP blacklisted: {}", f.ip),
+                    format!("IP blocklisted: {}", f.ip),
                 ));
             }
             if p.sql_mode != "off" {
@@ -804,8 +805,8 @@ impl NativeCSVPipeline {
                 return block("Flood pattern".into(), 403, None);
             }
             if action == "throttle" {
-                if p.soft_block_blacklist {
-                    self.blacklist(py, f, "Rate limit exceeded")?;
+                if p.soft_block_blocklist {
+                    self.blocklist(py, f, "Rate limit exceeded")?;
                 }
                 return Ok((
                     429,
@@ -816,15 +817,15 @@ impl NativeCSVPipeline {
         }
         if f.active.contains("ai_anomaly")
             && p.ip_blocking
-            && csv::csv_blacklist_check(
+            && csv::csv_blocklist_check(
                 py,
                 self.file("blacklist.csv"),
-                strings(&BLACKLIST_HEADERS),
+                strings(&BLOCKLIST_HEADERS),
                 f.ip.clone(),
                 f.now,
             )?
         {
-            return Ok((403, json!({"error":"blocked"}), "IP blacklisted".into()));
+            return Ok((403, json!({"error":"blocked"}), "IP blocklisted".into()));
         }
         if f.active.contains("honeypot") && !(p.skip_authenticated && authenticated) {
             let method_reason = if f.method == "GET"
@@ -1071,7 +1072,7 @@ impl NativeCSVPipeline {
         };
         for (name, fields) in [
             ("whitelist.csv", strings(&["ip", "added_date"])),
-            ("blacklist.csv", strings(&BLACKLIST_HEADERS)),
+            ("blacklist.csv", strings(&BLOCKLIST_HEADERS)),
             ("keywords.csv", strings(&["keyword", "added_date"])),
             (
                 "geo_blocked_countries.csv",
@@ -1315,7 +1316,7 @@ impl NativeCSVPipeline {
             let score = self.uuid_score(py, &f.ip, now, delta)?;
             if status == 404 && score >= p.uuid_threshold {
                 reason = format!("UUID tampering score={score}");
-                self.blacklist(py, &f, &reason)?;
+                self.blocklist(py, &f, &reason)?;
                 final_status = 403;
                 payload = json!({"error":"blocked"});
             }
@@ -1351,7 +1352,7 @@ impl NativeCSVPipeline {
                 Ok(block_reason)
             })?;
             if let Some(block_reason) = anomaly {
-                self.blacklist(py, &f, &block_reason)?;
+                self.blocklist(py, &f, &block_reason)?;
                 if p.ip_blocking {
                     final_status = 403;
                     payload = json!({"error":"blocked"});

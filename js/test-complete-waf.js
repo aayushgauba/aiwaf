@@ -1,7 +1,7 @@
 const express = require('express');
 const request = require('supertest');
 const wafMiddleware = require('./lib/wafMiddleware');
-const blacklistManager = require('./lib/blacklistManager');
+const blocklistManager = require('./lib/blocklistManager');
 const rateLimiter = require('./lib/rateLimiter');
 const { extractFeatures, init: initFeatures, markRequestStart } = require('./lib/featureUtils');
 const anomalyDetector = require('./lib/anomalyDetector');
@@ -10,7 +10,7 @@ async function setupTestEnvironment() {
   console.log('Setting up test environment...');
   
   // Initialize all components
-  await blacklistManager.initialize();
+  await blocklistManager.initialize();
   
   initFeatures();
   
@@ -112,17 +112,17 @@ async function testCompleteWAF() {
   const isAnomalous = anomalyDetector.isAnomalous(features);
   console.log(`   Anomaly detected: ${isAnomalous ? 'YES' : 'NO'}`);
   
-  console.log('\n6. Testing blacklist management...');
+  console.log('\n6. Testing blocklist management...');
   const testBlockIP = '192.168.1.999';
-  await blacklistManager.block(testBlockIP, 'Test block');
-  const isBlocked = await blacklistManager.isBlocked(testBlockIP);
+  await blocklistManager.block(testBlockIP, 'Test block');
+  const isBlocked = await blocklistManager.isBlocked(testBlockIP);
   console.log(`   IP ${testBlockIP} blocked: ${isBlocked ? 'YES' : 'NO'}`);
   
-  const blockedIPs = await blacklistManager.getBlockedIPs();
+  const blockedIPs = await blocklistManager.getBlockedIPs();
   console.log(`   Total blocked IPs: ${blockedIPs.length}`);
   
-  await blacklistManager.unblock(testBlockIP);
-  const stillBlocked = await blacklistManager.isBlocked(testBlockIP);
+  await blocklistManager.unblock(testBlockIP);
+  const stillBlocked = await blocklistManager.isBlocked(testBlockIP);
   console.log(`   IP ${testBlockIP} after unblock: ${stillBlocked ? 'Still blocked' : 'Unblocked'}`);
   
   console.log('\n7. Testing model info...');

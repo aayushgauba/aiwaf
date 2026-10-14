@@ -1,8 +1,8 @@
 # Flask-adapted IPAndKeywordBlockMiddleware
 import re
 from flask import request, jsonify
-from .utils import get_blacklist_extended_info, get_ip, is_exempt
-from .blacklist_manager import BlacklistManager
+from .utils import get_blocklist_extended_info, get_ip, is_exempt
+from .blocklist_manager import BlocklistManager
 from .storage import get_keyword_store
 from .exemption_decorators import should_apply_middleware
 from aiwaf.core.ip_keyword import evaluate_keyword_policy, extract_path_segments, KeywordDecision
@@ -96,10 +96,10 @@ class IPAndKeywordBlockMiddleware:
             # Get logger if available
             logger = getattr(app, 'aiwaf_logger', None)
             
-            # Check if IP is blacklisted first
-            if BlacklistManager.is_blocked(ip):
+            # Check if IP is blocklisted first
+            if BlocklistManager.is_blocked(ip):
                 if logger:
-                    logger.mark_request_blocked(f"IP blacklisted: {ip}")
+                    logger.mark_request_blocked(f"IP blocklisted: {ip}")
                 return jsonify({"error": "blocked"}), 403
             
             keyword_store = get_keyword_store()
@@ -134,7 +134,7 @@ class IPAndKeywordBlockMiddleware:
             if prepared and prepared[1]:
                 decision = prepared[1][0]
                 if decision.block_reason:
-                    BlacklistManager.block(ip, decision.block_reason, extended_request_info=get_blacklist_extended_info(request))
+                    BlocklistManager.block(ip, decision.block_reason, extended_request_info=get_blocklist_extended_info(request))
                     if logger:
                         logger.mark_request_blocked(decision.block_reason)
                     return jsonify({"error": "blocked"}), 403
@@ -192,10 +192,10 @@ class IPAndKeywordBlockMiddleware:
                 for seg in decision.learned_keywords:
                     keyword_store.add_keyword(seg)
             if decision.block_reason:
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     decision.block_reason,
-                    extended_request_info=get_blacklist_extended_info(request),
+                    extended_request_info=get_blocklist_extended_info(request),
                 )
                 if logger:
                     logger.mark_request_blocked(decision.block_reason)
@@ -217,3 +217,8 @@ class IPAndKeywordBlockMiddleware:
             )
 
     _default_evaluate_request = _evaluate_keyword_request
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_extended_info = get_blocklist_extended_info
+BlacklistManager = BlocklistManager

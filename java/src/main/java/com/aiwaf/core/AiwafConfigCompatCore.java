@@ -63,7 +63,7 @@ public final class AiwafConfigCompatCore {
         String keyMode = str(rl.get("key_mode"), "ip_path");
         cfg.rateLimitScope = Set.of("ip", "global_ip", "global-ip").contains(keyMode.toLowerCase(Locale.ROOT))
                 ? AiwafConfig.RateLimitScope.GLOBAL_IP : AiwafConfig.RateLimitScope.PER_PATH;
-        cfg.blockIpOnRateLimitBreach = bool(rl.get("soft_block_blacklist"), cfg.blockIpOnRateLimitBreach);
+        cfg.blockIpOnRateLimitBreach = bool(rl.get("soft_block_blocklist"), cfg.blockIpOnRateLimitBreach);
         cfg.blockIpOnFloodBreach = bool(rl.get("block_ip_on_flood"), cfg.blockIpOnFloodBreach);
         String cacheBackend = str(rl.get("cache_backend"), "memory");
         if ("redis".equalsIgnoreCase(cacheBackend)) cfg.storageBackend = "redis";
@@ -241,7 +241,7 @@ public final class AiwafConfigCompatCore {
         get(env, "AIWAF_RATE_KEY_MODE").ifPresent(v -> cfg.rateLimitScope =
                 Set.of("ip", "global_ip", "global-ip").contains(v.trim().toLowerCase(Locale.ROOT))
                         ? AiwafConfig.RateLimitScope.GLOBAL_IP : AiwafConfig.RateLimitScope.PER_PATH);
-        get(env, "AIWAF_RATE_SOFT_BLOCK_BLACKLIST").ifPresent(v ->
+        get(env, "AIWAF_RATE_SOFT_BLOCK_BLOCKLIST").ifPresent(v ->
                 cfg.blockIpOnRateLimitBreach = parseBool(v, cfg.blockIpOnRateLimitBreach));
     }
 

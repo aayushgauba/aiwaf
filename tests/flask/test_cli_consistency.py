@@ -44,7 +44,7 @@ def test_directory_consistency():
     
     # Add some test data first
     print(" Adding test data...")
-    stdout, stderr, code = run_cli_command("add whitelist 203.0.113.1")
+    stdout, stderr, code = run_cli_command("add allowlist 203.0.113.1")
     if code == 0:
         print(" Test data added successfully")
     else:
@@ -74,9 +74,9 @@ def test_directory_consistency():
                         print(f"    Data directory: {data_dir}")
                         break
                 
-                # Extract whitelist count
+                # Extract allowlist count
                 for line in stdout.split('\n'):
-                    if 'Whitelisted IPs' in line:
+                    if 'Allowlisted IPs' in line:
                         print(f"    {line}")
                         break
                         
@@ -100,21 +100,21 @@ def test_directory_consistency():
         for i, data_dir in enumerate(data_directories):
             print(f"   {i+1}. {data_dir}")
     
-    # Check if outputs are similar (whitelist counts should match)
-    whitelist_counts = []
+    # Check if outputs are similar (allowlist counts should match)
+    allowlist_counts = []
     for output in outputs:
         for line in output.split('\n'):
-            if 'Whitelisted IPs' in line and '(' in line:
+            if 'Allowlisted IPs' in line and '(' in line:
                 count = line.split('(')[1].split(')')[0]
-                whitelist_counts.append(count)
+                allowlist_counts.append(count)
                 break
     
-    if len(set(whitelist_counts)) <= 1:
+    if len(set(allowlist_counts)) <= 1:
         print(" CONSISTENT: All commands returned the same data")
     else:
         print(" INCONSISTENT: Different data returned from different directories")
     
-    print(f"\n Result: {'PASS' if len(set(data_directories)) == 1 and len(set(whitelist_counts)) <= 1 else 'FAIL'}")
+    print(f"\n Result: {'PASS' if len(set(data_directories)) == 1 and len(set(allowlist_counts)) <= 1 else 'FAIL'}")
 
 if __name__ == '__main__':
     test_directory_consistency()

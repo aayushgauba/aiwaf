@@ -30,18 +30,18 @@ def test_init_and_migrate_commands(tmp_path, monkeypatch, capsys):
     cli._init(["--app", "sample:app", "--output", str(tmp_path / "paths.json")])
     assert "Routes: 1" in capsys.readouterr().out
 
-    cli._migrate_blacklist(["--backend", "memory"])
-    assert "blacklist upgraded" in capsys.readouterr().out
+    cli._migrate_blocklist(["--backend", "memory"])
+    assert "blocklist upgraded" in capsys.readouterr().out
 
 
 def test_main_dispatches_all_modes(monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "_init", lambda args: calls.append(("init", args)))
-    monkeypatch.setattr(cli, "_migrate_blacklist", lambda args: calls.append(("migrate", args)))
+    monkeypatch.setattr(cli, "_migrate_blocklist", lambda args: calls.append(("migrate", args)))
     monkeypatch.setattr(cli, "_flask_cli_main", lambda: calls.append(("fallback", [])))
     monkeypatch.setattr(sys, "argv", ["aiwaf", "init", "--app", "x:y"])
     cli.main()
-    monkeypatch.setattr(sys, "argv", ["aiwaf", "blacklist", "migrate"])
+    monkeypatch.setattr(sys, "argv", ["aiwaf", "blocklist", "migrate"])
     cli.main()
     monkeypatch.setattr(sys, "argv", ["aiwaf", "status"])
     cli.main()

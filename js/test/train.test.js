@@ -64,7 +64,7 @@ describe('trainer parity', () => {
     jest.doMock('../lib/exemptionStore', () => ({
       initialize: jest.fn(), listPaths: jest.fn(async () => []), listIps: jest.fn(async () => [])
     }));
-    jest.doMock('../lib/blacklistManager', () => ({
+    jest.doMock('../lib/blocklistManager', () => ({
       unblock: jest.fn(), block: jest.fn(), getBlockedIPs: jest.fn(async () => [])
     }));
 
@@ -105,7 +105,7 @@ describe('trainer parity', () => {
       listPaths: jest.fn(async () => []),
       listIps: jest.fn(async () => [])
     }));
-    jest.doMock('../lib/blacklistManager', () => ({
+    jest.doMock('../lib/blocklistManager', () => ({
       unblock: jest.fn(async () => {}),
       block: jest.fn(async () => {}),
       getBlockedIPs: jest.fn(async () => [])
@@ -140,7 +140,7 @@ describe('trainer parity', () => {
       listPaths: jest.fn(async () => []),
       listIps: jest.fn(async () => [{ ip_address: '203.0.113.3' }])
     }));
-    jest.doMock('../lib/blacklistManager', () => ({
+    jest.doMock('../lib/blocklistManager', () => ({
       unblock,
       block,
       getBlockedIPs: jest.fn(async () => [])
@@ -172,7 +172,7 @@ describe('trainer parity', () => {
       listPaths: jest.fn(async () => []),
       listIps: jest.fn(async () => [])
     }));
-    jest.doMock('../lib/blacklistManager', () => ({
+    jest.doMock('../lib/blocklistManager', () => ({
       unblock: jest.fn(async () => {}),
       block: jest.fn(async () => {}),
       getBlockedIPs: jest.fn(async () => [])

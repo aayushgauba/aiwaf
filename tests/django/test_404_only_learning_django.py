@@ -29,8 +29,8 @@ class Only404LearningTestCase(AIWAFTestCase):
         cache.clear()
 
     @patch("aiwaf.django.middleware.path_exists_in_django", return_value=True)
-    @patch("aiwaf.django.middleware.BlacklistManager.block")
-    @patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=False)
+    @patch("aiwaf.django.middleware.BlocklistManager.block")
+    @patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=False)
     @patch("aiwaf.django.middleware.NUMPY_AVAILABLE", True)
     def test_403s_do_not_trigger_ai_blocking(self, _mock_blocked, mock_block, _mock_path_exists):
         """403s should not be treated like 404s for AI blocking decisions."""
@@ -73,8 +73,8 @@ class Only404LearningTestCase(AIWAFTestCase):
         mock_block.assert_not_called()
 
     @patch("aiwaf.django.middleware.path_exists_in_django", return_value=True)
-    @patch("aiwaf.django.middleware.BlacklistManager.block")
-    @patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=False)
+    @patch("aiwaf.django.middleware.BlocklistManager.block")
+    @patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=False)
     @patch("aiwaf.django.middleware.NUMPY_AVAILABLE", True)
     def test_burst_without_404s_does_not_block(self, _mock_blocked, mock_block, _mock_path_exists):
         """Pure burst traffic without 404s/keywords should not be blocked."""

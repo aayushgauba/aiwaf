@@ -26,9 +26,9 @@ from django.apps import apps
 from django.db.models import F
 from django.utils import timezone
 from .utils import is_exempt_path
-from .storage import get_blacklist_store, get_exemption_store, get_keyword_store
+from .storage import get_blocklist_store, get_exemption_store, get_keyword_store
 from .utils import get_exempt_paths
-from .blacklist_manager import BlacklistManager
+from .blocklist_manager import BlocklistManager
 from .settings_compat import apply_legacy_settings
 from .model_store import save_model_data
 from .geoip import lookup_country, lookup_country_name
@@ -581,9 +581,9 @@ def _print_geoip_summary(ips, title):
 
 
 def _print_geoip_blocklist_summary():
-    blacklist_store = get_blacklist_store()
+    blocklist_store = get_blocklist_store()
     try:
-        blocked_ips = blacklist_store.get_all_blocked_ips()
+        blocked_ips = blocklist_store.get_all_blocked_ips()
     except Exception:
         blocked_ips = []
 
@@ -609,14 +609,14 @@ def train(disable_ai=False, force_ai=False) -> None:
     # Remove exempt keywords first
     remove_exempt_keywords()
     
-    # Remove any IPs in IPExemption from the blacklist using BlacklistManager
+    # Remove any IPs in IPExemption from the blocklist using BlocklistManager
     exemption_store = get_exemption_store()
     
     exempted_ips = [entry['ip_address'] for entry in exemption_store.get_all()]
     if exempted_ips:
-        logger.info(f"Found {len(exempted_ips)} exempted IPs - clearing from blacklist")
+        logger.info(f"Found {len(exempted_ips)} exempted IPs - clearing from blocklist")
         for ip in exempted_ips:
-            BlacklistManager.unblock(ip)
+            BlocklistManager.unblock(ip)
     
     parsed_count = 0
     ip_404   = defaultdict(int)
@@ -673,7 +673,7 @@ def train(disable_ai=False, force_ai=False) -> None:
             # Don't block if majority of 404s are on login paths
             if count > login_404s:  # More non-login 404s than login 404s
                 if getattr(settings, 'AIWAF_ENABLE_IP_BLOCKING', True) and not exemption_store.is_exempted(ip):
-                    evidence.block(ip, lambda: BlacklistManager.block(ip, f"Excessive 404s (≥6 non-login, {count}/{total_404s})"))
+                    evidence.block(ip, lambda: BlocklistManager.block(ip, f"Excessive 404s (≥6 non-login, {count}/{total_404s})"))
 
     keyword_learning_enabled = getattr(settings, "AIWAF_ENABLE_KEYWORD_LEARNING", True)
     legitimate_keywords = get_legitimate_keywords() if keyword_learning_enabled else set()
@@ -957,7 +957,7 @@ def train(disable_ai=False, force_ai=False) -> None:
                 _print_geoip_summary(anomalous_ips, "GeoIP summary for anomalous IPs (top 10):")
                 
                 exemption_store = get_exemption_store()
-                blacklist_store = get_blacklist_store()
+                blocklist_store = get_blocklist_store()
                 
                 for ip in anomalous_ips:
                     # Skip if IP is exempted
@@ -985,7 +985,7 @@ def train(disable_ai=False, force_ai=False) -> None:
                         continue
                     
                     # Block if it shows clear signs of malicious behavior
-                    blocked_count += evidence.block(ip, lambda: BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})"))
+                    blocked_count += evidence.block(ip, lambda: BlocklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})"))
                     logger.info(f"   - {ip}: Blocked for suspicious behavior (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
                 
                 logger.info(f"    Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs (others looked legitimate)")
@@ -1065,3 +1065,8 @@ def train(disable_ai=False, force_ai=False) -> None:
     else:
         logger.info(f"Enhanced protection now active with context-aware filtering!")
     logger.info("="*60)
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_store = get_blocklist_store
+BlacklistManager = BlocklistManager

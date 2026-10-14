@@ -194,8 +194,8 @@ class TrainerFunctionsTestCase(AIWAFTestCase):
              patch("aiwaf.django.trainer._parse", return_value=rec), \
              patch("aiwaf.django.trainer.remove_exempt_keywords"), \
              patch("aiwaf.django.trainer.get_exemption_store") as mock_exempt_store, \
-             patch("aiwaf.django.trainer.BlacklistManager.unblock"), \
-             patch("aiwaf.django.trainer.BlacklistManager.block"), \
+             patch("aiwaf.django.trainer.BlocklistManager.unblock"), \
+             patch("aiwaf.django.trainer.BlocklistManager.block"), \
              patch("aiwaf.django.trainer.MIN_TRAIN_LOGS", 1), \
              patch("aiwaf.django.trainer.MIN_AI_LOGS", 0), \
              patch("aiwaf.django.trainer.PANDAS_AVAILABLE", True), \

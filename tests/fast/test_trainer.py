@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from aiwaf.core import rust_backend
 from aiwaf.core.runtime_config import AIWAFConfig
-from aiwaf.core.runtime_storage import initialize_storage, get_keyword_store, get_blacklist_store, get_storage, get_exemption_store
+from aiwaf.core.runtime_storage import initialize_storage, get_keyword_store, get_blocklist_store, get_storage, get_exemption_store
 from aiwaf.fast.trainer import train_from_logs, path_exists
 
 
@@ -37,7 +37,7 @@ def test_fast_training_uses_runtime_csv_and_native_parity(tmp_path, monkeypatch)
         assert result['blocked_404'] == 3
         assert 'customplugin' in result['learned_keywords']
         assert 'users' not in result['learned_keywords']
-        states.append((set(get_blacklist_store().get_blocked_ips()), get_storage().get('keyword_counts')))
+        states.append((set(get_blocklist_store().get_blocked_ips()), get_storage().get('keyword_counts')))
     assert states[0] == states[1]
 
 
@@ -57,7 +57,7 @@ def test_fast_training_honors_ip_exemptions_and_trains_model(tmp_path, monkeypat
     get_exemption_store().add_ip('203.0.113.2')
     result = train_from_logs(FastAPI(), log_dir=tmp_path / 'logs', force_ai=True,
                              model_path=tmp_path / 'model.json')
-    assert not get_blacklist_store().is_blocked('203.0.113.2')
+    assert not get_blocklist_store().is_blocked('203.0.113.2')
     assert result['model'] is not None
     assert (tmp_path / 'model.json').exists()
 

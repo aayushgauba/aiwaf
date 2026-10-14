@@ -153,7 +153,7 @@ public final class AiwafConfigFileCore {
                 "window_seconds", config.rateLimitWindowSeconds,
                 "flood_threshold", config.rateLimitFloodThreshold,
                 "key_mode", config.rateLimitScope == AiwafConfig.RateLimitScope.GLOBAL_IP ? "ip" : "ip_path",
-                "soft_block_blacklist", config.blockIpOnRateLimitBreach,
+                "soft_block_blocklist", config.blockIpOnRateLimitBreach,
                 "block_ip_on_flood", config.blockIpOnFloodBreach
         ));
         root.put("honeypot", map(

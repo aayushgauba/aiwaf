@@ -3,11 +3,11 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
-class WhitelistedIP(db.Model):
+class AllowlistedIP(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ip = db.Column(db.String(45), unique=True, nullable=False)
 
-class BlacklistedIP(db.Model):
+class BlocklistedIP(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ip = db.Column(db.String(45), unique=True, nullable=False)
     reason = db.Column(db.String(255))
@@ -28,3 +28,8 @@ class Keyword(db.Model):
 class GeoBlockedCountry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     country_code = db.Column(db.String(8), unique=True, nullable=False)
+
+
+# Compatibility aliases for callers using the previous terminology.
+WhitelistedIP = AllowlistedIP
+BlacklistedIP = BlocklistedIP

@@ -18,8 +18,8 @@ class AiwafManagerLogicTest {
     void manager_updates_runtime_stores_for_core_logic() {
         AiwafManager manager = new AiwafManager("aiwaf-manager-test.bin");
 
-        assertTrue(manager.addToWhitelist("203.0.113.10"));
-        assertTrue(manager.listWhitelistIps().contains("203.0.113.10"));
+        assertTrue(manager.addToAllowlist("203.0.113.10"));
+        assertTrue(manager.listAllowlistIps().contains("203.0.113.10"));
 
         assertTrue(manager.addGeoBlockedCountry("US"));
         assertTrue(manager.listGeoBlockedCountries().contains("US"));
@@ -27,18 +27,18 @@ class AiwafManagerLogicTest {
         assertTrue(manager.addPathExemption("/health", "health"));
         assertTrue(manager.listPathExemptions().contains("/health"));
 
-        assertTrue(manager.addToBlacklist("198.51.100.80", "manual"));
-        assertTrue(manager.listBlacklist().containsKey("198.51.100.80"));
+        assertTrue(manager.addToBlocklist("198.51.100.80", "manual"));
+        assertTrue(manager.listBlocklist().containsKey("198.51.100.80"));
     }
 
     @Test
-    void manager_blacklist_extended_info_export_import_and_reset() {
+    void manager_blocklist_extended_info_export_import_and_reset() {
         String dataPath = "aiwaf-manager-test-2.bin";
         AiwafManager manager = new AiwafManager(dataPath);
         Map<String, Object> ext = Map.of("path", "/login", "method", "POST");
-        assertTrue(manager.addToBlacklist("198.51.100.91", "extended", ext));
+        assertTrue(manager.addToBlocklist("198.51.100.91", "extended", ext));
 
-        Map<String, Map<String, Object>> bl = manager.listBlacklist();
+        Map<String, Map<String, Object>> bl = manager.listBlocklist();
         assertTrue(bl.containsKey("198.51.100.91"));
         assertEquals("/login", ((Map<?, ?>) bl.get("198.51.100.91").get("extended_request_info")).get("path"));
 
@@ -47,29 +47,29 @@ class AiwafManagerLogicTest {
         assertTrue(new File(exportFile).exists());
 
         assertTrue(manager.resetAll());
-        assertTrue(manager.listBlacklistIps().isEmpty());
+        assertTrue(manager.listBlocklistIps().isEmpty());
 
         assertTrue(manager.importConfig(exportFile));
-        assertTrue(manager.listBlacklist().containsKey("198.51.100.91"));
+        assertTrue(manager.listBlocklist().containsKey("198.51.100.91"));
 
         assertTrue(manager.reset(true, false));
-        assertTrue(manager.listBlacklistIps().isEmpty());
+        assertTrue(manager.listBlocklistIps().isEmpty());
     }
 
     @Test
     void manager_selective_reset_matches_python_style_flags() {
         AiwafManager manager = new AiwafManager("aiwaf-manager-reset-test.bin");
-        assertTrue(manager.addToBlacklist("198.51.100.120", "test"));
-        assertTrue(manager.addToWhitelist("203.0.113.120"));
+        assertTrue(manager.addToBlocklist("198.51.100.120", "test"));
+        assertTrue(manager.addToAllowlist("203.0.113.120"));
         assertTrue(manager.addKeyword("login"));
 
         assertTrue(manager.resetSelective(true, false, false));
-        assertTrue(manager.listBlacklistIps().isEmpty());
-        assertTrue(manager.listWhitelistIps().contains("203.0.113.120"));
+        assertTrue(manager.listBlocklistIps().isEmpty());
+        assertTrue(manager.listAllowlistIps().contains("203.0.113.120"));
         assertTrue(manager.listKeywords().contains("login"));
 
         assertTrue(manager.resetSelective(false, true, false));
-        assertTrue(manager.listWhitelistIps().isEmpty());
+        assertTrue(manager.listAllowlistIps().isEmpty());
         assertTrue(manager.listKeywords().contains("login"));
 
         assertTrue(manager.resetSelective(false, false, true));
@@ -90,10 +90,10 @@ class AiwafManagerLogicTest {
     void manager_rejects_blank_inputs_and_blank_paths() {
         AiwafManager manager = new AiwafManager("aiwaf-manager-invalid-inputs.bin");
 
-        assertFalse(manager.addWhitelistIp(" ", "x"));
-        assertFalse(manager.removeWhitelistIp(""));
-        assertFalse(manager.addBlacklistIp(" ", "x"));
-        assertFalse(manager.removeBlacklistIp(""));
+        assertFalse(manager.addAllowlistIp(" ", "x"));
+        assertFalse(manager.removeAllowlistIp(""));
+        assertFalse(manager.addBlocklistIp(" ", "x"));
+        assertFalse(manager.removeBlocklistIp(""));
         assertFalse(manager.addKeyword(" "));
         assertFalse(manager.removeKeyword(""));
         assertFalse(manager.addGeoBlockedCountry(" "));

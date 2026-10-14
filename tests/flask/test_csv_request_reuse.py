@@ -26,7 +26,7 @@ def test_request_reuse_observes_file_and_config_updates(tmp_path, monkeypatch):
         app.config['AIWAF_EXEMPT_PATHS'] = ['/unknown']
         assert utils.is_exempt(request)
         app.config['AIWAF_EXEMPT_PATHS'] = []
-        storage.add_ip_whitelist('127.0.0.1')
+        storage.add_ip_allowlist('127.0.0.1')
         assert utils.is_exempt(request)
     with app.test_request_context('/unknown', environ_base={'REMOTE_ADDR': '127.0.0.1'}):
         assert utils.is_exempt(request)

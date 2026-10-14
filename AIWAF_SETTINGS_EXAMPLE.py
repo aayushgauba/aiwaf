@@ -70,11 +70,11 @@ AIWAF_REQUIRED_HEADERS = {
 }
 AIWAF_HEADER_QUALITY_MIN_SCORE = 3
 
-# Blacklist extended request info (optional)
-AIWAF_BLACKLIST_STORE_EXTENDED_INFO = False
-AIWAF_BLACKLIST_REDACT_HEADERS = ["Authorization", "Cookie", "Set-Cookie"]
-AIWAF_BLACKLIST_MAX_HEADERS = 50
-AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH = 512
+# Blocklist extended request info (optional)
+AIWAF_BLOCKLIST_STORE_EXTENDED_INFO = False
+AIWAF_BLOCKLIST_REDACT_HEADERS = ["Authorization", "Cookie", "Set-Cookie"]
+AIWAF_BLOCKLIST_MAX_HEADERS = 50
+AIWAF_BLOCKLIST_MAX_HEADER_VALUE_LENGTH = 512
 
 # Honeypot timing threshold
 AIWAF_MIN_FORM_TIME = 1.0  # minimum seconds for form submission
@@ -126,7 +126,7 @@ AIWAF_FORCE_AI_TRAINING = False  # override AIWAF_MIN_AI_LOGS gate
 # 1. Add the blocked keyword to AIWAF_ALLOWED_PATH_KEYWORDS
 # 2. Add the path pattern to AIWAF_EXEMPT_PATHS
 # 3. Reduce AIWAF_DYNAMIC_TOP_N to be more conservative
-# 4. Clear the blacklist: python manage.py aiwaf_reset --blacklist --confirm
+# 4. Clear the blocklist: python manage.py aiwaf_reset --blocklist --confirm
 
 # If attacks are not being detected:
 # 1. Increase AIWAF_DYNAMIC_TOP_N

@@ -13,6 +13,6 @@ class Command(BaseCommand):
         # Also show what was cleared
         self.stdout.write(" Cleared all cached data including:")
         self.stdout.write("   - Rate limiting data")
-        self.stdout.write("   - Blacklist cache")
+        self.stdout.write("   - Blocklist cache")
         self.stdout.write("   - AI anomaly data")
         self.stdout.write("   - Honeypot timing data")

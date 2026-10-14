@@ -27,23 +27,23 @@ def test_cli_functionality():
             # Initialize manager with temp directory
             manager = AIWAFManager(temp_dir)
             
-            # Test adding to whitelist
-            print("\n Testing whitelist operations...")
-            result = manager.add_to_whitelist("192.168.1.100")
-            assert result, "Failed to add IP to whitelist"
+            # Test adding to allowlist
+            print("\n Testing allowlist operations...")
+            result = manager.add_to_allowlist("192.168.1.100")
+            assert result, "Failed to add IP to allowlist"
             
-            whitelist = manager.list_whitelist()
-            assert "192.168.1.100" in whitelist, "IP not found in whitelist"
-            print(f" Whitelist: {whitelist}")
+            allowlist = manager.list_allowlist()
+            assert "192.168.1.100" in allowlist, "IP not found in allowlist"
+            print(f" Allowlist: {allowlist}")
             
-            # Test adding to blacklist
-            print("\n Testing blacklist operations...")
-            result = manager.add_to_blacklist("10.0.0.5", "Test IP")
-            assert result, "Failed to add IP to blacklist"
+            # Test adding to blocklist
+            print("\n Testing blocklist operations...")
+            result = manager.add_to_blocklist("10.0.0.5", "Test IP")
+            assert result, "Failed to add IP to blocklist"
             
-            blacklist = manager.list_blacklist()
-            assert "10.0.0.5" in blacklist, "IP not found in blacklist"
-            print(f" Blacklist: {list(blacklist.keys())}")
+            blocklist = manager.list_blocklist()
+            assert "10.0.0.5" in blocklist, "IP not found in blocklist"
+            print(f" Blocklist: {list(blocklist.keys())}")
             
             # Test adding keywords
             print("\n Testing keyword operations...")
@@ -82,12 +82,12 @@ def test_cli_functionality():
             
             # Test removal
             print("\n Testing removal operations...")
-            result = manager.remove_from_whitelist("192.168.1.100")
-            assert result, "Failed to remove IP from whitelist"
+            result = manager.remove_from_allowlist("192.168.1.100")
+            assert result, "Failed to remove IP from allowlist"
             
-            whitelist_after = manager.list_whitelist()
-            assert "192.168.1.100" not in whitelist_after, "IP still in whitelist after removal"
-            print(f" Whitelist after removal: {whitelist_after}")
+            allowlist_after = manager.list_allowlist()
+            assert "192.168.1.100" not in allowlist_after, "IP still in allowlist after removal"
+            print(f" Allowlist after removal: {allowlist_after}")
             
             print("\n All CLI tests passed!")
             assert True
@@ -169,28 +169,28 @@ def test_cli_exempt_path_command(monkeypatch, tmp_path):
     main()
 
 
-def test_blacklist_legacy_and_import_operations(tmp_path):
+def test_blocklist_legacy_and_import_operations(tmp_path):
     from aiwaf.flask.cli import AIWAFManager
 
     manager = AIWAFManager(str(tmp_path))
-    manager.add_to_blacklist("203.0.113.50", "test")
-    assert manager.remove_from_blacklist("203.0.113.50")
-    assert not manager.remove_from_blacklist("missing")
-    manager.storage["rewrite_blacklist"](
+    manager.add_to_blocklist("203.0.113.50", "test")
+    assert manager.remove_from_blocklist("203.0.113.50")
+    assert not manager.remove_from_blocklist("missing")
+    manager.storage["rewrite_blocklist"](
         {"203.0.113.51": {"reason": "old", "reputation_reason": "legacy_blacklist", "reasons": ["legacy_blacklist"]}}
     )
-    assert manager.legacy_blacklist()
-    manager.show_legacy_blacklist()
-    assert manager.migrate_blacklist() == 1
-    assert manager.convert_legacy_blacklist(3600) == 1
-    manager.storage["rewrite_blacklist"](
+    assert manager.legacy_blocklist()
+    manager.show_legacy_blocklist()
+    assert manager.migrate_blocklist() == 1
+    assert manager.convert_legacy_blocklist(3600) == 1
+    manager.storage["rewrite_blocklist"](
         {"203.0.113.52": {"reason": "old", "reputation_reason": "legacy_blacklist", "reasons": ["legacy_blacklist"]}}
     )
-    assert manager.convert_legacy_blacklist(clear=True) == 1
-    assert manager.clear_blacklist()
+    assert manager.convert_legacy_blocklist(clear=True) == 1
+    assert manager.clear_blocklist()
 
     source = tmp_path / "import.json"
-    source.write_text(json.dumps({"whitelist": ["203.0.113.53"], "blacklist": {}, "keywords": ["admin"]}), encoding="utf-8")
+    source.write_text(json.dumps({"allowlist": ["203.0.113.53"], "blocklist": {}, "keywords": ["admin"]}), encoding="utf-8")
     assert manager.import_config(str(source))
 
 
@@ -214,7 +214,7 @@ def test_training_diagnostics_app_loader_and_duration_dispatch(tmp_path, monkeyp
     assert cli_module._load_flask_app("sample_flask_app:app") is module.app
 
     monkeypatch.setenv("AIWAF_DATA_DIR", str(tmp_path))
-    monkeypatch.setattr(sys, "argv", ["aiwaf", "blacklist", "convert-legacy", "--duration", "1h"])
+    monkeypatch.setattr(sys, "argv", ["aiwaf", "blocklist", "convert-legacy", "--duration", "1h"])
     cli_module.main()
 
 if __name__ == '__main__':
@@ -235,8 +235,8 @@ if __name__ == '__main__':
         print("\n All tests passed! CLI is ready to use.")
         print("\nUsage examples:")
         print("  python aiwaf_console.py list all")
-        print("  python aiwaf_console.py add whitelist 192.168.1.10")
-        print("  python aiwaf_console.py add blacklist 10.0.0.1 --reason 'Suspicious activity'")
+        print("  python aiwaf_console.py add allowlist 192.168.1.10")
+        print("  python aiwaf_console.py add blocklist 10.0.0.1 --reason 'Suspicious activity'")
         print("  python aiwaf_console.py stats")
     else:
         print("\n Some tests failed. Please check the errors above.")

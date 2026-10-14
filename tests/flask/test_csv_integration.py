@@ -2,12 +2,12 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-from aiwaf.core.storage_schema import BLACKLIST_CSV, CSV_HEADERS
+from aiwaf.core.storage_schema import BLOCKLIST_CSV, CSV_HEADERS
 
 def test_csv_middleware_integration(app):
     """Test AIWAF middleware with CSV storage."""
     from aiwaf.flask.middleware import register_aiwaf_middlewares
-    from aiwaf.flask.storage import add_ip_blacklist, add_keyword
+    from aiwaf.flask.storage import add_ip_blocklist, add_keyword
     
     # Configure for CSV storage
     temp_dir = tempfile.mkdtemp()
@@ -26,10 +26,10 @@ def test_csv_middleware_integration(app):
     client = app.test_client()
     
     with app.app_context():
-        # Add IP to blacklist via CSV
-        add_ip_blacklist('127.0.0.1', 'Test block')
+        # Add IP to blocklist via CSV
+        add_ip_blocklist('127.0.0.1', 'Test block')
         
-        # Test that blacklisted IP is blocked
+        # Test that blocklisted IP is blocked
         response = client.get('/test', headers={'User-Agent': 'Test Browser 1.0'})
         assert response.status_code == 403
         
@@ -60,23 +60,23 @@ def test_csv_files_structure():
         # Ensure CSV files are created
         _ensure_csv_files()
         
-        # Check whitelist structure
-        whitelist_file = Path(temp_dir) / 'whitelist.csv'
-        assert whitelist_file.exists()
+        # Check allowlist structure
+        allowlist_file = Path(temp_dir) / 'whitelist.csv'
+        assert allowlist_file.exists()
         
-        with open(whitelist_file, 'r') as f:
+        with open(allowlist_file, 'r') as f:
             reader = csv.reader(f)
             headers = next(reader)
             assert headers == ['ip', 'added_date']
         
-        # Check blacklist structure
-        blacklist_file = Path(temp_dir) / 'blacklist.csv'
-        assert blacklist_file.exists()
+        # Check blocklist structure
+        blocklist_file = Path(temp_dir) / 'blacklist.csv'
+        assert blocklist_file.exists()
         
-        with open(blacklist_file, 'r') as f:
+        with open(blocklist_file, 'r') as f:
             reader = csv.reader(f)
             headers = next(reader)
-            assert headers == CSV_HEADERS[BLACKLIST_CSV]
+            assert headers == CSV_HEADERS[BLOCKLIST_CSV]
         
         # Check keywords structure
         keywords_file = Path(temp_dir) / 'keywords.csv'

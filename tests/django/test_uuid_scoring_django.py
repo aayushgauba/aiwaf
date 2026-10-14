@@ -29,8 +29,8 @@ class UUIDScoringDjangoTest(AIWAFTestCase):
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
              patch("aiwaf.django.middleware.get_ip", return_value="203.0.113.60"), \
-             patch("aiwaf.django.middleware.BlacklistManager.block", return_value=True) as mock_block, \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=True):
+             patch("aiwaf.django.middleware.BlocklistManager.block", return_value=True) as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=True):
             for _ in range(2):
                 mw.process_view(request, view_func, (), {"uuid": "550e8400-e29b-41d4-a716-446655440000"})
                 mw.process_response(request, HttpResponseNotFound())

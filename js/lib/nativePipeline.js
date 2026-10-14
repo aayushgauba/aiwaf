@@ -89,6 +89,8 @@ module.exports = async function createNativeMiddleware(options = {}) {
     if (options[key] != null && (typeof options[key] !== 'function' || options[key].constructor.name === 'AsyncFunction')) throw new TypeError(`${key} must be synchronous`);
   }
   const profile = JSON.parse(JSON.stringify(options.profile || {}));
+  if (!Object.hasOwn(profile, 'blocklist') && Object.hasOwn(profile, 'blacklist')) profile.blocklist = profile.blacklist;
+  delete profile.blacklist;
   const dataDir = path.resolve(options.dataDir || 'aiwaf_native_data');
   // State files are dedicated to this adapter. Legacy ORM/CSV schemas are not mixed.
   const blockPath = path.join(dataDir, 'native_blocks.csv');
@@ -100,12 +102,12 @@ module.exports = async function createNativeMiddleware(options = {}) {
     if (persist) {
       blocks = writer(blockPath, BLOCK_HEADER, true); opened.push(blocks);
       keywords = writer(keywordPath, KEYWORD_HEADER, true); opened.push(keywords);
-      const blacklist = { ...(profile.blacklist || {}) };
+      const blocklist = { ...(profile.blocklist || {}) };
       for (const row of readRows(blockPath, ['ip','expires_at','reason'])) {
         if (!row.ip || !row.expires_at || !Number.isFinite(Number(row.expires_at))) throw new Error('Invalid persisted block row');
-        blacklist[row.ip] = Number(row.expires_at);
+        blocklist[row.ip] = Number(row.expires_at);
       }
-      profile.blacklist = blacklist;
+      profile.blocklist = blocklist;
       profile.dynamic_keywords = [...new Set([...(profile.dynamic_keywords || []), ...readRows(keywordPath, ['keyword']).map(r => r.keyword)])];
     }
     engine = await createRequestPipeline(profile, options.model);

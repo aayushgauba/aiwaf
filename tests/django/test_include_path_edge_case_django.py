@@ -23,7 +23,7 @@ from aiwaf.django.middleware import IPAndKeywordBlockMiddleware
 
 
 class IncludePathEdgeCaseTestCase(AIWAFMiddlewareTestCase):
-    """Validate include() prefixes don't whitelist arbitrary keywords."""
+    """Validate include() prefixes don't allowlist arbitrary keywords."""
     
     def setUp(self):
         super().setUp()
@@ -34,8 +34,8 @@ class IncludePathEdgeCaseTestCase(AIWAFMiddlewareTestCase):
         with patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=False), \
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
              patch("aiwaf.django.middleware.path_exists_in_django", return_value=False):
             middleware = IPAndKeywordBlockMiddleware(self.mock_get_response)
             middleware.safe_prefixes = {"school"}
@@ -53,8 +53,8 @@ class IncludePathEdgeCaseTestCase(AIWAFMiddlewareTestCase):
              patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", side_effect=[False, True]), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", side_effect=[False, True]), \
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
              patch("aiwaf.django.middleware.path_exists_in_django", return_value=False), \
              patch("aiwaf.django.middleware._raise_blocked") as mock_raise:
             middleware = IPAndKeywordBlockMiddleware(self.mock_get_response)

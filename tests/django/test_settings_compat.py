@@ -47,7 +47,7 @@ class TestAIWAFSettingsCompat(AIWAFTestCase):
                 "SENSITIVITY_LEVEL": "medium",
                 "CUSTOM_PATTERNS": [".php", "xmlrpc"],
             },
-            "IP_BLOCKING": {"ENABLED": True, "WHITELIST": ["192.168.1.0/24"]},
+            "IP_BLOCKING": {"ENABLED": True, "ALLOWLIST": ["192.168.1.0/24"]},
             "LOGGING": {"ENABLED": True, "LEVEL": "WARNING", "FORMAT": "detailed"},
         }
     )

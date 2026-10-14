@@ -16,7 +16,7 @@ class FlaskPolicyTests(FrameworkCases, unittest.TestCase):
         module = 'aiwaf.flask.ip_and_keyword_block_middleware.'
         store = MagicMock(); store.get_top_keywords.return_value = []
         with patch(module + 'is_exempt', return_value=exempt), patch(module + 'should_apply_middleware', return_value=True), \
-             patch(module + 'BlacklistManager.is_blocked', return_value=False), patch(module + 'get_keyword_store', return_value=store):
+             patch(module + 'BlocklistManager.is_blocked', return_value=False), patch(module + 'get_keyword_store', return_value=store):
             IPAndKeywordBlockMiddleware(app)
             result = app.test_client().post('/login?' + query, data=wire_body(payload), content_type=content_type)
         return result.status_code, result.get_json()

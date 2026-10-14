@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from aiwaf.core.runtime_config import AIWAFConfig
 from aiwaf.core.runtime_fastapi import AIWAF
-from aiwaf.core.runtime_storage import get_blacklist_store, get_exemption_store
+from aiwaf.core.runtime_storage import get_blocklist_store, get_exemption_store
 from aiwaf.core import storage_csv_impl as policy
 
 
@@ -24,8 +24,8 @@ def test_fastapi_migrated_blocks_and_shared_flask_policy(tmp_path):
     AIWAF(app, config=config, middlewares=['ip_keyword_block'])
     client = TestClient(app, client=('203.0.113.9', 12345))
     assert client.get('/safe').status_code == 403
-    assert get_blacklist_store().is_blocked('203.0.113.9')
-    policy.append_whitelist(tmp_path, '203.0.113.9')
+    assert get_blocklist_store().is_blocked('203.0.113.9')
+    policy.append_allowlist(tmp_path, '203.0.113.9')
     assert get_exemption_store().is_exempted('203.0.113.9')
     assert client.get('/safe').status_code == 200
     assert source.read_bytes() == original

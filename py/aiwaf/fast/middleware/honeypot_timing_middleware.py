@@ -4,9 +4,9 @@ import time
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 
-from ..blacklist import BlacklistManager
+from ..blocklist import BlocklistManager
 from ..decorators import should_apply_middleware
-from ..utils import get_blacklist_extended_info, get_ip
+from ..utils import get_blocklist_extended_info, get_ip
 from ...core.runtime_storage import get_storage
 from ...core.honeypot import (
     store_honeypot_get_timestamp,
@@ -68,10 +68,10 @@ class HoneypotTimingMiddleware(BaseHTTPMiddleware):
             accepts_method=fastapi_route_accepts_method(request, request.method),
         )
         if method_decision.action == METHOD_BLOCK:
-            BlacklistManager.block(
+            BlocklistManager.block(
                 ip,
                 method_decision.reason,
-                extended_request_info=get_blacklist_extended_info(request),
+                extended_request_info=get_blocklist_extended_info(request),
             )
             request.state.aiwaf_blocked = True
             request.state.aiwaf_block_reason = method_decision.message or "method not allowed"
@@ -102,10 +102,10 @@ class HoneypotTimingMiddleware(BaseHTTPMiddleware):
                     status_code=decision.status_code or 409,
                 )
             if decision.action == ACTION_BLOCK:
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     decision.reason or "Form submitted too quickly",
-                    extended_request_info=get_blacklist_extended_info(request),
+                    extended_request_info=get_blocklist_extended_info(request),
                 )
                 request.state.aiwaf_blocked = True
                 request.state.aiwaf_block_reason = "honeypot"
@@ -125,3 +125,8 @@ class HoneypotTimingMiddleware(BaseHTTPMiddleware):
         except Exception:
             session = None
         return is_authenticated_session_context(user=user, session=session)
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager
+get_blacklist_extended_info = get_blocklist_extended_info

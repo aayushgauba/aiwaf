@@ -85,8 +85,8 @@ class MiddlewareProtectionTestCase(AIWAFMiddlewareTestCase):
              patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.block"), \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=False), \
+             patch("aiwaf.django.middleware.BlocklistManager.block"), \
              patch("aiwaf.django.middleware.path_exists_in_django", return_value=False), \
              patch.object(IPAndKeywordBlockMiddleware, "_is_malicious_context") as ctx_mock:
             call_state = {"first": True}
@@ -115,8 +115,8 @@ class MiddlewareProtectionTestCase(AIWAFMiddlewareTestCase):
              patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=False), \
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
              patch("aiwaf.django.middleware.path_exists_in_django", return_value=True):
             middleware = IPAndKeywordBlockMiddleware(self.mock_get_response)
             request = self.factory.get("/profile/settings/")
@@ -135,9 +135,9 @@ class MiddlewareProtectionTestCase(AIWAFMiddlewareTestCase):
              patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", side_effect=[False, True]), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
-             patch("aiwaf.django.middleware._get_blacklist_extended_info", return_value=None), \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", side_effect=[False, True]), \
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware._get_blocklist_extended_info", return_value=None), \
              patch("aiwaf.django.middleware.path_exists_in_django", return_value=False), \
              patch("aiwaf.django.middleware._raise_blocked") as mock_raise:
             middleware = IPAndKeywordBlockMiddleware(self.mock_get_response)

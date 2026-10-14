@@ -8,8 +8,8 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from ..utils import get_blacklist_extended_info, get_ip, is_exempt, is_static_file
-from ..blacklist import BlacklistManager
+from ..utils import get_blocklist_extended_info, get_ip, is_exempt, is_static_file
+from ..blocklist import BlocklistManager
 from ..decorators import should_apply_middleware
 from aiwaf.core import header_validation as core_header_validation
 from aiwaf.core.rust_backend import validate_headers as rust_validate_headers, rust_available
@@ -44,7 +44,7 @@ class HeaderValidationMiddleware(BaseHTTPMiddleware):
     # Suspicious User-Agent patterns
     SUSPICIOUS_USER_AGENTS = list(core_header_validation.SUSPICIOUS_USER_AGENTS) + [r'mozilla/5\.0$']
     
-    # Known legitimate bot user agents to whitelist
+    # Known legitimate bot user agents to allowlist
     LEGITIMATE_BOTS = list(core_header_validation.LEGITIMATE_BOTS)
     
     def __init__(
@@ -302,15 +302,15 @@ class HeaderValidationMiddleware(BaseHTTPMiddleware):
         
         # Double-check exemption before blocking
         if not exemption_store.is_exempted(ip):
-            extended_info = get_blacklist_extended_info(request) if request is not None else None
-            BlacklistManager.block(
+            extended_info = get_blocklist_extended_info(request) if request is not None else None
+            BlocklistManager.block(
                 ip,
                 f"Header validation: {reason}",
                 extended_request_info=extended_info,
             )
             
             # Check if actually blocked (exempted IPs won't be blocked)
-            if BlacklistManager.is_blocked(ip):
+            if BlocklistManager.is_blocked(ip):
                 logger.warning(f"Blocked {ip}: {reason} (Path: {path})")
                 return JSONResponse(
                     content={
@@ -392,3 +392,8 @@ class HeaderValidationMiddleware(BaseHTTPMiddleware):
         """Disable blocking of suspicious requests (warning mode)"""
         self.block_suspicious = False
         logger.info("Header validation blocking disabled (warning mode)")
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_extended_info = get_blocklist_extended_info
+BlacklistManager = BlocklistManager

@@ -86,9 +86,9 @@ def apply_legacy_settings() -> None:
         enabled = ip_blocking.get("ENABLED")
         if enabled is not None:
             set_if_missing("AIWAF_ENABLE_IP_BLOCKING", bool(enabled))
-        whitelist = ip_blocking.get("WHITELIST")
-        if whitelist:
-            set_if_missing("AIWAF_EXEMPT_IPS", list(whitelist))
+        allowlist = ip_blocking.get("ALLOWLIST")
+        if allowlist:
+            set_if_missing("AIWAF_EXEMPT_IPS", list(allowlist))
 
     # Logging compatibility (best-effort)
     logging_cfg = legacy.get("LOGGING")

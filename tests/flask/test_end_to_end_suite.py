@@ -79,14 +79,14 @@ def test_rate_limit_legacy_ip_mode_affects_other_paths(tmp_path):
     assert client.get('/path-b', headers=headers).status_code == 429
 
 
-def test_rate_limit_soft_blacklist_legacy_toggle(tmp_path):
+def test_rate_limit_soft_blocklist_legacy_toggle(tmp_path):
     app = _create_app(
         tmp_path,
         middlewares=['rate_limit'],
         config={
             'AIWAF_RATE_MAX': 1,
             'AIWAF_RATE_WINDOW': 60,
-            'AIWAF_RATE_SOFT_BLOCK_BLACKLIST': True,
+            'AIWAF_RATE_SOFT_BLOCK_BLOCKLIST': True,
         },
     )
 
@@ -103,9 +103,9 @@ def test_rate_limit_soft_blacklist_legacy_toggle(tmp_path):
     assert client.get('/throttle', headers=headers).status_code == 200
     assert client.get('/throttle', headers=headers).status_code == 429
 
-    from aiwaf.flask.blacklist_manager import BlacklistManager
+    from aiwaf.flask.blocklist_manager import BlocklistManager
     with app.app_context():
-        assert BlacklistManager.is_blocked('203.0.113.210')
+        assert BlocklistManager.is_blocked('203.0.113.210')
 
 
 def test_geo_block_exempt_route(tmp_path, monkeypatch):

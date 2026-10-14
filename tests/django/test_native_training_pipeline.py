@@ -45,7 +45,7 @@ class NativeTrainingPipelineTests(SimpleTestCase):
                     self.assertIn('customplugin', store.get_all_keywords())
                     counts = get_storage().get('keyword_counts')
                     self.assertEqual(counts['customplugin'], 4200)
-                    states.append((set(storage.get_blacklist_store().get_all_blocked_ips()), counts))
+                    states.append((set(storage.get_blocklist_store().get_all_blocked_ips()), counts))
         self.assertEqual(states[0], states[1])
 
     def test_csv_adapter_bulk_counts(self):

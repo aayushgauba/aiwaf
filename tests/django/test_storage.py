@@ -98,15 +98,15 @@ class TestAllStorageAdapters(TestCase):
         columns = {"ip_address", "reason", "reasons", "expires_at", "extended_request_info"}
         insert_cursor = _LegacyCursor(one=None)
         with patch.object(django_storage, "connection", _LegacyConnection(insert_cursor)), patch.object(
-            django_storage, "_blacklist_table_columns", return_value=columns
+            django_storage, "_blocklist_table_columns", return_value=columns
         ):
-            self.assertTrue(django_storage._blacklist_has_extended_request_info_column())
+            self.assertTrue(django_storage._blocklist_has_extended_request_info_column())
             django_storage._block_ip_legacy_schema("203.0.113.140", "test", {"path": "/"})
         self.assertTrue(any("INSERT" in sql for sql, _ in insert_cursor.executed))
 
         blocked_cursor = _LegacyCursor(one=(None,))
         with patch.object(django_storage, "connection", _LegacyConnection(blocked_cursor)), patch.object(
-            django_storage, "_blacklist_table_columns", return_value=columns
+            django_storage, "_blocklist_table_columns", return_value=columns
         ):
             self.assertTrue(django_storage._is_blocked_legacy_schema("203.0.113.140"))
 
@@ -122,20 +122,20 @@ class TestAllStorageAdapters(TestCase):
         rows_cursor = _LegacyCursor(all_rows=[("203.0.113.141", "old", '["legacy_blacklist"]')])
         entry_columns = {"ip_address", "reason", "reasons"}
         with patch.object(django_storage, "connection", _LegacyConnection(rows_cursor)), patch.object(
-            django_storage, "_blacklist_table_columns", return_value=entry_columns
+            django_storage, "_blocklist_table_columns", return_value=entry_columns
         ):
-            entries = django_storage._get_all_blacklist_entries_legacy_schema()
+            entries = django_storage._get_all_blocklist_entries_legacy_schema()
         self.assertEqual(entries[0]["reasons"], ["legacy_blacklist"])
 
         clear_cursor = _LegacyCursor(one=(2,))
         with patch.object(django_storage, "connection", _LegacyConnection(clear_cursor)):
-            self.assertEqual(django_storage._clear_all_blacklist_entries_legacy_schema(), 2)
+            self.assertEqual(django_storage._clear_all_blocklist_entries_legacy_schema(), 2)
     def test_model_store_mutation_contracts(self):
-        blacklist = django_storage.ModelBlacklistStore()
-        blacklist.add_ip("203.0.113.10", "test")
-        self.assertIn("203.0.113.10", blacklist.get_all_blocked_ips())
-        self.assertTrue(blacklist.get_all())
-        self.assertEqual(blacklist.clear_all(), 1)
+        blocklist = django_storage.ModelBlocklistStore()
+        blocklist.add_ip("203.0.113.10", "test")
+        self.assertIn("203.0.113.10", blocklist.get_all_blocked_ips())
+        self.assertTrue(blocklist.get_all())
+        self.assertEqual(blocklist.clear_all(), 1)
 
         exemptions = django_storage.ModelExemptionStore()
         exemptions.add_ip("203.0.113.11", "test")
@@ -168,16 +168,16 @@ class TestAllStorageAdapters(TestCase):
         with tempfile.TemporaryDirectory() as data_dir:
             with override_settings(AIWAF_STORAGE_MODE="csv", AIWAF_DATA_DIR=data_dir):
                 django_storage._ensure_runtime_csv_backend()
-                blacklist = django_storage.CSVBlacklistStoreAdapter()
-                blacklist.add_ip("203.0.113.20", "test")
-                self.assertTrue(blacklist.is_blocked("203.0.113.20"))
-                self.assertTrue(blacklist.get_all())
-                self.assertIn("203.0.113.20", blacklist.get_all_blocked_ips())
-                blacklist.remove_ip("203.0.113.20")
-                blacklist.block_ip("203.0.113.21", "test")
-                blacklist.unblock_ip("203.0.113.21")
-                blacklist.add_ip("203.0.113.22", "test")
-                self.assertEqual(blacklist.clear_all(), 1)
+                blocklist = django_storage.CSVBlocklistStoreAdapter()
+                blocklist.add_ip("203.0.113.20", "test")
+                self.assertTrue(blocklist.is_blocked("203.0.113.20"))
+                self.assertTrue(blocklist.get_all())
+                self.assertIn("203.0.113.20", blocklist.get_all_blocked_ips())
+                blocklist.remove_ip("203.0.113.20")
+                blocklist.block_ip("203.0.113.21", "test")
+                blocklist.unblock_ip("203.0.113.21")
+                blocklist.add_ip("203.0.113.22", "test")
+                self.assertEqual(blocklist.clear_all(), 1)
 
                 exemptions = django_storage.CSVExemptionStoreAdapter()
                 exemptions.add_ip("203.0.113.30", "test")

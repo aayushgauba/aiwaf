@@ -35,10 +35,10 @@ def _segment_has_malicious_context(path_lower: str, query_lower: str, seg: str) 
         return True
     return seg.startswith(".")
 
-from ..blacklist import BlacklistManager
+from ..blocklist import BlocklistManager
 from ..decorators import should_apply_middleware
 from ..storage import get_exemption_store, get_keyword_store
-from ..utils import get_blacklist_extended_info, get_ip, is_exempt
+from ..utils import get_blocklist_extended_info, get_ip, is_exempt
 
 
 STATIC_KW = [
@@ -110,9 +110,9 @@ class AIAnomalyMiddleware(BaseHTTPMiddleware):
         if get_exemption_store().is_exempted(ip):
             return await call_next(request)
 
-        if BlacklistManager.is_blocked(ip):
+        if BlocklistManager.is_blocked(ip):
             request.state.aiwaf_blocked = True
-            request.state.aiwaf_block_reason = "IP already blacklisted"
+            request.state.aiwaf_block_reason = "IP already blocklisted"
             return JSONResponse({"error": "blocked"}, status_code=403)
 
         start = time.time()
@@ -172,10 +172,10 @@ class AIAnomalyMiddleware(BaseHTTPMiddleware):
                 keyword_store.add_keyword(seg)
 
         if outcome.block and outcome.reason:
-            BlacklistManager.block(
+            BlocklistManager.block(
                 ip,
                 outcome.reason,
-                extended_request_info=get_blacklist_extended_info(request),
+                extended_request_info=get_blocklist_extended_info(request),
             )
             request.state.aiwaf_blocked = True
             request.state.aiwaf_block_reason = outcome.reason
@@ -228,3 +228,8 @@ class AIAnomalyMiddleware(BaseHTTPMiddleware):
                 write_csv_log(str(csv_file), headers, row, durable=durable)
         except Exception:
             pass
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager
+get_blacklist_extended_info = get_blocklist_extended_info

@@ -2,7 +2,7 @@ import pytest
 from flask import Flask
 from aiwaf.flask.db_models import db
 from aiwaf.flask.middleware import register_aiwaf_middlewares
-from aiwaf.flask.storage import add_ip_whitelist, add_ip_blacklist
+from aiwaf.flask.storage import add_ip_allowlist, add_ip_blocklist
 
 def test_full_integration(app):
     """Test full AIWAF integration with Flask app."""
@@ -19,12 +19,12 @@ def test_full_integration(app):
     assert response.status_code == 200
     assert b'Protected content' in response.data
 
-def test_whitelist_bypass(app):
-    """Test that whitelisted IPs bypass all protection."""
+def test_allowlist_bypass(app):
+    """Test that allowlisted IPs bypass all protection."""
     register_aiwaf_middlewares(app)
     
     with app.app_context():
-        add_ip_whitelist('127.0.0.1')
+        add_ip_allowlist('127.0.0.1')
     
     @app.route('/test')
     def test_route():
@@ -32,10 +32,10 @@ def test_whitelist_bypass(app):
     
     client = app.test_client()
     
-    # Even malicious-looking request should work for whitelisted IP
+    # Even malicious-looking request should work for allowlisted IP
     response = client.get('/test.php')  # Normally blocked keyword
     # Note: This might still be blocked depending on middleware order
-    # In a real implementation, whitelist check should come first
+    # In a real implementation, allowlist check should come first
 
 def test_multiple_middleware_interaction(app):
     """Test interaction between multiple middleware."""
@@ -54,11 +54,11 @@ def test_multiple_middleware_interaction(app):
 def test_database_persistence(app):
     """Test that data persists in database."""
     with app.app_context():
-        add_ip_blacklist('192.168.1.100', 'test blacklist')
+        add_ip_blocklist('192.168.1.100', 'test blocklist')
         
         # Verify data persists
-        from aiwaf.flask.storage import is_ip_blacklisted
-        assert is_ip_blacklisted('192.168.1.100')
+        from aiwaf.flask.storage import is_ip_blocklisted
+        assert is_ip_blocklisted('192.168.1.100')
 
 def test_configuration_settings(app):
     """Test that configuration settings are applied."""

@@ -53,7 +53,7 @@ describe('trainer enforcement with real WASM receipts and CSV blocks', () => {
   test.each(['manual', 'expiry'])('%s removal cannot be undone by replay; fresh 404s accumulate', async removal => {
     write(6);
     await run();
-    const manager = require('../lib/blacklistManager');
+    const manager = require('../lib/blocklistManager');
     const before = await manager.getBlockedIPs();
     expect(before).toHaveLength(1);
     await run();
@@ -81,7 +81,7 @@ describe('trainer enforcement with real WASM receipts and CSV blocks', () => {
         isAnomaly: features => { scored.push(features); return true; } }) }));
     write(6, 500, '/wp-admin/shell.php');
     await run();
-    const manager = require('../lib/blacklistManager');
+    const manager = require('../lib/blocklistManager');
     expect(await manager.isBlocked('203.0.113.1')).toBe(true);
     await manager.unblock('203.0.113.1');
     scored.length = 0;
@@ -119,7 +119,7 @@ describe('trainer enforcement with real WASM receipts and CSV blocks', () => {
       })) }));
     }
     await run();
-    const manager = require('../lib/blacklistManager');
+    const manager = require('../lib/blocklistManager');
     expect(await manager.isBlocked('203.0.113.1')).toBe(true);
     await manager.unblock('203.0.113.1');
     await run();
@@ -132,7 +132,7 @@ describe('trainer enforcement with real WASM receipts and CSV blocks', () => {
         status: 404, ...(i % 2 ? { timestamp: 'invalid' } : {}) })).join('\n'));
     await run();
     await run();
-    expect(await require('../lib/blacklistManager').isBlocked('203.0.113.1')).toBe(false);
+    expect(await require('../lib/blocklistManager').isBlocked('203.0.113.1')).toBe(false);
   });
 
   test('CLI completes successfully when there are no logs', async () => {

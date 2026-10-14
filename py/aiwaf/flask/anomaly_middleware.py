@@ -13,7 +13,7 @@ from threading import RLock
 from datetime import datetime, timezone
 from flask import request, jsonify, g, current_app
 from .utils import get_ip, is_exempt, is_path_exempt
-from .blacklist_manager import BlacklistManager
+from .blocklist_manager import BlocklistManager
 from .exemption_decorators import should_apply_middleware
 from aiwaf.core import rust_backend
 from aiwaf.core.anomaly import evaluate_anomaly as core_evaluate_anomaly
@@ -357,7 +357,7 @@ class AIAnomalyMiddleware:
         ip = get_ip()
         
         # Check if IP is already blocked
-        if BlacklistManager.is_blocked(ip):
+        if BlocklistManager.is_blocked(ip):
             return jsonify({"error": "blocked"}), 403
             
         return None
@@ -417,9 +417,9 @@ class AIAnomalyMiddleware:
                 self.logger.error(f"Error learning keywords: {e}")
 
         if outcome.block and outcome.reason:
-            BlacklistManager.block(ip, outcome.reason)
+            BlocklistManager.block(ip, outcome.reason)
             self.logger.warning(f"Blocked IP {ip}: {outcome.reason}")
-            if BlacklistManager.is_blocked(ip):
+            if BlocklistManager.is_blocked(ip):
                 return jsonify({"error": "blocked"}), 403
 
         self._persist_training_log(ip, response, resp_time)
@@ -472,3 +472,7 @@ class AIAnomalyMiddleware:
             'malicious_keywords': len(self.malicious_keywords),
             'window_seconds': self.window_seconds
         }
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager

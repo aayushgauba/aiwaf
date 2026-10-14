@@ -9,9 +9,9 @@ function print(obj) {
   process.stdout.write(`${JSON.stringify(obj, null, 2)}\n`);
 }
 
-async function clearBlacklist() {
-  const blacklistManager = require('../lib/blacklistManager');
-  const deleted = await blacklistManager.clear();
+async function clearBlocklist() {
+  const blocklistManager = require('../lib/blocklistManager');
+  const deleted = await blocklistManager.clear();
   print({ ok: true, cleared: deleted });
 }
 
@@ -51,13 +51,13 @@ function parseDuration(value) {
 }
 
 async function collectOperationalState() {
-  const blacklistManager = require('../lib/blacklistManager');
+  const blocklistManager = require('../lib/blocklistManager');
   const exemptionStore = require('../lib/exemptionStore');
   const geoStore = require('../lib/geoStore');
   const dynamicKeywordStore = require('../lib/dynamicKeywordStore');
   const modelStore = require('../lib/modelStore');
-  const [blacklist, ipExemptions, pathExemptions, geo, dynamicKeywords, model] = await Promise.all([
-    blacklistManager.exportRecords(),
+  const [blocklist, ipExemptions, pathExemptions, geo, dynamicKeywords, model] = await Promise.all([
+    blocklistManager.exportRecords(),
     exemptionStore.listIps(),
     exemptionStore.listPaths(),
     geoStore.listBlockedCountries(),
@@ -67,7 +67,7 @@ async function collectOperationalState() {
   return {
     schema_version: '1.0',
     exported_at: new Date().toISOString(),
-    blacklist,
+    blocklist,
     ip_exemptions: ipExemptions,
     path_exemptions: pathExemptions,
     geo_blocked_countries: geo,
@@ -79,7 +79,7 @@ async function collectOperationalState() {
 async function exportOperationalState(filePath = 'aiwaf-export.json') {
   const state = await collectOperationalState();
   return print({ ok: true, output: writeJsonFile(filePath, state), counts: {
-    blacklist: state.blacklist.length,
+    blocklist: state.blocklist.length,
     ip_exemptions: state.ip_exemptions.length,
     path_exemptions: state.path_exemptions.length,
     geo: state.geo_blocked_countries.length,
@@ -90,12 +90,12 @@ async function exportOperationalState(filePath = 'aiwaf-export.json') {
 async function importOperationalState(filePath) {
   if (!filePath) throw new Error('Import file is required');
   const state = readJsonFile(filePath);
-  const blacklistManager = require('../lib/blacklistManager');
+  const blocklistManager = require('../lib/blocklistManager');
   const exemptionStore = require('../lib/exemptionStore');
   const geoStore = require('../lib/geoStore');
   const dynamicKeywordStore = require('../lib/dynamicKeywordStore');
   const modelStore = require('../lib/modelStore');
-  const imported = { blacklist: await blacklistManager.importRecords(state.blacklist || []) };
+  const imported = { blocklist: await blocklistManager.importRecords(state.blocklist ?? state.blacklist ?? []) };
   for (const row of state.ip_exemptions || []) await exemptionStore.addIp(row.ip_address || row.ip, row.reason);
   for (const row of state.path_exemptions || []) await exemptionStore.addPath(row.path_prefix || row.path, row.reason);
   for (const row of state.geo_blocked_countries || []) await geoStore.addBlockedCountry(row.country_code || row.country, row.reason);
@@ -109,20 +109,20 @@ async function importOperationalState(filePath) {
 }
 
 async function operationalStatus() {
-  const blacklistManager = require('../lib/blacklistManager');
+  const blocklistManager = require('../lib/blocklistManager');
   const exemptionStore = require('../lib/exemptionStore');
   const geoStore = require('../lib/geoStore');
   const dynamicKeywordStore = require('../lib/dynamicKeywordStore');
   const requestLogStore = require('../lib/requestLogStore');
   const modelStore = require('../lib/modelStore');
-  const [blacklist, ips, paths, geo, keywords, logs, model] = await Promise.all([
-    blacklistManager.getStatistics(), exemptionStore.listIps(), exemptionStore.listPaths(),
+  const [blocklist, ips, paths, geo, keywords, logs, model] = await Promise.all([
+    blocklistManager.getStatistics(), exemptionStore.listIps(), exemptionStore.listPaths(),
     geoStore.listBlockedCountries(), dynamicKeywordStore.list(100000), requestLogStore.recent(1),
     modelStore.load(process.env)
   ]);
   return print({
     status: 'enabled',
-    blacklist,
+    blocklist,
     exemptions: { ips: ips.length, paths: paths.length },
     geo_blocked_countries: geo.length,
     dynamic_keywords: keywords.length,
@@ -133,9 +133,9 @@ async function operationalStatus() {
 }
 
 async function operationalStats(limit = 5000) {
-  const blacklistManager = require('../lib/blacklistManager');
+  const blocklistManager = require('../lib/blocklistManager');
   const requestLogStore = require('../lib/requestLogStore');
-  const [blacklist, logs] = await Promise.all([blacklistManager.getStatistics(), requestLogStore.recent(limit)]);
+  const [blocklist, logs] = await Promise.all([blocklistManager.getStatistics(), requestLogStore.recent(limit)]);
   const statuses = {};
   const paths = {};
   let blocked = 0;
@@ -145,7 +145,7 @@ async function operationalStats(limit = 5000) {
     if (row.blocked === true || row.blocked === 1 || String(row.blocked).toLowerCase() === 'true') blocked += 1;
   });
   return print({
-    blacklist,
+    blocklist,
     requests: { total: logs.length, blocked, statuses },
     top_paths: Object.entries(paths).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([requestPath, count]) => ({ path: requestPath, count }))
   });
@@ -172,10 +172,10 @@ function parseManifestArgs(args = []) {
 }
 
 async function diagnoseIp(ip) {
-  const blacklistManager = require('../lib/blacklistManager');
+  const blocklistManager = require('../lib/blocklistManager');
   const exemptionStore = require('../lib/exemptionStore');
-  const blocked = await blacklistManager.isBlocked(ip);
-  const blockInfo = await blacklistManager.getBlockInfo(ip);
+  const blocked = await blocklistManager.isBlocked(ip);
+  const blockInfo = await blocklistManager.getBlockInfo(ip);
   const exempt = await exemptionStore.isIpExempt(ip);
   print({ ip, blocked, exempt, block_info: blockInfo });
 }
@@ -231,25 +231,25 @@ function runPathShell() {
 }
 
 async function runReset(args) {
-  const flags = { blacklist: false, keywords: false, exemptions: false, confirm: false };
+  const flags = { blocklist: false, keywords: false, exemptions: false, confirm: false };
   for (const arg of args) {
-    if (arg === '--blacklist') flags.blacklist = true;
+    if (arg === '--blocklist') flags.blocklist = true;
     if (arg === '--keywords') flags.keywords = true;
     if (arg === '--exemptions') flags.exemptions = true;
-    if (arg === '--all') { flags.blacklist = true; flags.keywords = true; flags.exemptions = true; }
+    if (arg === '--all') { flags.blocklist = true; flags.keywords = true; flags.exemptions = true; }
     if (arg === '--confirm') flags.confirm = true;
   }
-  if (!flags.blacklist && !flags.keywords && !flags.exemptions) {
-    return print({ error: 'Specify what to reset: --blacklist, --keywords, --exemptions, or --all' });
+  if (!flags.blocklist && !flags.keywords && !flags.exemptions) {
+    return print({ error: 'Specify what to reset: --blocklist, --keywords, --exemptions, or --all' });
   }
   if (!flags.confirm) {
     return print({ error: 'Must pass --confirm to execute reset' });
   }
 
   const results = {};
-  if (flags.blacklist) {
-    const blacklistManager = require('../lib/blacklistManager');
-    results.blacklist = await blacklistManager.clear();
+  if (flags.blocklist) {
+    const blocklistManager = require('../lib/blocklistManager');
+    results.blocklist = await blocklistManager.clear();
   }
   if (flags.keywords) {
     const dynamicKeywordStore = require('../lib/dynamicKeywordStore');
@@ -263,35 +263,39 @@ async function runReset(args) {
 }
 
 async function main() {
-  const [, , cmd, subcmd, ...args] = process.argv;
+  const argv = [...process.argv];
+  for (const index of [2, 3]) {
+    argv[index] = { blacklist: 'blocklist', whitelist: 'allowlist' }[argv[index]] || argv[index];
+  }
+  const [, , cmd, subcmd, ...args] = argv;
 
   if (!cmd || ['help', '--help', '-h'].includes(cmd)) {
     print({
       usage: 'aiwaf <command> [subcommand] [args]',
       commands: [
-        'list blacklist|exemptions|geo|request-logs',
+        'list blocklist|exemptions|geo|request-logs',
         'list dynamic-keywords',
         'list model-info',
         'list recent-blocks [hours]',
         'list top-reasons [limit]',
-        'add blacklist <ip> [reason] [--duration 24h|--permanent]',
+        'add blocklist <ip> [reason] [--duration 24h|--permanent]',
         'add ip-exemption <ip> [reason]',
         'add path-exemption <pathPrefix> [reason]',
         'add dynamic-keyword <keyword> [count]',
-        'remove blacklist <ip>',
+        'remove blocklist <ip>',
         'remove ip-exemption <ip>',
         'remove path-exemption <pathPrefix>',
         'remove dynamic-keyword <keyword>',
         'geo block <CC> [reason]',
         'geo unblock <CC>',
         'geo summary',
-        'clear blacklist|request-logs',
+        'clear blocklist|request-logs',
         'clear dynamic-keywords',
         'status',
         'stats [request-limit]',
         'logs analyze [limit]',
-        'blacklist migrate [--duration 24h]',
-        'blacklist cleanup',
+        'blocklist migrate [--duration 24h]',
+        'blocklist cleanup',
         'export [output.json]',
         'import <input.json>',
         'model info|export|import|clear [file]',
@@ -299,7 +303,7 @@ async function main() {
         'manifest --framework <name> --routes <routes.json> [--output .aiwaf/paths.json]',
         'whois <domain|ip>',
         'diagnose <ip>',
-        'reset [--blacklist] [--keywords] [--exemptions] [--all] --confirm',
+        'reset [--blocklist] [--keywords] [--exemptions] [--all] --confirm',
         'pathshell'
       ]
     });
@@ -318,16 +322,16 @@ async function main() {
     return operationalStats(Number(args[0] || 5000));
   }
 
-  if (cmd === 'blacklist' && subcmd === 'cleanup') {
-    const blacklistManager = require('../lib/blacklistManager');
-    return print({ ok: true, cleaned: await blacklistManager.cleanupExpired() });
+  if (cmd === 'blocklist' && subcmd === 'cleanup') {
+    const blocklistManager = require('../lib/blocklistManager');
+    return print({ ok: true, cleaned: await blocklistManager.cleanupExpired() });
   }
 
-  if (cmd === 'blacklist' && subcmd === 'migrate') {
+  if (cmd === 'blocklist' && subcmd === 'migrate') {
     const durationIndex = args.indexOf('--duration');
     const duration = durationIndex >= 0 ? parseDuration(args[durationIndex + 1]) : null;
-    const blacklistManager = require('../lib/blacklistManager');
-    return print({ ok: true, ...(await blacklistManager.migrateLegacy({ duration })) });
+    const blocklistManager = require('../lib/blocklistManager');
+    return print({ ok: true, ...(await blocklistManager.migrateLegacy({ duration })) });
   }
 
   if (cmd === 'model') {
@@ -362,9 +366,9 @@ async function main() {
     return print({ ok: true, output: options.output, framework: options.framework, routes: Object.keys(manifest.routes || {}).length });
   }
 
-  if (cmd === 'list' && subcmd === 'blacklist') {
-    const blacklistManager = require('../lib/blacklistManager');
-    const rows = await blacklistManager.getBlockedIPs();
+  if (cmd === 'list' && subcmd === 'blocklist') {
+    const blocklistManager = require('../lib/blocklistManager');
+    const rows = await blocklistManager.getBlockedIPs();
     return print(rows);
   }
 
@@ -403,13 +407,13 @@ async function main() {
   }
 
   if (cmd === 'list' && subcmd === 'recent-blocks') {
-    const blacklistManager = require('../lib/blacklistManager');
-    return print(await blacklistManager.getRecentBlocks(Number(args[0] || 24)));
+    const blocklistManager = require('../lib/blocklistManager');
+    return print(await blocklistManager.getRecentBlocks(Number(args[0] || 24)));
   }
 
   if (cmd === 'list' && subcmd === 'top-reasons') {
-    const blacklistManager = require('../lib/blacklistManager');
-    return print(await blacklistManager.getTopBlockedReasons(Number(args[0] || 10)));
+    const blocklistManager = require('../lib/blocklistManager');
+    return print(await blocklistManager.getTopBlockedReasons(Number(args[0] || 10)));
   }
 
   if (cmd === 'add' && subcmd === 'ip-exemption') {
@@ -419,15 +423,15 @@ async function main() {
     return print({ ok: true, ip });
   }
 
-  if (cmd === 'add' && subcmd === 'blacklist') {
-    const blacklistManager = require('../lib/blacklistManager');
+  if (cmd === 'add' && subcmd === 'blocklist') {
+    const blocklistManager = require('../lib/blocklistManager');
     const [ip, ...values] = args;
     const durationIndex = values.indexOf('--duration');
     const permanent = values.includes('--permanent');
     const duration = durationIndex >= 0 ? parseDuration(values[durationIndex + 1]) : undefined;
     const reasonParts = values.filter((value, index) => value !== '--permanent'
       && value !== '--duration' && index !== durationIndex + 1);
-    await blacklistManager.block(ip, reasonParts.join(' ') || 'manual', { duration, permanent });
+    await blocklistManager.block(ip, reasonParts.join(' ') || 'manual', { duration, permanent });
     return print({ ok: true, ip });
   }
 
@@ -445,10 +449,10 @@ async function main() {
     return print({ ok: true, keyword });
   }
 
-  if (cmd === 'remove' && subcmd === 'blacklist') {
-    const blacklistManager = require('../lib/blacklistManager');
+  if (cmd === 'remove' && subcmd === 'blocklist') {
+    const blocklistManager = require('../lib/blocklistManager');
     const [ip] = args;
-    const deleted = await blacklistManager.unblock(ip);
+    const deleted = await blocklistManager.unblock(ip);
     return print({ ok: true, deleted });
   }
 
@@ -493,8 +497,8 @@ async function main() {
     return print(rows);
   }
 
-  if (cmd === 'clear' && subcmd === 'blacklist') {
-    return clearBlacklist();
+  if (cmd === 'clear' && subcmd === 'blocklist') {
+    return clearBlocklist();
   }
 
   if (cmd === 'clear' && subcmd === 'request-logs') {

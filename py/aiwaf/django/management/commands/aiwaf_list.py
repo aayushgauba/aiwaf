@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
-from aiwaf.django.storage import get_blacklist_store, get_exemption_store, get_keyword_store
+from aiwaf.django.storage import get_blocklist_store, get_exemption_store, get_keyword_store
 from datetime import timedelta
 import json
 
@@ -30,8 +30,8 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         grp = parser.add_mutually_exclusive_group()
-        grp.add_argument("--ips-blocked", action="store_true", help="List blocked IPs (blacklist).")
-        grp.add_argument("--ips-exempted", action="store_true", help="List exempted IPs (whitelist).")
+        grp.add_argument("--ips-blocked", action="store_true", help="List blocked IPs (blocklist).")
+        grp.add_argument("--ips-exempted", action="store_true", help="List exempted IPs (allowlist).")
         grp.add_argument("--keywords-monitored", action="store_true", help="List monitored dynamic keywords.")
         grp.add_argument("--all", action="store_true", help="List everything.")
 
@@ -49,7 +49,7 @@ class Command(BaseCommand):
         payload = {}
 
         if options["all"] or options["ips_blocked"]:
-            data = get_blacklist_store().get_all()  # includes extended_request_info when available
+            data = get_blocklist_store().get_all()  # includes extended_request_info when available
             data = _filter_since(data, options.get("since"))
             data = _sort(data, options["order"])[: options["limit"]]
             payload["ips_blocked"] = data
@@ -102,3 +102,7 @@ class Command(BaseCommand):
             print("\n== Keywords monitored ==")
             rows = payload["keywords_monitored"]
             _print_table([[r["keyword"]] for r in rows], ["keyword"])
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_store = get_blocklist_store

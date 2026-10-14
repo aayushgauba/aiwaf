@@ -10,7 +10,7 @@ from aiwaf.core.constants import STATUS_IDX
 from aiwaf.core.defaults import DEFAULT_EXEMPT_PATHS_FLASK
 from aiwaf.core.exemptions import is_path_exempt
 from aiwaf.core.native_runtime import native_override, enabled
-from aiwaf.core.runtime_storage import get_keyword_store, get_blacklist_store, get_exemption_store
+from aiwaf.core.runtime_storage import get_keyword_store, get_blocklist_store, get_exemption_store
 from aiwaf.core.training_pipeline import parse_training_logs, iter_csv_training_batches, aggregate_training_records, learn_training_keywords, anomaly_statistics, python_training_features
 import csv
 from aiwaf.core.training_features import extract_raw_features, extract_native_batch
@@ -99,11 +99,11 @@ def train_from_logs(app, *, log_dir=None, disable_ai=False, force_ai=False,
         evidence = current_evidence()
         fresh = evidence.fresh(parsed)
         fresh_errors, fresh_exempt_errors, fresh_times = aggregate_training_records(fresh, exempt)
-        blacklist, exemptions, keywords = get_blacklist_store(), get_exemption_store(), get_keyword_store()
+        blocklist, exemptions, keywords = get_blocklist_store(), get_exemption_store(), get_keyword_store()
         def block(ip, reason):
             if exemptions.is_exempted(ip):
                 return False
-            return evidence.block(ip, lambda: blacklist.block_ip(ip, reason))
+            return evidence.block(ip, lambda: blocklist.block_ip(ip, reason))
         for ip, count in fresh_errors.items():
             exempt_count = fresh_exempt_errors.get(ip, 0)
             if count >= 6 and count > exempt_count:
@@ -167,3 +167,7 @@ def train_from_logs(app, *, log_dir=None, disable_ai=False, force_ai=False,
             keywords.update_keywords(added=[(key, count) for key, count, _ in learned], removed=removed)
             result['learned_keywords'] = [key for key, _, _ in learned]
         return result
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_store = get_blocklist_store

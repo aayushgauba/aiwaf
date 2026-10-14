@@ -1,6 +1,6 @@
 from flask import Flask
 
-from aiwaf.flask import blacklist_manager as bm
+from aiwaf.flask import blocklist_manager as bm
 
 
 def test_block_without_request_context_does_not_attach_info(monkeypatch):
@@ -11,8 +11,8 @@ def test_block_without_request_context_does_not_attach_info(monkeypatch):
         captured["reason"] = reason
         captured["extended_request_info"] = extended_request_info
 
-    monkeypatch.setattr(bm, "add_ip_blacklist", fake_add)
-    bm.BlacklistManager.block("10.0.0.1", "test reason")
+    monkeypatch.setattr(bm, "add_ip_blocklist", fake_add)
+    bm.BlocklistManager.block("10.0.0.1", "test reason")
 
     assert captured["ip"] == "10.0.0.1"
     assert captured["reason"] == "test reason"
@@ -31,7 +31,7 @@ def test_block_with_request_context_attaches_extended_info(monkeypatch):
     def fake_add(ip, reason=None, extended_request_info=None):
         captured["extended_request_info"] = extended_request_info
 
-    monkeypatch.setattr(bm, "add_ip_blacklist", fake_add)
+    monkeypatch.setattr(bm, "add_ip_blocklist", fake_add)
 
     with app.test_request_context(
         "/login?x=1",
@@ -42,7 +42,7 @@ def test_block_with_request_context_attaches_extended_info(monkeypatch):
             "Authorization": "Bearer secret",
         },
     ):
-        bm.BlacklistManager.block("10.0.0.2", "bad")
+        bm.BlocklistManager.block("10.0.0.2", "bad")
 
     info = captured["extended_request_info"]
     assert info is not None
@@ -62,10 +62,10 @@ def test_block_with_request_context_disabled_capture(monkeypatch):
     def fake_add(ip, reason=None, extended_request_info=None):
         captured["extended_request_info"] = extended_request_info
 
-    monkeypatch.setattr(bm, "add_ip_blacklist", fake_add)
+    monkeypatch.setattr(bm, "add_ip_blocklist", fake_add)
 
     with app.test_request_context("/health", method="GET"):
-        bm.BlacklistManager.block("10.0.0.3", "blocked")
+        bm.BlocklistManager.block("10.0.0.3", "blocked")
 
     assert captured["extended_request_info"] is None
 
@@ -82,7 +82,7 @@ def test_block_with_request_context_size_limit_truncates(monkeypatch):
     def fake_add(ip, reason=None, extended_request_info=None):
         captured["extended_request_info"] = extended_request_info
 
-    monkeypatch.setattr(bm, "add_ip_blacklist", fake_add)
+    monkeypatch.setattr(bm, "add_ip_blocklist", fake_add)
 
     with app.test_request_context(
         "/very/long/path/for/testing/size/limit",
@@ -94,7 +94,7 @@ def test_block_with_request_context_size_limit_truncates(monkeypatch):
             "Authorization": "Bearer secret",
         },
     ):
-        bm.BlacklistManager.block("10.0.0.4", "blocked")
+        bm.BlocklistManager.block("10.0.0.4", "blocked")
 
     info = captured["extended_request_info"]
     assert info is not None

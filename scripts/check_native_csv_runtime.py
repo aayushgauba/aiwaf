@@ -6,7 +6,7 @@ import tempfile
 
 REQUIRED = (
     'NativeCSVPipeline', 'NativePipelineRequest',
-    'csv_read', 'csv_write', 'csv_kv_get', 'csv_kv_update', 'csv_blacklist_check',
+    'csv_read', 'csv_write', 'csv_kv_get', 'csv_kv_update', 'csv_blocklist_check',
     'csv_runtime_block', 'csv_runtime_list_update', 'csv_policy_list_update',
     'csv_keyword_apply', 'csv_log_append', 'csv_request_exempt',
     'policy_ip_exempt', 'policy_path_exempt', 'policy_route_plan',

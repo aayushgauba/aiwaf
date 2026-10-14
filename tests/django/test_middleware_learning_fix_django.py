@@ -42,7 +42,7 @@ class MiddlewareLearningFixTestCase(AIWAFMiddlewareTestCase):
                  patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
                  patch("aiwaf.django.middleware.is_exempt", return_value=False), \
                  patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-                 patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=False), \
+                 patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=False), \
                  patch("aiwaf.django.middleware.path_exists_in_django", return_value=False), \
                  patch.object(IPAndKeywordBlockMiddleware, "_is_malicious_context", return_value=True):
                 middleware(request)
@@ -69,7 +69,7 @@ class MiddlewareLearningFixTestCase(AIWAFMiddlewareTestCase):
                  patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
                  patch("aiwaf.django.middleware.is_exempt", return_value=False), \
                  patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-                 patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=False), \
+                 patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=False), \
                  patch("aiwaf.django.middleware.path_exists_in_django", return_value=True), \
                  patch.object(IPAndKeywordBlockMiddleware, "_is_malicious_context", return_value=True):
                 middleware(request)

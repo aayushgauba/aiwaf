@@ -12,7 +12,7 @@ from aiwaf.core.utils import (
     ip_in_allowlist as core_ip_in_allowlist,
 )
 from aiwaf.core.request_context import resolve_ip_from_fastapi_request
-from aiwaf.core.request_context import extract_blacklist_extended_info_from_fastapi_request
+from aiwaf.core.request_context import extract_blocklist_extended_info_from_fastapi_request
 
 logger = logging.getLogger(__name__)
 
@@ -136,9 +136,9 @@ def ip_in_allowlist(ip: str, allowlist) -> bool:
     return core_ip_in_allowlist(ip, allowlist)
 
 
-def get_blacklist_extended_info(request: Request):
+def get_blocklist_extended_info(request: Request):
     """
-    Build optional extended-request-info payload for blacklist entries.
+    Build optional extended-request-info payload for blocklist entries.
     """
     app = getattr(request, "app", None)
     state = getattr(app, "state", None)
@@ -155,15 +155,15 @@ def get_blacklist_extended_info(request: Request):
         return default
 
     enabled = bool(
-        _cfg("AIWAF_BLACKLIST_STORE_EXTENDED_INFO", False)
+        _cfg("AIWAF_BLOCKLIST_STORE_EXTENDED_INFO", False)
         or _cfg("AIWAF_CAPTURE_EXTENDED_REQUEST_INFO", False)
     )
-    return extract_blacklist_extended_info_from_fastapi_request(
+    return extract_blocklist_extended_info_from_fastapi_request(
         request,
         enabled=enabled,
-        max_headers=int(_cfg("AIWAF_BLACKLIST_MAX_HEADERS", 50)),
-        max_value_len=int(_cfg("AIWAF_BLACKLIST_MAX_HEADER_VALUE_LENGTH", 512)),
-        redact_headers=_cfg("AIWAF_BLACKLIST_REDACT_HEADERS", ["Authorization", "Cookie", "Set-Cookie"]),
+        max_headers=int(_cfg("AIWAF_BLOCKLIST_MAX_HEADERS", 50)),
+        max_value_len=int(_cfg("AIWAF_BLOCKLIST_MAX_HEADER_VALUE_LENGTH", 512)),
+        redact_headers=_cfg("AIWAF_BLOCKLIST_REDACT_HEADERS", ["Authorization", "Cookie", "Set-Cookie"]),
     )
 
 
@@ -307,3 +307,8 @@ class RateLimiter:
             # Remove empty lists
             if not requests:
                 del self._requests[ip]
+
+
+# Compatibility aliases for callers using the previous terminology.
+extract_blacklist_extended_info_from_fastapi_request = extract_blocklist_extended_info_from_fastapi_request
+get_blacklist_extended_info = get_blocklist_extended_info

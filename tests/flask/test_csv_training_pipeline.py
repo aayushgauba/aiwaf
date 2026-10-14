@@ -25,11 +25,11 @@ def test_csv_access_log_training_parity(tmp_path, monkeypatch):
                           AIWAF_RUST_CSV=mode, AIWAF_USE_RUST=True, AIWAF_EXEMPT_PATHS=[])
         with app.app_context():
             trainer.FlaskAITrainer(app).train(disable_ai=True)
-            blacklist = storage._read_csv_blacklist()
+            blocklist = storage._read_csv_blocklist()
             keywords = storage._read_csv_keywords()
-            assert len(blacklist) == 3
+            assert len(blocklist) == 3
             assert 'customplugin' in keywords
-            results.append((set(blacklist), keywords))
+            results.append((set(blocklist), keywords))
     assert results[0] == results[1]
 
 
@@ -65,7 +65,7 @@ def test_rust_model_list_predictions_block_without_dataframe(tmp_path, monkeypat
     with app.app_context():
         instance.train(disable_ai=False)
         assert calls == ['fit']
-        assert '203.0.113.1' in storage._read_csv_blacklist()
+        assert '203.0.113.1' in storage._read_csv_blocklist()
         assert (tmp_path / 'model.json').exists()
 
 

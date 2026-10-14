@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-describe('blacklist expiry concurrency', () => {
+describe('blocklist expiry concurrency', () => {
   let dir;
   beforeEach(() => {
     jest.resetModules();
@@ -22,7 +22,7 @@ describe('blacklist expiry concurrency', () => {
   });
 
   test('expired request snapshot cannot erase a concurrent refresh', async () => {
-    const manager = require('../lib/blacklistManager');
+    const manager = require('../lib/blocklistManager');
     const csv = require('../lib/csvStore');
     await manager.block('203.0.113.9', 'expired', { now: 1, duration: 1, checkExemptions: false });
     const original = fs.readFileSync;
@@ -42,7 +42,7 @@ describe('blacklist expiry concurrency', () => {
   });
 
   test('cleanup waits for a writer and checks its latest expiry', async () => {
-    const manager = require('../lib/blacklistManager');
+    const manager = require('../lib/blocklistManager');
     const csv = require('../lib/csvStore');
     const file = process.env.AIWAF_BLOCKED_IPS_CSV_PATH;
     await manager.block('203.0.113.9', 'expired', { now: 1, duration: 1, checkExemptions: false });
@@ -76,7 +76,7 @@ describe('blacklist expiry concurrency', () => {
     db.schema = knex.schema;
     db.fn = knex.fn;
     jest.doMock('../utils/db', () => db);
-    const manager = require('../lib/blacklistManager');
+    const manager = require('../lib/blocklistManager');
     try {
       await manager.block('203.0.113.9', 'expired', { now: 1, duration: 1, checkExemptions: false });
       refresh = true;

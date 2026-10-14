@@ -1,6 +1,6 @@
 process.env.NODE_ENV = 'test';
 
-describe('blacklist schema migration', () => {
+describe('blocklist schema migration', () => {
   test('upgrades a legacy SQLite table without losing existing blocks', async () => {
     jest.resetModules();
     jest.dontMock('../utils/db');
@@ -15,7 +15,7 @@ describe('blacklist schema migration', () => {
       ip_address: '203.0.113.70', reason: 'legacy scanner', blocked_at: new Date().toISOString()
     });
 
-    const manager = require('../lib/blacklistManager');
+    const manager = require('../lib/blocklistManager');
     await expect(manager.initialize()).resolves.toBe(true);
     expect(await db.schema.hasColumn('blocked_ips', 'reputation_reason')).toBe(true);
     expect(await db.schema.hasColumn('blocked_ips', 'extended_request_info')).toBe(true);

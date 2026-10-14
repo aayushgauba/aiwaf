@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from aiwaf import __version__ as AIWAF_VERSION
 from .runtime_config import AIWAFConfig, initialize_config
 from .runtime_storage import initialize_storage, get_exemption_store, get_geo_block_store
-from .runtime_blacklist import BlacklistManager
+from .runtime_blocklist import BlocklistManager
 from .middleware_plan import plan_enabled_middlewares, should_enable_geo
 from .route_capabilities import detect_uuid_routes_in_fastapi_app
 from .path_manifest import get_effective_path_rules
@@ -35,7 +35,7 @@ class AIWAF:
     
     This class provides a comprehensive security middleware suite that includes:
     - Header validation to detect bots and malicious requests
-    - IP blacklisting and whitelisting
+    - IP blocklisting and allowlisting
     - Rate limiting
     - Request monitoring and logging
     
@@ -228,7 +228,7 @@ class AIWAF:
                 window_seconds=rate_cfg.get("window_seconds", 10),
                 flood_threshold=rate_cfg.get("flood_threshold", 40),
                 key_mode=rate_cfg.get("key_mode", "ip_path"),
-                soft_block_blacklist=rate_cfg.get("soft_block_blacklist", False),
+                soft_block_blocklist=rate_cfg.get("soft_block_blocklist", False),
                 path_rules=path_rules,
                 cache_backend=cache_backend,
             )
@@ -271,8 +271,8 @@ class AIWAF:
             logger.info("AIWAF startup tasks initiated")
             
             # Cleanup expired blocks
-            if self.config.get('blacklist.auto_unblock_enabled', True):
-                cleaned = BlacklistManager.cleanup_expired()
+            if self.config.get('blocklist.auto_unblock_enabled', True):
+                cleaned = BlocklistManager.cleanup_expired()
                 if cleaned > 0:
                     logger.info(f"Cleaned up {cleaned} expired blocks on startup")
             
@@ -309,7 +309,7 @@ class AIWAF:
             ip: IP address to exempt
             reason: Reason for exemption
         """
-        BlacklistManager.add_to_whitelist(ip, reason)
+        BlocklistManager.add_to_allowlist(ip, reason)
         logger.info(f"IP {ip} added to exemption list: {reason}")
     
     def remove_exemption(self, ip: str) -> bool:
@@ -322,7 +322,7 @@ class AIWAF:
         Returns:
             True if removed successfully
         """
-        result = BlacklistManager.remove_from_whitelist(ip)
+        result = BlocklistManager.remove_from_allowlist(ip)
         if result:
             logger.info(f"IP {ip} removed from exemption list")
         return result
@@ -339,7 +339,7 @@ class AIWAF:
         Returns:
             True if blocked successfully
         """
-        return BlacklistManager.block(ip, reason, duration)
+        return BlocklistManager.block(ip, reason, duration)
     
     def unblock_ip(self, ip: str) -> bool:
         """
@@ -351,7 +351,7 @@ class AIWAF:
         Returns:
             True if unblocked successfully
         """
-        return BlacklistManager.unblock(ip)
+        return BlocklistManager.unblock(ip)
     
     def is_blocked(self, ip: str) -> bool:
         """
@@ -363,7 +363,7 @@ class AIWAF:
         Returns:
             True if blocked
         """
-        return BlacklistManager.is_blocked(ip)
+        return BlocklistManager.is_blocked(ip)
     
     def is_exempted(self, ip: str) -> bool:
         """
@@ -375,7 +375,7 @@ class AIWAF:
         Returns:
             True if exempted
         """
-        return BlacklistManager.is_whitelisted(ip)
+        return BlocklistManager.is_allowlisted(ip)
     
     def get_statistics(self) -> Dict[str, Any]:
         """
@@ -388,12 +388,12 @@ class AIWAF:
             'aiwaf': {
                 'version': AIWAF_VERSION,
                 'enabled_features': [
-                    feature for feature in ['header_validation', 'rate_limiting', 'blacklist']
+                    feature for feature in ['header_validation', 'rate_limiting', 'blocklist']
                     if self.config.is_enabled(feature)
                 ]
             },
-            'blacklist': BlacklistManager.get_statistics(),
-            'whitelist': BlacklistManager.get_whitelist(),
+            'blocklist': BlocklistManager.get_statistics(),
+            'allowlist': BlocklistManager.get_allowlist(),
             'configuration': {
                 'storage_backend': self.config.get('storage.backend'),
                 'header_validation_enabled': self.config.is_enabled('header_validation'),
@@ -418,8 +418,8 @@ class AIWAF:
         Returns:
             Recent activity summary
         """
-        recent_blocks = BlacklistManager.get_recent_blocks(hours)
-        top_reasons = BlacklistManager.get_top_blocked_reasons()
+        recent_blocks = BlocklistManager.get_recent_blocks(hours)
+        top_reasons = BlocklistManager.get_top_blocked_reasons()
         
         return {
             'recent_blocks': recent_blocks,
@@ -480,7 +480,7 @@ class AIWAF:
     def cleanup(self):
         """Perform cleanup tasks."""
         # Cleanup expired blocks
-        cleaned_blocks = BlacklistManager.cleanup_expired()
+        cleaned_blocks = BlocklistManager.cleanup_expired()
         
         # Cleanup rate limiter
         # (Rate limiter cleans itself automatically)
@@ -522,12 +522,12 @@ class AIWAF:
             health['errors'].append(f'Storage error: {str(e)}')
         
         try:
-            # Check blacklist
-            stats = BlacklistManager.get_statistics()
-            health['components']['blacklist'] = 'healthy'
+            # Check blocklist
+            stats = BlocklistManager.get_statistics()
+            health['components']['blocklist'] = 'healthy'
         except Exception as e:
-            health['components']['blacklist'] = 'error'
-            health['errors'].append(f'Blacklist error: {str(e)}')
+            health['components']['blocklist'] = 'error'
+            health['errors'].append(f'Blocklist error: {str(e)}')
         
         try:
             # Check exemption store
@@ -567,3 +567,7 @@ class AIWAF:
         ]
         
         return f"AIWAF(features={enabled_features}, storage={self.config.get('storage.backend')})"
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager

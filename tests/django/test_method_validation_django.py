@@ -58,7 +58,7 @@ class MethodValidationTestCase(AIWAFMiddlewareTestCase):
         Run HoneypotTimingMiddleware.process_request with patched dependencies.
 
         accepts: dict like {"GET": True, "POST": False, "PUT": False}
-        blocked: if True, BlacklistManager.is_blocked returns True so the middleware returns 405 JsonResponse.
+        blocked: if True, BlocklistManager.is_blocked returns True so the middleware returns 405 JsonResponse.
         """
         middleware = HoneypotTimingMiddleware(self.mock_get_response)
         if accepts is not None:
@@ -69,8 +69,8 @@ class MethodValidationTestCase(AIWAFMiddlewareTestCase):
         with patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block, \
-             patch("aiwaf.django.middleware.BlacklistManager.is_blocked", return_value=blocked):
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block, \
+             patch("aiwaf.django.middleware.BlocklistManager.is_blocked", return_value=blocked):
             response = middleware.process_request(request)
         return response, mock_block
     
@@ -128,7 +128,7 @@ class MethodValidationTestCase(AIWAFMiddlewareTestCase):
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
              patch("django.urls.resolve", side_effect=Exception("resolve failed")), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block:
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block:
             response = middleware.process_request(request)
         self.assertIsNone(response)
         mock_block.assert_not_called()
@@ -149,7 +149,7 @@ class MethodValidationTestCase(AIWAFMiddlewareTestCase):
         with patch("aiwaf.django.middleware.is_middleware_disabled", return_value=False), \
              patch("aiwaf.django.middleware.is_exempt", return_value=False), \
              patch("aiwaf.django.middleware.is_ip_exempted", return_value=False), \
-             patch("aiwaf.django.middleware.BlacklistManager.block") as mock_block:
+             patch("aiwaf.django.middleware.BlocklistManager.block") as mock_block:
             self.assertIsNone(middleware.process_request(head))
             self.assertIsNone(middleware.process_request(options))
         mock_block.assert_not_called()

@@ -2,7 +2,7 @@ from django.test import TestCase
 
 from aiwaf.django.models import (
     AIModelArtifact,
-    BlacklistEntry,
+    BlocklistEntry,
     ExemptPath,
     GeoBlockedCountry,
     IPExemption,
@@ -12,7 +12,7 @@ from aiwaf.django.models import (
 
 class TestModelStrings(TestCase):
     def test_all_model_string_representations(self):
-        blocked = BlacklistEntry.objects.create(ip_address="203.0.113.1", reason="test")
+        blocked = BlocklistEntry.objects.create(ip_address="203.0.113.1", reason="test")
         exempt = IPExemption.objects.create(ip_address="203.0.113.2", reason="test")
         path = ExemptPath.objects.create(path="/health")
         request = RequestLog.objects.create(

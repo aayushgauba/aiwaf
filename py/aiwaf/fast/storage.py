@@ -1,7 +1,7 @@
 """FastAPI compatibility exports for shared AIWAF runtime storage."""
 
 from aiwaf.core.runtime_storage import (
-    BlacklistStore,
+    BlocklistStore,
     CSVStorage,
     DBStorage,
     ExemptionStore,
@@ -10,7 +10,7 @@ from aiwaf.core.runtime_storage import (
     KeywordStore,
     MemoryStorage,
     StorageBackend,
-    get_blacklist_store,
+    get_blocklist_store,
     get_geo_block_store,
     get_exemption_store,
     get_keyword_store,
@@ -27,13 +27,18 @@ __all__ = [
     "PolicyCSVStorage",
     "DBStorage",
     "ExemptionStore",
-    "BlacklistStore",
+    "BlocklistStore",
     "KeywordStore",
     "GeoBlockStore",
     "initialize_storage",
     "get_storage",
     "get_exemption_store",
-    "get_blacklist_store",
+    "get_blocklist_store",
     "get_keyword_store",
     "get_geo_block_store",
 ]
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistStore = BlocklistStore
+get_blacklist_store = get_blocklist_store

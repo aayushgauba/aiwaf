@@ -71,15 +71,15 @@ class Command(BaseCommand):
         self.stdout.write(self.style.HTTP_INFO(" Testing Storage Functions"))
         
         try:
-            from aiwaf.django.storage import get_exemption_store, get_blacklist_store, get_keyword_store
+            from aiwaf.django.storage import get_exemption_store, get_blocklist_store, get_keyword_store
             
             # Test exemption store
             exemption_store = get_exemption_store()
             self.stdout.write(f"Exemption Store: {type(exemption_store).__name__}")
             
-            # Test blacklist store
-            blacklist_store = get_blacklist_store()
-            self.stdout.write(f"Blacklist Store: {type(blacklist_store).__name__}")
+            # Test blocklist store
+            blocklist_store = get_blocklist_store()
+            self.stdout.write(f"Blocklist Store: {type(blocklist_store).__name__}")
             
             # Test keyword store
             keyword_store = get_keyword_store()

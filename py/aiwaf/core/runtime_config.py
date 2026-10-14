@@ -73,7 +73,7 @@ class AIWAFConfig:
                 'window_seconds': 10,
                 'flood_threshold': 40,
                 'key_mode': 'ip_path',
-                'soft_block_blacklist': False,
+                'soft_block_blocklist': False,
                 # Cache backend for shared rate-limit buckets (FastAPI/Flask adapters).
                 # - memory: per-process (default)
                 # - redis: shared across workers (requires redis URL)
@@ -112,15 +112,15 @@ class AIWAFConfig:
                 'log_format': 'combined',
             },
             
-            # Blacklist management
-            'blacklist': {
+            # Blocklist management
+            'blocklist': {
                 'default_block_duration': 3600,  # 1 hour in seconds
                 'permanent_block_threshold': 5,   # Number of violations for permanent block
                 'auto_unblock_enabled': True,
                 'cleanup_interval': 3600         # Cleanup expired blocks every hour
             },
             
-            # Whitelist/exemption settings
+            # Allowlist/exemption settings
             'exemptions': {
                 'private_ips_exempted': True,
                 'localhost_exempted': True,
@@ -200,15 +200,15 @@ class AIWAFConfig:
             'AIWAF_RATE_MAX_REQUESTS': ('rate_limiting', 'max_requests', int),
             'AIWAF_RATE_WINDOW_SECONDS': ('rate_limiting', 'window_seconds', int),
             'AIWAF_RATE_KEY_MODE': ('rate_limiting', 'key_mode', str),
-            'AIWAF_RATE_SOFT_BLOCK_BLACKLIST': ('rate_limiting', 'soft_block_blacklist', bool),
+            'AIWAF_RATE_SOFT_BLOCK_BLOCKLIST': ('rate_limiting', 'soft_block_blocklist', bool),
             'AIWAF_RATE_CACHE_BACKEND': ('rate_limiting', 'cache_backend', str),
             'AIWAF_RATE_CACHE_KEY_PREFIX': ('rate_limiting', 'cache_key_prefix', str),
             'AIWAF_REDIS_URL': ('rate_limiting', 'redis_url', str),
             
-            # Blacklist
-            'AIWAF_BLACKLIST_DEFAULT_DURATION': ('blacklist', 'default_block_duration', int),
-            'AIWAF_BLACKLIST_PERMANENT_THRESHOLD': ('blacklist', 'permanent_block_threshold', int),
-            'AIWAF_BLACKLIST_AUTO_UNBLOCK': ('blacklist', 'auto_unblock_enabled', bool),
+            # Blocklist
+            'AIWAF_BLOCKLIST_DEFAULT_DURATION': ('blocklist', 'default_block_duration', int),
+            'AIWAF_BLOCKLIST_PERMANENT_THRESHOLD': ('blocklist', 'permanent_block_threshold', int),
+            'AIWAF_BLOCKLIST_AUTO_UNBLOCK': ('blocklist', 'auto_unblock_enabled', bool),
             
             # Security
             'AIWAF_SQL_INJECTION_MODE': ('ip_keyword_block', 'sql_injection_mode', str),
@@ -224,6 +224,8 @@ class AIWAFConfig:
         
         for env_var, config_path in env_mappings.items():
             value = os.getenv(env_var)
+            if value is None:
+                value = os.getenv(env_var.replace('BLOCKLIST', 'BLACKLIST').replace('ALLOWLIST', 'WHITELIST'))
             if value is not None:
                 # Parse value based on type
                 parsed_value = self._parse_env_value(value, config_path)
@@ -262,6 +264,10 @@ class AIWAFConfig:
     def _deep_merge(self, base: Dict[str, Any], update: Dict[str, Any]):
         """Deep merge two dictionaries."""
         for key, value in update.items():
+            original_key = key
+            key = key.replace('blacklist', 'blocklist').replace('whitelist', 'allowlist')
+            if key != original_key and key in update:
+                continue
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
                 self._deep_merge(base[key], value)
             else:
@@ -278,7 +284,7 @@ class AIWAFConfig:
         Returns:
             Configuration value
         """
-        keys = key.split('.')
+        keys = key.replace('blacklist', 'blocklist').replace('whitelist', 'allowlist').split('.')
         value = self._config
         
         for k in keys:
@@ -297,7 +303,7 @@ class AIWAFConfig:
             key: Configuration key in dot notation
             value: Value to set
         """
-        keys = key.split('.')
+        keys = key.replace('blacklist', 'blocklist').replace('whitelist', 'allowlist').split('.')
         config = self._config
         
         # Navigate to the parent dict
@@ -367,8 +373,8 @@ class AIWAFConfig:
             ('header_validation.quality_threshold', 0, 20),
             ('rate_limiting.max_requests', 1, 10000),
             ('rate_limiting.window_seconds', 1, 86400),
-            ('blacklist.default_block_duration', 60, 86400 * 7),
-            ('blacklist.permanent_block_threshold', 1, 100),
+            ('blocklist.default_block_duration', 60, 86400 * 7),
+            ('blocklist.permanent_block_threshold', 1, 100),
             ('security.max_header_length', 1024, 65536)
         ]
         

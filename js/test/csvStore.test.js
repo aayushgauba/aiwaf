@@ -64,24 +64,24 @@ describe('CSV fallback stores', () => {
     }
   });
 
-  it('blacklistManager falls back to CSV for block/list/unblock/clear', async () => {
-    const blacklistManager = require('../lib/blacklistManager');
+  it('blocklistManager falls back to CSV for block/list/unblock/clear', async () => {
+    const blocklistManager = require('../lib/blocklistManager');
 
-    await blacklistManager.block('203.0.113.10', 'test');
-    await blacklistManager.block('203.0.113.11', 'test2');
+    await blocklistManager.block('203.0.113.10', 'test');
+    await blocklistManager.block('203.0.113.11', 'test2');
 
-    expect(await blacklistManager.isBlocked('203.0.113.10')).toBe(true);
+    expect(await blocklistManager.isBlocked('203.0.113.10')).toBe(true);
 
-    const rows = await blacklistManager.getBlockedIPs();
+    const rows = await blocklistManager.getBlockedIPs();
     expect(rows.length).toBe(2);
 
-    const removed = await blacklistManager.unblock('203.0.113.10');
+    const removed = await blocklistManager.unblock('203.0.113.10');
     expect(removed).toBe(true);
-    expect(await blacklistManager.isBlocked('203.0.113.10')).toBe(false);
+    expect(await blocklistManager.isBlocked('203.0.113.10')).toBe(false);
 
-    const cleared = await blacklistManager.clear();
+    const cleared = await blocklistManager.clear();
     expect(cleared).toBe(1);
-    expect((await blacklistManager.getBlockedIPs()).length).toBe(0);
+    expect((await blocklistManager.getBlockedIPs()).length).toBe(0);
   });
 
   it('exemptionStore falls back to CSV for IP and path exemptions', async () => {

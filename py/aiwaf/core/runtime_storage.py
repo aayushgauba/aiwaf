@@ -1,5 +1,5 @@
 """
-Storage backends for AIWAF - handling blacklists, exemptions, and persistent data
+Storage backends for AIWAF - handling blocklists, exemptions, and persistent data
 """
 import time
 import json
@@ -514,8 +514,8 @@ class ExemptionStore:
         return self._exempt_patterns.copy()
 
 
-class BlacklistStore:
-    """Manages blacklisted IPs and their metadata."""
+class BlocklistStore:
+    """Manages blocklisted IPs and their metadata."""
     
     def __init__(self, storage: StorageBackend):
         self.storage = storage
@@ -801,14 +801,14 @@ class GeoBlockStore:
 # Global storage instances
 _storage_backend: Optional[StorageBackend] = None
 _exemption_store: Optional[ExemptionStore] = None
-_blacklist_store: Optional[BlacklistStore] = None
+_blocklist_store: Optional[BlocklistStore] = None
 _keyword_store: Optional[KeywordStore] = None
 _geo_block_store: Optional[GeoBlockStore] = None
 
 
 def initialize_storage(backend: str = "memory", **kwargs) -> StorageBackend:
     """Initialize storage backend."""
-    global _storage_backend, _exemption_store, _blacklist_store, _keyword_store, _geo_block_store
+    global _storage_backend, _exemption_store, _blocklist_store, _keyword_store, _geo_block_store
     
     if backend == "memory":
         _storage_backend = MemoryStorage()
@@ -825,7 +825,7 @@ def initialize_storage(backend: str = "memory", **kwargs) -> StorageBackend:
         raise ValueError(f"Unknown storage backend: {backend}")
     
     _exemption_store = ExemptionStore(_storage_backend)
-    _blacklist_store = BlacklistStore(_storage_backend)
+    _blocklist_store = BlocklistStore(_storage_backend)
     _keyword_store = KeywordStore(_storage_backend)
     _geo_block_store = GeoBlockStore(_storage_backend)
     
@@ -848,12 +848,12 @@ def get_exemption_store() -> ExemptionStore:
     return _exemption_store
 
 
-def get_blacklist_store() -> BlacklistStore:
-    """Get the blacklist store."""
-    global _blacklist_store
-    if _blacklist_store is None:
+def get_blocklist_store() -> BlocklistStore:
+    """Get the blocklist store."""
+    global _blocklist_store
+    if _blocklist_store is None:
         initialize_storage()
-    return _blacklist_store
+    return _blocklist_store
 
 
 def get_keyword_store() -> KeywordStore:
@@ -870,3 +870,8 @@ def get_geo_block_store() -> GeoBlockStore:
     if _geo_block_store is None:
         initialize_storage()
     return _geo_block_store
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistStore = BlocklistStore
+get_blacklist_store = get_blocklist_store

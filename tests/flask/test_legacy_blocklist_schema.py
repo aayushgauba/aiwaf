@@ -3,13 +3,13 @@ from sqlalchemy import text
 
 from aiwaf.flask.db_models import db
 from aiwaf.flask.storage import (
-    add_ip_blacklist,
-    is_ip_blacklisted,
-    remove_ip_blacklist,
+    add_ip_blocklist,
+    is_ip_blocklisted,
+    remove_ip_blocklist,
 )
 
 
-def test_unmigrated_sqlalchemy_blacklist_keeps_legacy_behavior():
+def test_unmigrated_sqlalchemy_blocklist_keeps_legacy_behavior():
     app = Flask(__name__)
     app.config.update(
         SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
@@ -20,7 +20,7 @@ def test_unmigrated_sqlalchemy_blacklist_keeps_legacy_behavior():
 
     with app.app_context():
         db.session.execute(text(
-            "CREATE TABLE blacklisted_ip ("
+            "CREATE TABLE blocklisted_ip ("
             "id INTEGER PRIMARY KEY, "
             "ip VARCHAR(45) UNIQUE NOT NULL, "
             "reason VARCHAR(255)"
@@ -28,13 +28,13 @@ def test_unmigrated_sqlalchemy_blacklist_keeps_legacy_behavior():
         ))
         db.session.commit()
 
-        add_ip_blacklist("203.0.113.20", "legacy scanner")
-        assert is_ip_blacklisted("203.0.113.20")
+        add_ip_blocklist("203.0.113.20", "legacy scanner")
+        assert is_ip_blocklisted("203.0.113.20")
 
         reason = db.session.execute(text(
-            "SELECT reason FROM blacklisted_ip WHERE ip = :ip"
+            "SELECT reason FROM blocklisted_ip WHERE ip = :ip"
         ), {"ip": "203.0.113.20"}).scalar_one()
         assert reason == "legacy scanner"
 
-        remove_ip_blacklist("203.0.113.20")
-        assert not is_ip_blacklisted("203.0.113.20")
+        remove_ip_blocklist("203.0.113.20")
+        assert not is_ip_blocklisted("203.0.113.20")

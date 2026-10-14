@@ -39,8 +39,8 @@ class BasicImportTestCase(AIWAFTestCase):
     def test_storage_import(self):
         """Storage factory functions are callable and usable."""
         storage = importlib.import_module("aiwaf.django.storage")
-        blacklist_store = storage.get_blacklist_store()
-        self.assertTrue(hasattr(blacklist_store, "block_ip"))
+        blocklist_store = storage.get_blocklist_store()
+        self.assertTrue(hasattr(blocklist_store, "block_ip"))
         self.assertTrue(callable(storage.get_keyword_store))
     
     def test_trainer_import(self):
@@ -58,9 +58,9 @@ class BasicImportTestCase(AIWAFTestCase):
     def test_models_import(self):
         """Models module defines the expected ORM classes."""
         models = importlib.import_module("aiwaf.django.models")
-        self.assertTrue(hasattr(models, "BlacklistEntry"))
+        self.assertTrue(hasattr(models, "BlocklistEntry"))
         self.assertTrue(hasattr(models, "IPExemption"))
-        fields = {field.name for field in models.BlacklistEntry._meta.fields}
+        fields = {field.name for field in models.BlocklistEntry._meta.fields}
         self.assertTrue({
             "reputation_reason",
             "reasons",

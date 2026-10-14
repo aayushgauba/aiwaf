@@ -1,15 +1,15 @@
 from django.core.management.base import BaseCommand
-from aiwaf.django.storage import get_blacklist_store, get_exemption_store, get_keyword_store
+from aiwaf.django.storage import get_blocklist_store, get_exemption_store, get_keyword_store
 import sys
 
 class Command(BaseCommand):
-    help = 'Reset AI-WAF by clearing blacklist, exemption, and/or keyword entries'
+    help = 'Reset AI-WAF by clearing blocklist, exemption, and/or keyword entries'
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--blacklist',
+            '--blocklist',
             action='store_true',
-            help='Clear blacklist entries (default: all)'
+            help='Clear blocklist entries (default: all)'
         )
         parser.add_argument(
             '--exemptions',
@@ -29,9 +29,9 @@ class Command(BaseCommand):
         
         # Legacy flags for backward compatibility
         parser.add_argument(
-            '--blacklist-only',
+            '--blocklist-only',
             action='store_true',
-            help='(Legacy) Clear only blacklist entries'
+            help='(Legacy) Clear only blocklist entries'
         )
         parser.add_argument(
             '--exemptions-only',
@@ -41,31 +41,31 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Parse arguments
-        blacklist_flag = options.get('blacklist', False)
+        blocklist_flag = options.get('blocklist', False)
         exemptions_flag = options.get('exemptions', False)
         keywords_flag = options.get('keywords', False)
         confirm = options.get('confirm', False)
         
         # Legacy support
-        blacklist_only = options.get('blacklist_only', False)
+        blocklist_only = options.get('blocklist_only', False)
         exemptions_only = options.get('exemptions_only', False)
         
         # Handle legacy flags
-        if blacklist_only:
-            blacklist_flag = True
+        if blocklist_only:
+            blocklist_flag = True
             exemptions_flag = False
             keywords_flag = False
         elif exemptions_only:
-            blacklist_flag = False
+            blocklist_flag = False
             exemptions_flag = True
             keywords_flag = False
         
         # If no specific flags, clear everything
-        if not (blacklist_flag or exemptions_flag or keywords_flag):
-            blacklist_flag = exemptions_flag = keywords_flag = True
+        if not (blocklist_flag or exemptions_flag or keywords_flag):
+            blocklist_flag = exemptions_flag = keywords_flag = True
         
         try:
-            blacklist_store = get_blacklist_store()
+            blocklist_store = get_blocklist_store()
             exemption_store = get_exemption_store()
             keyword_store = get_keyword_store()
         except Exception as e:
@@ -73,15 +73,15 @@ class Command(BaseCommand):
             return
         
         # Count current entries safely
-        counts = {'blacklist': 0, 'exemptions': 0, 'keywords': 0}
-        entries = {'blacklist': [], 'exemptions': [], 'keywords': []}
+        counts = {'blocklist': 0, 'exemptions': 0, 'keywords': 0}
+        entries = {'blocklist': [], 'exemptions': [], 'keywords': []}
         
-        if blacklist_flag:
+        if blocklist_flag:
             try:
-                entries['blacklist'] = blacklist_store.get_all()
-                counts['blacklist'] = len(entries['blacklist'])
+                entries['blocklist'] = blocklist_store.get_all()
+                counts['blocklist'] = len(entries['blocklist'])
             except Exception as e:
-                self.stdout.write(self.style.WARNING(f'Warning: Could not count blacklist entries: {e}'))
+                self.stdout.write(self.style.WARNING(f'Warning: Could not count blocklist entries: {e}'))
         
         if exemptions_flag:
             try:
@@ -99,8 +99,8 @@ class Command(BaseCommand):
         
         # Build action description
         actions = []
-        if blacklist_flag:
-            actions.append(f"{counts['blacklist']} blacklist entries")
+        if blocklist_flag:
+            actions.append(f"{counts['blocklist']} blocklist entries")
         if exemptions_flag:
             actions.append(f"{counts['exemptions']} exemption entries")
         if keywords_flag:
@@ -122,19 +122,19 @@ class Command(BaseCommand):
                 return
         
         # Perform the reset
-        deleted_counts = {'blacklist': 0, 'exemptions': 0, 'keywords': 0, 'errors': []}
+        deleted_counts = {'blocklist': 0, 'exemptions': 0, 'keywords': 0, 'errors': []}
         
-        if blacklist_flag:
-            # Clear blacklist entries
+        if blocklist_flag:
+            # Clear blocklist entries
             try:
-                for entry in entries['blacklist']:
+                for entry in entries['blocklist']:
                     try:
-                        blacklist_store.remove_ip(entry['ip_address'])
-                        deleted_counts['blacklist'] += 1
+                        blocklist_store.remove_ip(entry['ip_address'])
+                        deleted_counts['blocklist'] += 1
                     except Exception as e:
-                        deleted_counts['errors'].append(f"Error removing blacklist IP {entry.get('ip_address', 'unknown')}: {e}")
+                        deleted_counts['errors'].append(f"Error removing blocklist IP {entry.get('ip_address', 'unknown')}: {e}")
             except Exception as e:
-                deleted_counts['errors'].append(f"Error clearing blacklist: {e}")
+                deleted_counts['errors'].append(f"Error clearing blocklist: {e}")
         
         if exemptions_flag:
             # Clear exemption entries
@@ -167,8 +167,8 @@ class Command(BaseCommand):
         
         # Build success message
         success_parts = []
-        if blacklist_flag:
-            success_parts.append(f"{deleted_counts['blacklist']} blacklist entries")
+        if blocklist_flag:
+            success_parts.append(f"{deleted_counts['blocklist']} blocklist entries")
         if exemptions_flag:
             success_parts.append(f"{deleted_counts['exemptions']} exemption entries")
         if keywords_flag:
@@ -181,3 +181,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(f"  Completed with {len(deleted_counts['errors'])} errors (see above)")
             )
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_store = get_blocklist_store

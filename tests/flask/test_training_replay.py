@@ -17,24 +17,24 @@ def test_training_requires_six_fresh_404s_after_unblock(tmp_path, monkeypatch, r
     monkeypatch.setattr(trainer, '_print_geoip_blocklist_summary', lambda: None)
     with app.app_context():
         trainer.FlaskAITrainer(app).train(disable_ai=True)
-        before = storage._read_csv_blacklist()
+        before = storage._read_csv_blocklist()
         assert '203.0.113.1' in before
         trainer.FlaskAITrainer(app).train(disable_ai=True)
-        assert storage._read_csv_blacklist() == before
+        assert storage._read_csv_blocklist() == before
         if removal == 'manual':
-            storage.remove_ip_blacklist('203.0.113.1')
+            storage.remove_ip_blocklist('203.0.113.1')
         else:
             before['203.0.113.1']['expires_at'] = time.time() - 1
-            storage._rewrite_csv_blacklist(before)
-            assert not storage.is_ip_blacklisted('203.0.113.1')
+            storage._rewrite_csv_blocklist(before)
+            assert not storage.is_ip_blocklisted('203.0.113.1')
         trainer.FlaskAITrainer(app).train(disable_ai=True)
-        assert storage._read_csv_blacklist() == {}
+        assert storage._read_csv_blocklist() == {}
         write_logs(file, 65)
         trainer.FlaskAITrainer(app).train(disable_ai=True)
-        assert storage._read_csv_blacklist() == {}
+        assert storage._read_csv_blocklist() == {}
         write_logs(file, 66)
         trainer.FlaskAITrainer(app).train(disable_ai=True)
-        assert '203.0.113.1' in storage._read_csv_blacklist()
+        assert '203.0.113.1' in storage._read_csv_blocklist()
 
 
 def test_ai_enforcement_does_not_mix_old_anomalies_with_one_benign_request(tmp_path, monkeypatch):
@@ -65,10 +65,10 @@ def test_ai_enforcement_does_not_mix_old_anomalies_with_one_benign_request(tmp_p
     monkeypatch.setattr(trainer, 'get_isolation_forest_class', lambda: Forest)
     with app.app_context():
         instance.train()
-        assert storage.is_ip_blacklisted('203.0.113.1')
-        storage.remove_ip_blacklist('203.0.113.1')
+        assert storage.is_ip_blocklisted('203.0.113.1')
+        storage.remove_ip_blocklist('203.0.113.1')
         lines.append('203.0.113.1 - - [10/Oct/2026:12:01:00 +0000] "GET /docs HTTP/1.1" 200 207\n')
         instance.train()
-        assert not storage.is_ip_blacklisted('203.0.113.1')
+        assert not storage.is_ip_blocklisted('203.0.113.1')
     assert fitted == [60, 61]
     assert scored[-1] == 1

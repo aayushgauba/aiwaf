@@ -1,6 +1,6 @@
 from flask import Flask
 
-from aiwaf.flask import blacklist_manager as bm
+from aiwaf.flask import blocklist_manager as bm
 from aiwaf.flask.geo_block_middleware import GeoBlockMiddleware
 from aiwaf.flask.header_validation_middleware import HeaderValidationMiddleware
 from aiwaf.flask.honeypot_timing_middleware import HoneypotTimingMiddleware
@@ -34,12 +34,12 @@ def _capture_blocks(monkeypatch):
             }
         )
 
-    monkeypatch.setattr(bm, "add_ip_blacklist", fake_add)
+    monkeypatch.setattr(bm, "add_ip_blocklist", fake_add)
     return captured
 
 
 def _assert_has_extended_info(captured, path):
-    assert captured, "expected a blacklist block call"
+    assert captured, "expected a blocklist block call"
     info = captured[-1]["extended_request_info"]
     assert info is not None
     assert info.get("path") == path

@@ -6,7 +6,7 @@ const readline = require('readline');
 const { createIsolationForest } = require('./lib/wasmAdapter');
 const requestLogStore = require('./lib/requestLogStore');
 const modelStore = require('./lib/modelStore');
-const blacklistManager = require('./lib/blacklistManager');
+const blocklistManager = require('./lib/blocklistManager');
 const { calculateTrainingFeatures } = require('./lib/trainingFeatures');
 const { withTrainingEvidence } = require('./lib/trainingEvidence');
 const TRAINING_STATE_DIR = process.env.AIWAF_TRAINING_STATE_DIR
@@ -236,9 +236,9 @@ async function unblockExemptIps() {
     const ips = rows.map(row => row.ip_address).filter(Boolean);
     if (ips.length === 0) return;
     for (const ip of ips) {
-      await blacklistManager.unblock(ip);
+      await blocklistManager.unblock(ip);
     }
-    console.log(`Cleared ${ips.length} exempt IPs from blacklist`);
+    console.log(`Cleared ${ips.length} exempt IPs from blocklist`);
   } catch (err) {
     // ignore
   }
@@ -458,7 +458,7 @@ async function train() {
       if (count >= 6) {
         const loginCount = ip404LoginCounts.get(ip) || 0;
         if (count > loginCount) {
-          await evidence.block(ip, () => blacklistManager.block(ip, `Excessive 404s (non-login ${count}/${count + loginCount})`));
+          await evidence.block(ip, () => blocklistManager.block(ip, `Excessive 404s (non-login ${count}/${count + loginCount})`));
         }
       }
     }
@@ -534,7 +534,7 @@ async function train() {
         if (avgKwHits < 2 && max404s < 10 && avgBurst < 15 && totalRequests < 100) {
           continue;
         }
-        await evidence.block(ip, () => blacklistManager.block(ip, `AI anomaly + suspicious patterns (kw:${avgKwHits.toFixed(1)}, 404s:${max404s}, burst:${avgBurst.toFixed(1)})`));
+        await evidence.block(ip, () => blocklistManager.block(ip, `AI anomaly + suspicious patterns (kw:${avgKwHits.toFixed(1)}, 404s:${max404s}, burst:${avgBurst.toFixed(1)})`));
       }
     } else {
       console.log(`AI training skipped: ${parsedRequests.length} logs < ${MIN_AI_LOGS}`);
@@ -568,7 +568,7 @@ async function train() {
     }
 
     try {
-      const blocked = await blacklistManager.getBlockedIPs();
+      const blocked = await blocklistManager.getBlockedIPs();
       summarizeGeo(blocked.map(row => row.ip_address).filter(Boolean), 'Geo summary for blocked IPs (top 10):');
     } catch (err) {
       // ignore

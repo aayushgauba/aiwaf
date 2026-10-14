@@ -81,7 +81,7 @@ function writeRows(filePath, headers, rows) {
   }
 }
 
-// All blacklist mutations use this lock and read the current file inside it.
+// All blocklist mutations use this lock and read the current file inside it.
 // A crash leaves the lock in place; recovery must first stop the owning writer.
 async function updateRows(filePath, headers, update, timeoutMs = 60000) {
   filePath = path.resolve(filePath);

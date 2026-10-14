@@ -1,6 +1,6 @@
 package com.aiwaf.core;
 
-import com.aiwaf.runtime.BlacklistManager;
+import com.aiwaf.runtime.BlocklistManager;
 import com.aiwaf.runtime.CidrUtil;
 import com.aiwaf.runtime.RedisStorage;
 import com.aiwaf.runtime.RuntimeState;
@@ -151,9 +151,9 @@ public final class AiwafEngine {
         boolean pathExempted = isPathExempted(req);
         String ip = blankToDefault(req.ip(), "127.0.0.1");
         boolean ipExempted = isIpExempted(ip);
-        if (!ipExempted && BlacklistManager.isBlocked(runtimeStorage, ip)) {
-            AiwafDecision d = AiwafDecision.deny(403, "IP blacklisted");
-            return finalizeDecision(d, startedNs, "ip_blacklisted");
+        if (!ipExempted && BlocklistManager.isBlocked(runtimeStorage, ip)) {
+            AiwafDecision d = AiwafDecision.deny(403, "IP blocklisted");
+            return finalizeDecision(d, startedNs, "ip_blocklisted");
         }
 
         if (config.methodValidationEnabled && !config.isMethodAllowed(req.method())) {
@@ -789,7 +789,7 @@ public final class AiwafEngine {
 
     private void blockWithContext(String ip, AiwafRequest req, String reason) {
         Map<String, Object> ext = config.storeExtendedBlockInfo ? extendedBlockInfo(req) : null;
-        BlacklistManager.block(runtimeStorage, ip, reason, null, ext);
+        BlocklistManager.block(runtimeStorage, ip, reason, null, ext);
         telemetryIncrement("blocks.total");
     }
 

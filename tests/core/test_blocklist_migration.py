@@ -1,10 +1,10 @@
-from aiwaf.core.blacklist_migration import legacy_metadata, migrate_csv_directory
-from aiwaf.core.storage_csv_impl import append_blacklist, ensure_all
+from aiwaf.core.blocklist_migration import legacy_metadata, migrate_csv_directory
+from aiwaf.core.storage_csv_impl import append_blocklist, ensure_all
 
 
 def test_migrate_csv_directory_reports_total_and_legacy(tmp_path):
     ensure_all(tmp_path)
-    append_blacklist(
+    append_blocklist(
         tmp_path,
         "203.0.113.3",
         "old",

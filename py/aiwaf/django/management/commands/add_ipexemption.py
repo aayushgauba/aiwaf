@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand, CommandError
 from aiwaf.django.storage import get_exemption_store
 
 class Command(BaseCommand):
-    help = 'Add an IP address to the IPExemption list (prevents blacklisting)'
+    help = 'Add an IP address to the IPExemption list (prevents blocklisting)'
 
     def add_arguments(self, parser):
         parser.add_argument('ip', type=str, help='IP address to exempt')

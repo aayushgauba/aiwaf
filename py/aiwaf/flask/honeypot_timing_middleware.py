@@ -1,8 +1,8 @@
 # Flask-adapted HoneypotTimingMiddleware
 import time
 from flask import request, jsonify, current_app
-from .utils import get_blacklist_extended_info, get_ip
-from .blacklist_manager import BlacklistManager
+from .utils import get_blocklist_extended_info, get_ip
+from .blocklist_manager import BlocklistManager
 from .exemption_decorators import should_apply_middleware
 from aiwaf.core.runtime_storage import get_storage
 from aiwaf.core.honeypot import (
@@ -77,10 +77,10 @@ class HoneypotTimingMiddleware:
                 accepts_method=_view_accepts_method(request.method),
             )
             if decision.action == METHOD_BLOCK:
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     decision.reason,
-                    extended_request_info=get_blacklist_extended_info(request),
+                    extended_request_info=get_blocklist_extended_info(request),
                 )
                 return jsonify({"error": "blocked", "message": decision.message}), decision.status_code
 
@@ -108,9 +108,14 @@ class HoneypotTimingMiddleware:
                         }
                     ), (decision.status_code or 409)
                 if decision.action == ACTION_BLOCK:
-                    BlacklistManager.block(
+                    BlocklistManager.block(
                         ip,
                         decision.reason or "Form submitted too quickly",
-                        extended_request_info=get_blacklist_extended_info(request),
+                        extended_request_info=get_blocklist_extended_info(request),
                     )
                     return jsonify({"error": "blocked"}), (decision.status_code or 403)
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_extended_info = get_blocklist_extended_info
+BlacklistManager = BlocklistManager

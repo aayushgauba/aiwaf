@@ -61,9 +61,9 @@ def main():
         expected = args.workers * args.requests
         if len(rows) != expected * 2 or sum(row['status_code'] == '403' for row in rows) != expected:
             raise RuntimeError('Missing or corrupted access log rows')
-        blocked = storage_csv_impl.read_blacklist(Path(directory) / 'data')
+        blocked = storage_csv_impl.read_blocklist(Path(directory) / 'data')
         if len(blocked) != expected:
-            raise RuntimeError('Lost shared blacklist updates')
+            raise RuntimeError('Lost shared blocklist updates')
         report = dict(workers=args.workers, allowed_requests=expected, blocked_requests=expected,
             log_rows=len(rows), persisted_blocked_ips=len(blocked), enabled_middlewares=enabled[0],
             checks_passed=True, scope=__doc__ + ' GET requests only; geo has no blocked-country policy, UUID and honeypot have no matching signals. Rate cache is the default per-worker memory cache. No HTTP server or production site.')

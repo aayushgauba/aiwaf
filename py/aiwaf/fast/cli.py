@@ -44,8 +44,8 @@ def _init(argv) -> None:
     print(f"Context hash: {manifest['context_hash']}")
 
 
-def _migrate_blacklist(argv) -> None:
-    parser = argparse.ArgumentParser(description="Upgrade the configured FastAPI blacklist backend")
+def _migrate_blocklist(argv) -> None:
+    parser = argparse.ArgumentParser(description="Upgrade the configured FastAPI blocklist backend")
     parser.add_argument("--app", help="FastAPI app import path; loads its AIWAF storage configuration")
     parser.add_argument("--backend", choices=["csv", "file", "db", "memory"], default="csv")
     parser.add_argument("--storage-path", help="Storage file when --app is not supplied")
@@ -61,15 +61,17 @@ def _migrate_blacklist(argv) -> None:
             kwargs["file_path"] = args.storage_path
         initialize_storage(args.backend, **kwargs)
 
-    from aiwaf.core.blacklist_migration import migrate_runtime_storage
+    from aiwaf.core.blocklist_migration import migrate_runtime_storage
     from aiwaf.core.runtime_storage import get_storage
 
     total, changed = migrate_runtime_storage(get_storage())
-    print(f"FastAPI blacklist upgraded: {changed}/{total} legacy entries updated")
+    print(f"FastAPI blocklist upgraded: {changed}/{total} legacy entries updated")
 
 
 def main() -> None:
     argv = list(sys.argv[1:])
+    if argv and argv[0] == 'blacklist':
+        argv[0] = 'blocklist'
     # Accept the established global --data-dir position before `train`.
     if argv and (argv[0] == 'train' or (len(argv) >= 3 and argv[0] == '--data-dir' and argv[2] == 'train')):
         _train(argv[1:] if argv[0] == 'train' else ['--data-dir', argv[1], *argv[3:]])
@@ -77,8 +79,8 @@ def main() -> None:
     if argv and argv[0] == "init":
         _init(argv[1:])
         return
-    if len(argv) >= 2 and argv[:2] == ["blacklist", "migrate"]:
-        _migrate_blacklist(argv[2:])
+    if len(argv) >= 2 and argv[:2] == ["blocklist", "migrate"]:
+        _migrate_blocklist(argv[2:])
         return
     _flask_cli_main()
 

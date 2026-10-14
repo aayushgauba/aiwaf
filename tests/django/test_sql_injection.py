@@ -20,7 +20,7 @@ class DjangoPolicyTests(FrameworkCases, unittest.TestCase):
         with override_settings(AIWAF_SQL_INJECTION_MODE=mode, AIWAF_PAYLOAD_MAX_BYTES=max_bytes), \
              patch(module + 'is_middleware_disabled', return_value=False), patch(module + 'is_exempt', return_value=exempt), \
              patch(module + 'is_ip_exempted', return_value=False), patch(module + 'get_ip', return_value='93.184.216.90'), \
-             patch(module + 'BlacklistManager.is_blocked', return_value=False), patch(module + 'get_keyword_store', return_value=store), \
+             patch(module + 'BlocklistManager.is_blocked', return_value=False), patch(module + 'get_keyword_store', return_value=store), \
              patch(module + 'path_exists_in_django', return_value=True), \
              patch.object(IPAndKeywordBlockMiddleware, '_collect_safe_prefixes', return_value=set()), \
              patch.object(IPAndKeywordBlockMiddleware, '_get_exempt_keywords', return_value=set()), \

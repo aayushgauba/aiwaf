@@ -4,9 +4,9 @@ import re
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 
-from ..blacklist import BlacklistManager
+from ..blocklist import BlocklistManager
 from ..storage import get_keyword_store
-from ..utils import get_blacklist_extended_info, get_ip, is_exempt
+from ..utils import get_blocklist_extended_info, get_ip, is_exempt
 from ..decorators import should_apply_middleware
 from ...core.ip_keyword import evaluate_keyword_policy, extract_path_segments
 from ...core.request_context import extract_query_keys_from_fastapi_request
@@ -93,9 +93,9 @@ class IPAndKeywordBlockMiddleware(BaseHTTPMiddleware):
         path = request.url.path.lower()
         path_exists = request.scope.get("route") is not None
 
-        if BlacklistManager.is_blocked(ip):
+        if BlocklistManager.is_blocked(ip):
             request.state.aiwaf_blocked = True
-            request.state.aiwaf_block_reason = f"IP blacklisted: {ip}"
+            request.state.aiwaf_block_reason = f"IP blocklisted: {ip}"
             return JSONResponse({"error": "blocked"}, status_code=403)
 
         keyword_store = get_keyword_store()
@@ -133,7 +133,7 @@ class IPAndKeywordBlockMiddleware(BaseHTTPMiddleware):
         if prepared and prepared[1]:
             decision = prepared[1][0]
             if decision.block_reason:
-                BlacklistManager.block(ip, decision.block_reason, extended_request_info=get_blacklist_extended_info(request))
+                BlocklistManager.block(ip, decision.block_reason, extended_request_info=get_blocklist_extended_info(request))
                 request.state.aiwaf_blocked = True
                 request.state.aiwaf_block_reason = decision.block_reason
                 return JSONResponse({"error": "blocked"}, status_code=403)
@@ -168,13 +168,18 @@ class IPAndKeywordBlockMiddleware(BaseHTTPMiddleware):
         for seg in decision.learned_keywords:
             keyword_store.add_keyword(seg)
         if decision.block_reason:
-            BlacklistManager.block(
+            BlocklistManager.block(
                 ip,
                 decision.block_reason,
-                extended_request_info=get_blacklist_extended_info(request),
+                extended_request_info=get_blocklist_extended_info(request),
             )
             request.state.aiwaf_blocked = True
             request.state.aiwaf_block_reason = decision.block_reason
             return JSONResponse({"error": "blocked"}, status_code=403)
 
         return await call_next(request)
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager
+get_blacklist_extended_info = get_blocklist_extended_info

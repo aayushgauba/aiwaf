@@ -20,7 +20,7 @@ def _flask_worker(redis_url: str, path: str, conn):
             {
                 "TESTING": True,
                 "AIWAF_EXEMPT_PATHS": set(),
-                # Avoid reading global CSV whitelist that may exempt localhost.
+                # Avoid reading global CSV allowlist that may exempt localhost.
                 "AIWAF_USE_CSV": False,
                 "AIWAF_RATE_WINDOW": 60,
                 "AIWAF_RATE_MAX": 1,

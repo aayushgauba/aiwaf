@@ -21,12 +21,20 @@ public final class AiwafConsole {
             return;
         }
         String cmd = args[0].toLowerCase(Locale.ROOT);
+        args = args.clone();
+        if (args.length > 1 && java.util.Set.of("list", "add", "remove").contains(cmd)) {
+            if (args[1].equals("blacklist")) args[1] = "blocklist";
+            if (args[1].equals("whitelist")) args[1] = "allowlist";
+        }
+        if (cmd.equals("reset")) {
+            for (int i = 1; i < args.length; i++) args[i] = args[i].replace("--blacklist", "--blocklist");
+        }
         try {
             switch (cmd) {
                 case "stats", "status" -> System.out.println(manager().stats());
                 case "diagnose" -> handleDiagnose(manager(), args);
                 case "list" -> handleList(manager(), args);
-                case "blocked" -> System.out.println(manager().listBlacklist());
+                case "blocked" -> System.out.println(manager().listBlocklist());
                 case "unblock" -> handleUnblock(manager(), args);
                 case "clear" -> System.out.println(manager().resetSelective(true, false, false) ? "ok" : "noop");
                 case "add" -> handleAdd(manager(), args);
@@ -57,14 +65,14 @@ public final class AiwafConsole {
     private static void handleList(AiwafManager manager, String[] args) {
         String target = args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "all";
         switch (target) {
-            case "whitelist" -> System.out.println(manager.listWhitelistIps());
-            case "blacklist" -> System.out.println(manager.listBlacklistIps());
+            case "allowlist" -> System.out.println(manager.listAllowlistIps());
+            case "blocklist" -> System.out.println(manager.listBlocklistIps());
             case "keywords" -> System.out.println(manager.listKeywords(100));
             case "geo" -> System.out.println(manager.listGeoBlockedCountries());
             case "exempt-path", "path-exemptions" -> System.out.println(manager.listPathExemptions());
             case "all" -> {
-                System.out.println("whitelist=" + manager.listWhitelistIps());
-                System.out.println("blacklist=" + manager.listBlacklistIps());
+                System.out.println("allowlist=" + manager.listAllowlistIps());
+                System.out.println("blocklist=" + manager.listBlocklistIps());
                 System.out.println("keywords=" + manager.listKeywords(100));
                 System.out.println("geo=" + manager.listGeoBlockedCountries());
                 System.out.println("path_exemptions=" + manager.listPathExemptions());
@@ -82,8 +90,8 @@ public final class AiwafConsole {
         String value = args[2];
         String reason = parseOption(args, "--reason");
         boolean result = switch (target) {
-            case "whitelist" -> manager.addWhitelistIp(value, reason);
-            case "blacklist" -> manager.addBlacklistIp(value, reason);
+            case "allowlist" -> manager.addAllowlistIp(value, reason);
+            case "blocklist" -> manager.addBlocklistIp(value, reason);
             case "keyword" -> manager.addKeyword(value);
             case "geo" -> manager.addGeoBlockedCountry(value);
             case "exempt-path", "path-exemptions" -> manager.addPathExemption(value, reason);
@@ -100,8 +108,8 @@ public final class AiwafConsole {
         String target = args[1].toLowerCase(Locale.ROOT);
         String value = args[2];
         boolean result = switch (target) {
-            case "whitelist" -> manager.removeWhitelistIp(value);
-            case "blacklist" -> manager.removeBlacklistIp(value);
+            case "allowlist" -> manager.removeAllowlistIp(value);
+            case "blocklist" -> manager.removeBlocklistIp(value);
             case "keyword" -> manager.removeKeyword(value);
             case "geo" -> manager.removeGeoBlockedCountry(value);
             case "exempt-path", "path-exemptions" -> manager.removePathExemption(value);
@@ -125,12 +133,12 @@ public final class AiwafConsole {
                 "  aiwaf-cli stats",
                 "  aiwaf-cli diagnose [--model <model.json>]",
                 "  aiwaf-cli blocked | unblock <ip> | clear",
-                "  aiwaf-cli list [all|whitelist|blacklist|keywords|geo|exempt-path]",
-                "  aiwaf-cli add <whitelist|blacklist|keyword|geo|exempt-path> <value> [--reason <text>]",
-                "  aiwaf-cli remove <whitelist|blacklist|keyword|geo|exempt-path> <value>",
+                "  aiwaf-cli list [all|allowlist|blocklist|keywords|geo|exempt-path]",
+                "  aiwaf-cli add <allowlist|blocklist|keyword|geo|exempt-path> <value> [--reason <text>]",
+                "  aiwaf-cli remove <allowlist|blocklist|keyword|geo|exempt-path> <value>",
                 "  aiwaf-cli export <file>",
                 "  aiwaf-cli import <file>",
-                "  aiwaf-cli reset [--blacklist|--exemptions|--keywords|--blacklist-only|--exemptions-only]",
+                "  aiwaf-cli reset [--blocklist|--exemptions|--keywords|--blocklist-only|--exemptions-only]",
                 "  aiwaf-cli geo <list|add|remove> [country]",
                 "  aiwaf-cli exempt-path <list|add|remove> [path] [--reason text]",
                 "  aiwaf-cli whois <target>",
@@ -190,7 +198,7 @@ public final class AiwafConsole {
     }
 
     private static void handleUnblock(AiwafManager manager, String[] args) {
-        System.out.println(args.length > 1 && manager.removeBlacklistIp(args[1]) ? "ok" : "noop");
+        System.out.println(args.length > 1 && manager.removeBlocklistIp(args[1]) ? "ok" : "noop");
     }
 
     private static void handleCoreCommand(String command, String[] args) {
@@ -307,9 +315,9 @@ public final class AiwafConsole {
     }
 
     private static void handleReset(AiwafManager manager, String[] args) {
-        boolean blacklistOnly = hasArg(args, "--blacklist-only");
+        boolean blocklistOnly = hasArg(args, "--blocklist-only");
         boolean exemptionsOnly = hasArg(args, "--exemptions-only");
-        if (blacklistOnly) {
+        if (blocklistOnly) {
             System.out.println(manager.resetSelective(true, false, false) ? "ok" : "noop");
             return;
         }
@@ -318,11 +326,11 @@ public final class AiwafConsole {
             return;
         }
 
-        boolean blacklist = hasArg(args, "--blacklist");
+        boolean blocklist = hasArg(args, "--blocklist");
         boolean exemptions = hasArg(args, "--exemptions");
         boolean keywords = hasArg(args, "--keywords");
-        if (blacklist || exemptions || keywords) {
-            System.out.println(manager.resetSelective(blacklist, exemptions, keywords) ? "ok" : "noop");
+        if (blocklist || exemptions || keywords) {
+            System.out.println(manager.resetSelective(blocklist, exemptions, keywords) ? "ok" : "noop");
             return;
         }
         System.out.println(manager.resetAll() ? "ok" : "noop");

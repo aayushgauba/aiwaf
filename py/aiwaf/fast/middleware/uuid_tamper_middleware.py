@@ -2,9 +2,9 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.responses import JSONResponse
 
-from ..blacklist import BlacklistManager
+from ..blocklist import BlocklistManager
 from ..decorators import should_apply_middleware
-from ..utils import get_blacklist_extended_info, get_ip
+from ..utils import get_blocklist_extended_info, get_ip
 from ...core.uuid_tamper import is_malformed_uuid, is_valid_uuid, record_uuid_signal
 
 
@@ -41,7 +41,7 @@ class UUIDTamperMiddleware(BaseHTTPMiddleware):
         if is_malformed_uuid(uuid_val):
             decision = record_uuid_signal(ip, "malformed", config=score_cfg)
             reason = f"UUID tampering score={decision['score']}"
-            BlacklistManager.block(ip, reason, extended_request_info=get_blacklist_extended_info(request))
+            BlocklistManager.block(ip, reason, extended_request_info=get_blocklist_extended_info(request))
             request.state.aiwaf_blocked = True
             request.state.aiwaf_block_reason = reason
             return JSONResponse({"error": "blocked"}, status_code=403)
@@ -52,10 +52,10 @@ class UUIDTamperMiddleware(BaseHTTPMiddleware):
                 decision = record_uuid_signal(ip, "not_found", config=score_cfg)
                 if decision["blocked"]:
                     reason = f"UUID tampering score={decision['score']}"
-                    BlacklistManager.block(
+                    BlocklistManager.block(
                         ip,
                         reason,
-                        extended_request_info=get_blacklist_extended_info(request),
+                        extended_request_info=get_blocklist_extended_info(request),
                     )
                     request.state.aiwaf_blocked = True
                     request.state.aiwaf_block_reason = reason
@@ -63,3 +63,8 @@ class UUIDTamperMiddleware(BaseHTTPMiddleware):
             elif response.status_code < 400:
                 record_uuid_signal(ip, "success", config=score_cfg)
         return response
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistManager = BlocklistManager
+get_blacklist_extended_info = get_blocklist_extended_info

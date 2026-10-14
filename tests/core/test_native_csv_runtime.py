@@ -98,11 +98,11 @@ def test_atomic_flask_policy_list_mutations(native, tmp_path):
     def update(i):
         with app.app_context():
             storage.add_geo_blocked_country(f'C{i}')
-            storage.add_ip_whitelist(f'203.0.113.{i}')
+            storage.add_ip_allowlist(f'203.0.113.{i}')
             storage.add_path_exemption(f'/p{i}', 'test')
             if i % 2:
                 storage.remove_geo_blocked_country(f'C{i}')
-                storage.remove_ip_whitelist(f'203.0.113.{i}')
+                storage.remove_ip_allowlist(f'203.0.113.{i}')
                 storage.remove_path_exemption(f'/p{i}')
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(update, range(20)))
@@ -112,7 +112,7 @@ def test_atomic_flask_policy_list_mutations(native, tmp_path):
         assert storage.is_country_geo_blocked('c0')
         assert storage.is_country_geo_blocked('c0')  # Reads must never remove a policy.
         for i in range(20):
-            assert storage.is_ip_whitelisted(f'203.0.113.{i}') == (i % 2 == 0)
+            assert storage.is_ip_allowlisted(f'203.0.113.{i}') == (i % 2 == 0)
         storage.add_path_exemption('/MiXeD', 'legacy')
         storage.remove_path_exemption('/mixed')
         assert '/MiXeD' not in storage.get_path_exemptions()
@@ -214,9 +214,9 @@ def test_flask_native_combined_exemptions_observe_csv_changes(native, tmp_path):
                       AIWAF_EXEMPT_PATHS=['/health'])
     with app.test_request_context('/unknown', environ_base={'REMOTE_ADDR': '203.0.113.7'}):
         assert not utils.is_exempt(request)
-        storage.add_ip_whitelist('203.0.113.7')
+        storage.add_ip_allowlist('203.0.113.7')
         assert utils.is_exempt(request)
-        storage.remove_ip_whitelist('203.0.113.7')
+        storage.remove_ip_allowlist('203.0.113.7')
         assert not utils.is_exempt(request)
         storage.add_path_exemption('/unknown')
         assert utils.is_exempt(request)
@@ -233,10 +233,10 @@ def test_native_exemption_toggle_preserves_fallback(native, monkeypatch):
 
 
 def test_runtime_block_and_keyword_updates_are_atomic(native, tmp_path):
-    from aiwaf.core.runtime_storage import BlacklistStore, KeywordStore
+    from aiwaf.core.runtime_storage import BlocklistStore, KeywordStore
     path = tmp_path / 'runtime.csv'
     backend = CSVStorage(str(path))
-    blocks = BlacklistStore(backend)
+    blocks = BlocklistStore(backend)
     keywords = KeywordStore(backend)
     def update(_):
         blocks.block_ip('203.0.113.8', 'Keyword probe')
@@ -252,13 +252,13 @@ def test_runtime_block_and_keyword_updates_are_atomic(native, tmp_path):
 
 
 def test_runtime_block_native_fallback_metadata_parity(native, monkeypatch, tmp_path):
-    from aiwaf.core.runtime_storage import BlacklistStore, MemoryStorage
+    from aiwaf.core.runtime_storage import BlocklistStore, MemoryStorage
     monkeypatch.setattr('aiwaf.core.runtime_storage.time.time', lambda: 100.0)
     expected = MemoryStorage()
     actual = CSVStorage(str(tmp_path / 'blocks.csv'))
     for duration in [None, 60, 0, -1]:
         for backend in [expected, actual]:
-            store = BlacklistStore(backend)
+            store = BlocklistStore(backend)
             store.block_ip('203.0.113.9', 'Keyword probe', duration, {'path': '/test'})
         assert actual.get('blocked:203.0.113.9') == expected.get('blocked:203.0.113.9')
         assert actual.get('block_log') == expected.get('block_log')
@@ -389,9 +389,9 @@ def test_native_and_python_csv_interoperate(native, monkeypatch, tmp_path):
     storage_csv_impl.append_keyword(tmp_path, 'external')
     monkeypatch.setattr(rust_backend, 'aiwaf_rust', native)
     assert storage_csv_impl.read_keywords(tmp_path) == {'quote,"and\nnewline', 'external'}
-    storage_csv_impl.append_blacklist(tmp_path, '203.0.113.1', 'probe', '{}',
+    storage_csv_impl.append_blocklist(tmp_path, '203.0.113.1', 'probe', '{}',
                                      dict(score=60, offenses=3, expires_at=150, duration=50))
-    result = storage_csv_impl.read_blacklist(tmp_path)['203.0.113.1']
+    result = storage_csv_impl.read_blocklist(tmp_path)['203.0.113.1']
     assert result['score'] == 60
     assert result['expires_at'] == 150
 
@@ -436,27 +436,27 @@ def test_threaded_csv_updates_do_not_lose_rows(native, tmp_path):
     assert len(native.csv_kv_keys(path, 100)) == 100
 
 
-def test_concurrent_blacklist_reputation_updates(native, tmp_path):
+def test_concurrent_blocklist_reputation_updates(native, tmp_path):
     storage_csv_impl.ensure_all(tmp_path)
     with ThreadPoolExecutor(max_workers=8) as executor:
-        list(executor.map(lambda _: storage_csv_impl.native_block_blacklist(
+        list(executor.map(lambda _: storage_csv_impl.native_block_blocklist(
             tmp_path, '213.35.106.249', 'Keyword block: probe path'), range(20)))
-    entry = storage_csv_impl.read_blacklist_entry(tmp_path, '213.35.106.249')
+    entry = storage_csv_impl.read_blocklist_entry(tmp_path, '213.35.106.249')
     assert entry['offenses'] == 20
     assert entry['score'] == 100
     assert entry['duration'] == 86400
-    storage_csv_impl.native_remove_blacklist(tmp_path, '213.35.106.249')
-    assert storage_csv_impl.read_blacklist_entry(tmp_path, '213.35.106.249') is None
+    storage_csv_impl.native_remove_blocklist(tmp_path, '213.35.106.249')
+    assert storage_csv_impl.read_blocklist_entry(tmp_path, '213.35.106.249') is None
 
 
-def test_native_blacklist_expiry_and_permanent_entries(native, tmp_path, monkeypatch):
+def test_native_blocklist_expiry_and_permanent_entries(native, tmp_path, monkeypatch):
     monkeypatch.setattr(storage_csv_impl.time, 'time', lambda: 100)
-    storage_csv_impl.native_block_blacklist(tmp_path, 'one', 'Keyword probe', duration=10)
-    storage_csv_impl.native_block_blacklist(tmp_path, 'two', 'manual', duration=0)
-    assert storage_csv_impl.native_check_blacklist(tmp_path, 'one', 109)
-    assert not storage_csv_impl.native_check_blacklist(tmp_path, 'one', 110)
-    assert storage_csv_impl.read_blacklist_entry(tmp_path, 'one') is None
-    assert storage_csv_impl.native_check_blacklist(tmp_path, 'two', 100000)
+    storage_csv_impl.native_block_blocklist(tmp_path, 'one', 'Keyword probe', duration=10)
+    storage_csv_impl.native_block_blocklist(tmp_path, 'two', 'manual', duration=0)
+    assert storage_csv_impl.native_check_blocklist(tmp_path, 'one', 109)
+    assert not storage_csv_impl.native_check_blocklist(tmp_path, 'one', 110)
+    assert storage_csv_impl.read_blocklist_entry(tmp_path, 'one') is None
+    assert storage_csv_impl.native_check_blocklist(tmp_path, 'two', 100000)
 
 
 def test_process_csv_updates_do_not_lose_rows(native, tmp_path):

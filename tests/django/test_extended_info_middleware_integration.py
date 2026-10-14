@@ -15,11 +15,11 @@ from django.core.exceptions import PermissionDenied
 from django.test import override_settings
 from tests.django.base_test import AIWAFMiddlewareTestCase
 from aiwaf.django.middleware import HeaderValidationMiddleware
-from aiwaf.django.storage import get_blacklist_store
+from aiwaf.django.storage import get_blocklist_store
 
 
 class ExtendedInfoMiddlewareIntegrationTests(AIWAFMiddlewareTestCase):
-    @override_settings(AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True)
+    @override_settings(AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True)
     def test_header_validation_block_stores_extended_info(self):
         request = self.create_request(
             "/blocked/",
@@ -32,7 +32,7 @@ class ExtendedInfoMiddlewareIntegrationTests(AIWAFMiddlewareTestCase):
         with self.assertRaises(PermissionDenied):
             middleware.process_request(request)
 
-        entries = get_blacklist_store().get_all()
+        entries = get_blocklist_store().get_all()
         entry = next(e for e in entries if e.get("ip_address") == "203.0.113.88")
         info = entry.get("extended_request_info") or {}
         self.assertEqual(info.get("path"), "/blocked/")

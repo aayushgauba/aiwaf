@@ -5,7 +5,7 @@ const os = require('os');
 function setupMocks() {
   const db = { destroy: jest.fn(async () => {}) };
   jest.doMock('../utils/db', () => db);
-  jest.doMock('../lib/blacklistManager', () => ({
+  jest.doMock('../lib/blocklistManager', () => ({
     getBlockedIPs: jest.fn(async () => [{ ip_address: '203.0.113.1' }]),
     getStatistics: jest.fn(async () => ({ total: 1, active: 1 })),
     getBlockInfo: jest.fn(async () => ({ score: 80 })),
@@ -69,7 +69,7 @@ function setupMocks() {
   }));
 
   return {
-    blacklistManager: require('../lib/blacklistManager'),
+    blocklistManager: require('../lib/blocklistManager'),
     exemptionStore: require('../lib/exemptionStore'),
     geoStore: require('../lib/geoStore'),
     requestLogStore: require('../lib/requestLogStore'),
@@ -106,12 +106,12 @@ describe('aiwaf CLI routing', () => {
     });
   }
 
-  it('routes list blacklist', async () => {
+  it('routes list blocklist', async () => {
     const mocks = setupMocks();
-    runWithArgv(['node', path.join('bin', 'aiwaf.js'), 'list', 'blacklist']);
+    runWithArgv(['node', path.join('bin', 'aiwaf.js'), 'list', 'blocklist']);
 
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(mocks.blacklistManager.getBlockedIPs).toHaveBeenCalled();
+    expect(mocks.blocklistManager.getBlockedIPs).toHaveBeenCalled();
   });
 
   it('routes add/remove exemptions and geo commands', async () => {
@@ -126,19 +126,19 @@ describe('aiwaf CLI routing', () => {
     expect(mocks.geoStore.addBlockedCountry).toHaveBeenCalled();
   });
 
-  it('routes blacklist and dynamic keyword commands', async () => {
+  it('routes blocklist and dynamic keyword commands', async () => {
     const mocks = setupMocks();
-    runWithArgv(['node', path.join('bin', 'aiwaf.js'), 'add', 'blacklist', '203.0.113.9', 'manual']);
-    runWithArgv(['node', path.join('bin', 'aiwaf.js'), 'remove', 'blacklist', '203.0.113.9']);
+    runWithArgv(['node', path.join('bin', 'aiwaf.js'), 'add', 'blocklist', '203.0.113.9', 'manual']);
+    runWithArgv(['node', path.join('bin', 'aiwaf.js'), 'remove', 'blocklist', '203.0.113.9']);
     runWithArgv(['node', path.join('bin', 'aiwaf.js'), 'add', 'dynamic-keyword', 'probe', '4']);
     runWithArgv(['node', path.join('bin', 'aiwaf.js'), 'remove', 'dynamic-keyword', 'probe']);
 
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(mocks.blacklistManager.block).toHaveBeenCalledWith('203.0.113.9', 'manual', {
+    expect(mocks.blocklistManager.block).toHaveBeenCalledWith('203.0.113.9', 'manual', {
       duration: undefined,
       permanent: false
     });
-    expect(mocks.blacklistManager.unblock).toHaveBeenCalledWith('203.0.113.9');
+    expect(mocks.blocklistManager.unblock).toHaveBeenCalledWith('203.0.113.9');
     expect(mocks.dynamicKeywordStore.add).toHaveBeenCalledWith('probe', 4);
     expect(mocks.dynamicKeywordStore.remove).toHaveBeenCalledWith('probe');
   });
@@ -158,7 +158,7 @@ describe('aiwaf CLI routing', () => {
 
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(mocks.requestLogStore.clear).toHaveBeenCalled();
-    expect(mocks.blacklistManager.isBlocked).toHaveBeenCalled();
+    expect(mocks.blocklistManager.isBlocked).toHaveBeenCalled();
     expect(mocks.exemptionStore.isIpExempt).toHaveBeenCalled();
   });
 
@@ -198,27 +198,27 @@ describe('aiwaf CLI routing', () => {
     );
   });
 
-  it('routes status, statistics, cleanup, and blacklist migration', async () => {
+  it('routes status, statistics, cleanup, and blocklist migration', async () => {
     const mocks = setupMocks();
     runWithArgv(['node', 'aiwaf.js', 'status']);
     runWithArgv(['node', 'aiwaf.js', 'stats', '100']);
-    runWithArgv(['node', 'aiwaf.js', 'blacklist', 'cleanup']);
-    runWithArgv(['node', 'aiwaf.js', 'blacklist', 'migrate', '--duration', '24h']);
+    runWithArgv(['node', 'aiwaf.js', 'blocklist', 'cleanup']);
+    runWithArgv(['node', 'aiwaf.js', 'blocklist', 'migrate', '--duration', '24h']);
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(mocks.blacklistManager.getStatistics).toHaveBeenCalled();
-    expect(mocks.blacklistManager.cleanupExpired).toHaveBeenCalled();
-    expect(mocks.blacklistManager.migrateLegacy).toHaveBeenCalledWith({ duration: 86400 });
+    expect(mocks.blocklistManager.getStatistics).toHaveBeenCalled();
+    expect(mocks.blocklistManager.cleanupExpired).toHaveBeenCalled();
+    expect(mocks.blocklistManager.migrateLegacy).toHaveBeenCalledWith({ duration: 86400 });
   });
 
   it('routes reputation reports and explicit permanent blocks', async () => {
     const mocks = setupMocks();
     runWithArgv(['node', 'aiwaf.js', 'list', 'recent-blocks', '12']);
     runWithArgv(['node', 'aiwaf.js', 'list', 'top-reasons', '5']);
-    runWithArgv(['node', 'aiwaf.js', 'add', 'blacklist', '203.0.113.50', 'manual', '--permanent']);
+    runWithArgv(['node', 'aiwaf.js', 'add', 'blocklist', '203.0.113.50', 'manual', '--permanent']);
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(mocks.blacklistManager.getRecentBlocks).toHaveBeenCalledWith(12);
-    expect(mocks.blacklistManager.getTopBlockedReasons).toHaveBeenCalledWith(5);
-    expect(mocks.blacklistManager.block).toHaveBeenCalledWith('203.0.113.50', 'manual', {
+    expect(mocks.blocklistManager.getRecentBlocks).toHaveBeenCalledWith(12);
+    expect(mocks.blocklistManager.getTopBlockedReasons).toHaveBeenCalledWith(5);
+    expect(mocks.blocklistManager.block).toHaveBeenCalledWith('203.0.113.50', 'manual', {
       duration: undefined,
       permanent: true
     });
@@ -233,7 +233,7 @@ describe('aiwaf CLI routing', () => {
     expect(fs.existsSync(output)).toBe(true);
     runWithArgv(['node', 'aiwaf.js', 'import', output]);
     await new Promise(resolve => setTimeout(resolve, 20));
-    expect(mocks.blacklistManager.importRecords).toHaveBeenCalled();
+    expect(mocks.blocklistManager.importRecords).toHaveBeenCalled();
     expect(mocks.modelStore.save).toHaveBeenCalled();
   });
 

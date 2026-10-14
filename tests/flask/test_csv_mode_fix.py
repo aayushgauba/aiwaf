@@ -30,9 +30,9 @@ def test_csv_mode():
     with app.test_client() as client:
         with app.test_request_context('/'):
             # This should work without database errors
-            from aiwaf.flask.storage import is_ip_blacklisted
-            result = is_ip_blacklisted('127.0.0.1')
-            print(f"IP blacklist check: {result}")
+            from aiwaf.flask.storage import is_ip_blocklisted
+            result = is_ip_blocklisted('127.0.0.1')
+            print(f"IP blocklist check: {result}")
     
     print(" All tests passed - AIWAF CSV mode working correctly!")
 

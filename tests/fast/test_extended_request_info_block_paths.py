@@ -5,8 +5,8 @@ import pytest
 
 from aiwaf.fast import AIWAF
 from aiwaf.fast.middleware.rate_limit_middleware import _AIWAF_CACHE as _RATE_CACHE
-from aiwaf.core.runtime_blacklist import BlacklistManager
-from aiwaf.fast.utils import get_blacklist_extended_info
+from aiwaf.core.runtime_blocklist import BlocklistManager
+from aiwaf.fast.utils import get_blocklist_extended_info
 
 
 class _Decision:
@@ -23,8 +23,8 @@ class _GeoDecision:
 
 
 def _assert_has_extended_info(path):
-    info_obj = BlacklistManager.get_block_info("testclient")
-    assert info_obj is not None, "expected testclient to be blacklisted"
+    info_obj = BlocklistManager.get_block_info("testclient")
+    assert info_obj is not None, "expected testclient to be blocklisted"
     info = info_obj.get("extended_request_info")
     assert info is not None
     assert info.get("path") == path
@@ -61,7 +61,7 @@ def test_fast_ip_keyword_block_attaches_extended_info(monkeypatch):
         header_validation={"enabled": False},
         rate_limiting={"enabled": False},
         honeypot={"enabled": False},
-        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True,
     )
     client = TestClient(app)
     resp = client.get("/ok")
@@ -88,10 +88,10 @@ def test_fast_header_validation_block_attaches_extended_info(monkeypatch):
         lambda *args, **kwargs: "forced header failure",
     )
     def _forced_block_request(self, ip, reason, path, request=None):
-        BlacklistManager.block(
+        BlocklistManager.block(
             ip,
             f"Header validation: {reason}",
-            extended_request_info=get_blacklist_extended_info(request) if request is not None else None,
+            extended_request_info=get_blocklist_extended_info(request) if request is not None else None,
         )
         return JSONResponse({"error": "blocked"}, status_code=403)
 
@@ -103,7 +103,7 @@ def test_fast_header_validation_block_attaches_extended_info(monkeypatch):
         app,
         rate_limiting={"enabled": False},
         honeypot={"enabled": False},
-        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True,
     )
     client = TestClient(app)
     resp = client.get("/h")
@@ -125,7 +125,7 @@ def test_fast_rate_limit_flood_block_attaches_extended_info(monkeypatch):
         header_validation={"enabled": False},
         rate_limiting={"enabled": True, "max_requests": 100, "window_seconds": 60, "flood_threshold": 1},
         honeypot={"enabled": False},
-        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True,
     )
     client = TestClient(app)
     assert client.get("/rl").status_code == 200
@@ -146,7 +146,7 @@ def test_fast_honeypot_block_attaches_extended_info(monkeypatch):
         header_validation={"enabled": False},
         rate_limiting={"enabled": False},
         honeypot={"enabled": True},
-        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True,
     )
     client = TestClient(app)
     resp = client.post("/read-only")
@@ -172,7 +172,7 @@ def test_fast_geo_block_attaches_extended_info(monkeypatch):
         rate_limiting={"enabled": False},
         honeypot={"enabled": False},
         geo_block={"enabled": True, "block_countries": ["US"]},
-        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True,
     )
     client = TestClient(app)
     resp = client.get("/g")
@@ -193,7 +193,7 @@ def test_fast_uuid_tamper_block_attaches_extended_info(monkeypatch):
         header_validation={"enabled": False},
         rate_limiting={"enabled": False},
         honeypot={"enabled": False},
-        AIWAF_BLACKLIST_STORE_EXTENDED_INFO=True,
+        AIWAF_BLOCKLIST_STORE_EXTENDED_INFO=True,
     )
     client = TestClient(app)
     resp = client.get("/u?uuid=not-a-uuid")

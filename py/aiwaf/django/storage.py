@@ -19,31 +19,31 @@ import time
 from collections import defaultdict
 from ..core.keyword_fallback import KeywordFallbackStore
 from ..core.reputation import FIRST_BLOCK_SECONDS, evaluate_reputation, format_block_reason
-from ..core.storage_interfaces import BlacklistStore, ExemptionStore, KeywordStore
+from ..core.storage_interfaces import BlocklistStore, ExemptionStore, KeywordStore
 from ..core.storage_schema import (
     DEFAULT_DATA_DIR,
-    BLACKLIST_CSV as CORE_BLACKLIST_CSV_NAME,
-    WHITELIST_CSV as CORE_WHITELIST_CSV_NAME,
+    BLOCKLIST_CSV as CORE_BLOCKLIST_CSV_NAME,
+    ALLOWLIST_CSV as CORE_ALLOWLIST_CSV_NAME,
     KEYWORDS_CSV as CORE_KEYWORDS_CSV_NAME,
     PATH_EXEMPTIONS_CSV as CORE_PATH_EXEMPTIONS_CSV_NAME,
 )
 from ..core.runtime_storage import (
     initialize_storage as runtime_initialize_storage,
-    get_blacklist_store as runtime_get_blacklist_store,
+    get_blocklist_store as runtime_get_blocklist_store,
     get_exemption_store as runtime_get_exemption_store,
     get_keyword_store as runtime_get_keyword_store,
 )
 
 # Defer model imports to avoid AppRegistryNotReady during Django app loading
-FeatureSample = BlacklistEntry = IPExemption = ExemptPath = DynamicKeyword = None
+FeatureSample = BlocklistEntry = IPExemption = ExemptPath = DynamicKeyword = None
 
 # Fallback storage for when Django models are unavailable
 _fallback_storage_path = os.path.join(os.path.dirname(__file__), 'fallback_keywords.json')
 _fallback_store = KeywordFallbackStore(_fallback_storage_path)
 logger = logging.getLogger("aiwaf.django.storage")
 
-_blacklist_columns_cache = None
-_BLACKLIST_CURRENT_COLUMNS = {
+_blocklist_columns_cache = None
+_BLOCKLIST_CURRENT_COLUMNS = {
     "extended_request_info",
     "reputation_reason",
     "reasons",
@@ -56,37 +56,37 @@ _BLACKLIST_CURRENT_COLUMNS = {
 }
 
 
-def _blacklist_table_columns():
-    global _blacklist_columns_cache
+def _blocklist_table_columns():
+    global _blocklist_columns_cache
 
-    if _blacklist_columns_cache is not None:
-        return _blacklist_columns_cache
+    if _blocklist_columns_cache is not None:
+        return _blocklist_columns_cache
 
     _import_models()
-    if BlacklistEntry is None:
+    if BlocklistEntry is None:
         # Models/app registry not ready; don't cache a value yet.
         return {"extended_request_info"}
 
     try:
-        table = BlacklistEntry._meta.db_table
+        table = BlocklistEntry._meta.db_table
         with connection.cursor() as cursor:
             desc = connection.introspection.get_table_description(cursor, table)
-        _blacklist_columns_cache = {col.name for col in desc}
+        _blocklist_columns_cache = {col.name for col in desc}
     except Exception:
         # If introspection fails, assume the column exists and let ORM handle errors.
-        _blacklist_columns_cache = {"extended_request_info"}
+        _blocklist_columns_cache = {"extended_request_info"}
 
-    return _blacklist_columns_cache
+    return _blocklist_columns_cache
 
 
-def _blacklist_has_extended_request_info_column() -> bool:
-    cols = _blacklist_table_columns()
+def _blocklist_has_extended_request_info_column() -> bool:
+    cols = _blocklist_table_columns()
     return "extended_request_info" in cols
 
 
-def _blacklist_has_current_columns() -> bool:
-    cols = _blacklist_table_columns()
-    return _BLACKLIST_CURRENT_COLUMNS.issubset(cols)
+def _blocklist_has_current_columns() -> bool:
+    cols = _blocklist_table_columns()
+    return _BLOCKLIST_CURRENT_COLUMNS.issubset(cols)
 
 
 def _is_expired_timestamp(value) -> bool:
@@ -99,17 +99,17 @@ def _is_expired_timestamp(value) -> bool:
 
 
 def _block_ip_legacy_schema(ip, reason, extended_request_info=None):
-    """Block an IP when the BlacklistEntry schema is missing newer columns.
+    """Block an IP when the BlocklistEntry schema is missing newer columns.
 
     Uses raw SQL to avoid selecting/inserting missing columns.
     """
     _import_models()
-    if BlacklistEntry is None:
+    if BlocklistEntry is None:
         return
 
-    cols = _blacklist_table_columns()
+    cols = _blocklist_table_columns()
     qn = connection.ops.quote_name
-    table = qn(BlacklistEntry._meta.db_table)
+    table = qn(BlocklistEntry._meta.db_table)
 
     existing = {}
     now = time.time()
@@ -177,12 +177,12 @@ def _block_ip_legacy_schema(ip, reason, extended_request_info=None):
 
 def _is_blocked_legacy_schema(ip):
     _import_models()
-    if BlacklistEntry is None:
+    if BlocklistEntry is None:
         return False
 
-    cols = _blacklist_table_columns()
+    cols = _blocklist_table_columns()
     qn = connection.ops.quote_name
-    table = qn(BlacklistEntry._meta.db_table)
+    table = qn(BlocklistEntry._meta.db_table)
     with connection.cursor() as cursor:
         if "expires_at" in cols:
             cursor.execute(f"SELECT expires_at FROM {table} WHERE ip_address = %s LIMIT 1", [ip])
@@ -199,33 +199,33 @@ def _is_blocked_legacy_schema(ip):
 
 def _unblock_ip_legacy_schema(ip):
     _import_models()
-    if BlacklistEntry is None:
+    if BlocklistEntry is None:
         return
 
     qn = connection.ops.quote_name
-    table = qn(BlacklistEntry._meta.db_table)
+    table = qn(BlocklistEntry._meta.db_table)
     with connection.cursor() as cursor:
         cursor.execute(f"DELETE FROM {table} WHERE ip_address = %s", [ip])
 
 
 def _get_all_blocked_ips_legacy_schema():
     _import_models()
-    if BlacklistEntry is None:
+    if BlocklistEntry is None:
         return []
 
     qn = connection.ops.quote_name
-    table = qn(BlacklistEntry._meta.db_table)
+    table = qn(BlocklistEntry._meta.db_table)
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT ip_address FROM {table}")
         return [row[0] for row in cursor.fetchall()]
 
 
-def _get_all_blacklist_entries_legacy_schema():
+def _get_all_blocklist_entries_legacy_schema():
     _import_models()
-    if BlacklistEntry is None:
+    if BlocklistEntry is None:
         return []
 
-    cols = _blacklist_table_columns()
+    cols = _blocklist_table_columns()
     select_cols = ["ip_address", "reason"]
     for column in (
         "created_at",
@@ -243,7 +243,7 @@ def _get_all_blacklist_entries_legacy_schema():
             select_cols.append(column)
 
     qn = connection.ops.quote_name
-    table = qn(BlacklistEntry._meta.db_table)
+    table = qn(BlocklistEntry._meta.db_table)
     cols_sql = ", ".join(qn(c) for c in select_cols)
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT {cols_sql} FROM {table}")
@@ -262,13 +262,13 @@ def _get_all_blacklist_entries_legacy_schema():
     return results
 
 
-def _clear_all_blacklist_entries_legacy_schema():
+def _clear_all_blocklist_entries_legacy_schema():
     _import_models()
-    if BlacklistEntry is None:
+    if BlocklistEntry is None:
         return 0
 
     qn = connection.ops.quote_name
-    table = qn(BlacklistEntry._meta.db_table)
+    table = qn(BlocklistEntry._meta.db_table)
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT COUNT(*) FROM {table}")
         count = int(cursor.fetchone()[0])
@@ -278,7 +278,7 @@ def _clear_all_blacklist_entries_legacy_schema():
 
 def _import_models():
     """Import Django models only when needed and apps are ready."""
-    global FeatureSample, BlacklistEntry, IPExemption, ExemptPath, DynamicKeyword
+    global FeatureSample, BlocklistEntry, IPExemption, ExemptPath, DynamicKeyword
     
     if FeatureSample is not None:
         return  # Already imported
@@ -290,7 +290,7 @@ def _import_models():
                 # First try: direct import (most reliable)
                 from .models import (
                     FeatureSample,
-                    BlacklistEntry,
+                    BlocklistEntry,
                     IPExemption,
                     ExemptPath,
                     DynamicKeyword,
@@ -302,7 +302,7 @@ def _import_models():
                         try:
                             from .models import (
                                 FeatureSample,
-                                BlacklistEntry,
+                                BlocklistEntry,
                                 IPExemption,
                                 ExemptPath,
                                 DynamicKeyword,
@@ -369,20 +369,20 @@ class ModelFeatureStore:
             logger.error("Error loading feature data: %s", e, exc_info=True)
             return pd.DataFrame()
 
-class ModelBlacklistStore:
+class ModelBlocklistStore:
     @staticmethod
     def is_blocked(ip):
-        """Check if IP is in blacklist"""
+        """Check if IP is in blocklist"""
         _import_models()
-        if BlacklistEntry is None:
+        if BlocklistEntry is None:
             return False
-        if not _blacklist_has_current_columns():
+        if not _blocklist_has_current_columns():
             try:
                 return _is_blocked_legacy_schema(ip)
             except Exception:
                 return False
         try:
-            entry = BlacklistEntry.objects.filter(ip_address=ip).first()
+            entry = BlocklistEntry.objects.filter(ip_address=ip).first()
             if not entry:
                 return False
             if _is_expired_timestamp(getattr(entry, "expires_at", None)):
@@ -394,12 +394,12 @@ class ModelBlacklistStore:
 
     @staticmethod
     def block_ip(ip, reason="Automated block", extended_request_info=None):
-        """Add IP to blacklist"""
+        """Add IP to blocklist"""
         _import_models()
-        if BlacklistEntry is None:
+        if BlocklistEntry is None:
             logger.warning("Cannot block IP %s, models not available", ip)
             return
-        if not _blacklist_has_current_columns():
+        if not _blocklist_has_current_columns():
             try:
                 _block_ip_legacy_schema(ip, reason, extended_request_info=extended_request_info)
             except Exception as e:
@@ -407,7 +407,7 @@ class ModelBlacklistStore:
             return
         try:
             now = time.time()
-            existing_obj = BlacklistEntry.objects.filter(ip_address=ip).first()
+            existing_obj = BlocklistEntry.objects.filter(ip_address=ip).first()
             if existing_obj and _is_expired_timestamp(getattr(existing_obj, "expires_at", None)):
                 existing_obj.delete()
                 existing_obj = None
@@ -422,7 +422,7 @@ class ModelBlacklistStore:
                 }
             decision = evaluate_reputation(existing=existing, reason=reason, now=now)
             effective_duration = decision.duration or FIRST_BLOCK_SECONDS
-            obj, created = BlacklistEntry.objects.get_or_create(
+            obj, created = BlocklistEntry.objects.get_or_create(
                 ip_address=ip,
                 defaults={
                     'reason': reason,
@@ -476,60 +476,60 @@ class ModelBlacklistStore:
 
     @staticmethod
     def unblock_ip(ip):
-        """Remove IP from blacklist"""
+        """Remove IP from blocklist"""
         _import_models()
-        if BlacklistEntry is None:
+        if BlocklistEntry is None:
             return
-        if not _blacklist_has_current_columns():
+        if not _blocklist_has_current_columns():
             try:
                 _unblock_ip_legacy_schema(ip)
             except Exception as e:
                 logger.error("Error unblocking IP %s (legacy schema): %s", ip, e, exc_info=True)
             return
         try:
-            BlacklistEntry.objects.filter(ip_address=ip).delete()
+            BlocklistEntry.objects.filter(ip_address=ip).delete()
         except Exception as e:
             logger.error("Error unblocking IP %s: %s", ip, e, exc_info=True)
 
     @staticmethod
     def remove_ip(ip):
-        """Remove IP from blacklist (alias for unblock_ip)"""
-        ModelBlacklistStore.unblock_ip(ip)
+        """Remove IP from blocklist (alias for unblock_ip)"""
+        ModelBlocklistStore.unblock_ip(ip)
 
     @staticmethod
     def add_ip(ip, reason="Automated block", extended_request_info=None):
-        """Add IP to blacklist (alias for block_ip)"""
-        ModelBlacklistStore.block_ip(ip, reason, extended_request_info=extended_request_info)
+        """Add IP to blocklist (alias for block_ip)"""
+        ModelBlocklistStore.block_ip(ip, reason, extended_request_info=extended_request_info)
 
     @staticmethod
     def get_all_blocked_ips():
         """Get all blocked IPs"""
         _import_models()
-        if BlacklistEntry is None:
+        if BlocklistEntry is None:
             return []
-        if not _blacklist_has_current_columns():
+        if not _blocklist_has_current_columns():
             try:
                 return _get_all_blocked_ips_legacy_schema()
             except Exception:
                 return []
         try:
-            return list(BlacklistEntry.objects.values_list('ip_address', flat=True))
+            return list(BlocklistEntry.objects.values_list('ip_address', flat=True))
         except Exception:
             return []
 
     @staticmethod
     def get_all():
-        """Get all blacklist entries as dictionaries"""
+        """Get all blocklist entries as dictionaries"""
         _import_models()
-        if BlacklistEntry is None:
+        if BlocklistEntry is None:
             return []
-        if not _blacklist_has_current_columns():
+        if not _blocklist_has_current_columns():
             try:
-                return _get_all_blacklist_entries_legacy_schema()
+                return _get_all_blocklist_entries_legacy_schema()
             except Exception:
                 return []
         try:
-            return list(BlacklistEntry.objects.values(
+            return list(BlocklistEntry.objects.values(
                 'ip_address',
                 'reason',
                 'created_at',
@@ -548,22 +548,22 @@ class ModelBlacklistStore:
 
     @staticmethod
     def clear_all():
-        """Clear all blacklist entries"""
+        """Clear all blocklist entries"""
         _import_models()
-        if BlacklistEntry is None:
+        if BlocklistEntry is None:
             return 0
-        if not _blacklist_has_current_columns():
+        if not _blocklist_has_current_columns():
             try:
-                return _clear_all_blacklist_entries_legacy_schema()
+                return _clear_all_blocklist_entries_legacy_schema()
             except Exception as e:
-                logger.error("Error clearing all blacklist entries (legacy schema): %s", e, exc_info=True)
+                logger.error("Error clearing all blocklist entries (legacy schema): %s", e, exc_info=True)
                 return 0
         try:
-            count = BlacklistEntry.objects.count()
-            BlacklistEntry.objects.all().delete()
+            count = BlocklistEntry.objects.count()
+            BlocklistEntry.objects.all().delete()
             return count
         except Exception as e:
-            logger.error("Error clearing all blacklist entries: %s", e, exc_info=True)
+            logger.error("Error clearing all blocklist entries: %s", e, exc_info=True)
             return 0
 
 class ModelExemptionStore:
@@ -839,43 +839,43 @@ def _is_csv_mode():
 
 
 CSV_DATA_DIR = _resolve_csv_data_dir()
-BLACKLIST_CSV = os.path.join(CSV_DATA_DIR, CORE_BLACKLIST_CSV_NAME)
-EXEMPTION_CSV = os.path.join(CSV_DATA_DIR, CORE_WHITELIST_CSV_NAME)
+BLOCKLIST_CSV = os.path.join(CSV_DATA_DIR, CORE_BLOCKLIST_CSV_NAME)
+EXEMPTION_CSV = os.path.join(CSV_DATA_DIR, CORE_ALLOWLIST_CSV_NAME)
 KEYWORDS_CSV = os.path.join(CSV_DATA_DIR, CORE_KEYWORDS_CSV_NAME)
 PATH_EXEMPTIONS_CSV = os.path.join(CSV_DATA_DIR, CORE_PATH_EXEMPTIONS_CSV_NAME)
 STORAGE_MODE = _resolve_storage_mode()
 
 
-class CSVBlacklistStoreAdapter:
+class CSVBlocklistStoreAdapter:
     @staticmethod
     def is_blocked(ip):
-        return runtime_get_blacklist_store().is_blocked(ip)
+        return runtime_get_blocklist_store().is_blocked(ip)
 
     @staticmethod
     def block_ip(ip, reason="Automated block", extended_request_info=None):
-        runtime_get_blacklist_store().block_ip(ip, reason, extended_request_info=extended_request_info)
+        runtime_get_blocklist_store().block_ip(ip, reason, extended_request_info=extended_request_info)
 
     @staticmethod
     def unblock_ip(ip):
-        runtime_get_blacklist_store().unblock_ip(ip)
+        runtime_get_blocklist_store().unblock_ip(ip)
 
     @staticmethod
     def add_ip(ip, reason="Automated block", extended_request_info=None):
-        CSVBlacklistStoreAdapter.block_ip(ip, reason, extended_request_info=extended_request_info)
+        CSVBlocklistStoreAdapter.block_ip(ip, reason, extended_request_info=extended_request_info)
 
     @staticmethod
     def remove_ip(ip):
-        CSVBlacklistStoreAdapter.unblock_ip(ip)
+        CSVBlocklistStoreAdapter.unblock_ip(ip)
 
     @staticmethod
     def get_all_blocked_ips():
-        return runtime_get_blacklist_store().get_blocked_ips()
+        return runtime_get_blocklist_store().get_blocked_ips()
 
     @staticmethod
     def get_all():
         rows = []
-        for ip in runtime_get_blacklist_store().get_blocked_ips():
-            info = runtime_get_blacklist_store().get_block_info(ip) or {}
+        for ip in runtime_get_blocklist_store().get_blocked_ips():
+            info = runtime_get_blocklist_store().get_block_info(ip) or {}
             rows.append(
                 {
                     "ip_address": ip,
@@ -896,9 +896,9 @@ class CSVBlacklistStoreAdapter:
 
     @staticmethod
     def clear_all():
-        ips = list(runtime_get_blacklist_store().get_blocked_ips())
+        ips = list(runtime_get_blocklist_store().get_blocked_ips())
         for ip in ips:
-            runtime_get_blacklist_store().unblock_ip(ip)
+            runtime_get_blocklist_store().unblock_ip(ip)
         return len(ips)
 
 
@@ -1036,12 +1036,12 @@ def get_feature_store():
     """Get the feature store (Django models only)"""
     return ModelFeatureStore()
 
-def get_blacklist_store() -> BlacklistStore:
-    """Get the blacklist store."""
+def get_blocklist_store() -> BlocklistStore:
+    """Get the blocklist store."""
     if _is_csv_mode():
         _ensure_runtime_csv_backend()
-        return CSVBlacklistStoreAdapter()
-    return ModelBlacklistStore()
+        return CSVBlocklistStoreAdapter()
+    return ModelBlocklistStore()
 
 def get_exemption_store() -> ExemptionStore:
     """Get the exemption store."""
@@ -1062,3 +1062,15 @@ def get_keyword_store() -> KeywordStore:
         _ensure_runtime_csv_backend()
         return CSVKeywordStoreAdapter()
     return ModelKeywordStore()
+
+
+# Compatibility aliases for callers using the previous terminology.
+BlacklistStore = BlocklistStore
+CORE_BLACKLIST_CSV_NAME = CORE_BLOCKLIST_CSV_NAME
+CORE_WHITELIST_CSV_NAME = CORE_ALLOWLIST_CSV_NAME
+runtime_get_blacklist_store = runtime_get_blocklist_store
+BlacklistEntry = BlocklistEntry
+ModelBlacklistStore = ModelBlocklistStore
+BLACKLIST_CSV = BLOCKLIST_CSV
+CSVBlacklistStoreAdapter = CSVBlocklistStoreAdapter
+get_blacklist_store = get_blocklist_store

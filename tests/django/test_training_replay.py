@@ -19,7 +19,7 @@ class TrainingReplayTests(SimpleTestCase):
                     patch.object(trainer, 'MIN_TRAIN_LOGS', 50), \
                     patch.object(trainer, 'get_legitimate_keywords', return_value=set()), \
                     patch.object(trainer, '_print_geoip_blocklist_summary'), \
-                    patch.object(trainer.BlacklistManager, 'block') as block:
+                    patch.object(trainer.BlocklistManager, 'block') as block:
                 trainer.train(disable_ai=True)
                 self.assertEqual(block.call_count, 1)
                 trainer.train(disable_ai=True)

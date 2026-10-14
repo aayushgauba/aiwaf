@@ -33,11 +33,11 @@ class AiwafConsoleLogicTest {
         PrintStream oldOut = System.out;
         System.setOut(new PrintStream(out));
         try {
-            AiwafConsole.main(new String[]{"add", "blacklist", "198.51.100.99", "--reason", "test"});
+            AiwafConsole.main(new String[]{"add", "blocklist", "198.51.100.99", "--reason", "test"});
             AiwafConsole.main(new String[]{"export", "aiwaf-console-export.bin"});
             AiwafConsole.main(new String[]{"reset"});
             AiwafConsole.main(new String[]{"import", "aiwaf-console-export.bin"});
-            AiwafConsole.main(new String[]{"list", "blacklist"});
+            AiwafConsole.main(new String[]{"list", "blocklist"});
         } finally {
             System.setOut(oldOut);
         }
@@ -51,17 +51,17 @@ class AiwafConsoleLogicTest {
         PrintStream oldOut = System.out;
         System.setOut(new PrintStream(out));
         try {
-            AiwafConsole.main(new String[]{"add", "blacklist", "198.51.100.130", "--reason", "test"});
-            AiwafConsole.main(new String[]{"add", "whitelist", "203.0.113.130"});
+            AiwafConsole.main(new String[]{"add", "blocklist", "198.51.100.130", "--reason", "test"});
+            AiwafConsole.main(new String[]{"add", "allowlist", "203.0.113.130"});
             AiwafConsole.main(new String[]{"add", "keyword", "login"});
 
-            AiwafConsole.main(new String[]{"reset", "--blacklist"});
-            AiwafConsole.main(new String[]{"list", "blacklist"});
-            AiwafConsole.main(new String[]{"list", "whitelist"});
+            AiwafConsole.main(new String[]{"reset", "--blocklist"});
+            AiwafConsole.main(new String[]{"list", "blocklist"});
+            AiwafConsole.main(new String[]{"list", "allowlist"});
             AiwafConsole.main(new String[]{"list", "keywords"});
 
             AiwafConsole.main(new String[]{"reset", "--exemptions-only"});
-            AiwafConsole.main(new String[]{"list", "whitelist"});
+            AiwafConsole.main(new String[]{"list", "allowlist"});
             AiwafConsole.main(new String[]{"list", "keywords"});
 
             AiwafConsole.main(new String[]{"reset", "--keywords"});

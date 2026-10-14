@@ -1,7 +1,7 @@
 # Flask GeoBlockMiddleware
 from flask import request, jsonify
-from .utils import get_blacklist_extended_info, get_ip, is_exempt
-from .blacklist_manager import BlacklistManager
+from .utils import get_blocklist_extended_info, get_ip, is_exempt
+from .blocklist_manager import BlocklistManager
 from .exemption_decorators import should_apply_middleware
 from .geoip import get_country_for_ip
 from .storage import get_geo_blocked_countries
@@ -76,10 +76,10 @@ class GeoBlockMiddleware:
 
             if decision.should_block:
                 reason = decision.reason
-                BlacklistManager.block(
+                BlocklistManager.block(
                     ip,
                     reason,
-                    extended_request_info=get_blacklist_extended_info(request),
+                    extended_request_info=get_blocklist_extended_info(request),
                 )
 
                 logger = getattr(app, 'aiwaf_logger', None)
@@ -89,3 +89,8 @@ class GeoBlockMiddleware:
                 return jsonify({"error": "blocked"}), 403
 
             return None
+
+
+# Compatibility aliases for callers using the previous terminology.
+get_blacklist_extended_info = get_blocklist_extended_info
+BlacklistManager = BlocklistManager

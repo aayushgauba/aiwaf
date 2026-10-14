@@ -7,10 +7,10 @@ import random
 import tempfile
 import concurrent.futures
 from pathlib import Path
-from aiwaf.core.storage_schema import BLACKLIST_CSV, CSV_HEADERS
+from aiwaf.core.storage_schema import BLOCKLIST_CSV, CSV_HEADERS
 from aiwaf.flask.storage import (
-    add_ip_whitelist, is_ip_whitelisted, add_ip_blacklist, 
-    is_ip_blacklisted, add_keyword, _get_data_dir
+    add_ip_allowlist, is_ip_allowlisted, add_ip_blocklist,
+    is_ip_blocklisted, add_keyword, _get_data_dir
 )
 
 
@@ -29,8 +29,8 @@ def concurrent_csv_app(app):
 class TestConcurrentCSVAccess:
     """Test suite for concurrent CSV access improvements."""
 
-    def test_concurrent_whitelist_operations(self, concurrent_csv_app):
-        """Test concurrent whitelist add/check operations."""
+    def test_concurrent_allowlist_operations(self, concurrent_csv_app):
+        """Test concurrent allowlist add/check operations."""
         num_threads = 20
         num_operations = 50
         results = {'success': 0, 'errors': []}
@@ -42,14 +42,14 @@ class TestConcurrentCSVAccess:
                     for i in range(num_operations):
                         ip = f"192.168.{thread_id}.{i}"
                         
-                        # Add IP to whitelist
-                        add_ip_whitelist(ip)
+                        # Add IP to allowlist
+                        add_ip_allowlist(ip)
                         
                         # Small random delay to increase contention
                         time.sleep(random.uniform(0.001, 0.005))
                         
                         # Verify IP was added
-                        if is_ip_whitelisted(ip):
+                        if is_ip_allowlisted(ip):
                             results['success'] += 1
                         else:
                             results['errors'].append(f"Thread {thread_id}: IP {ip} not found after adding")
@@ -73,30 +73,30 @@ class TestConcurrentCSVAccess:
         assert results['success'] == expected_operations, f"Expected {expected_operations} success, got {results['success']}. Errors: {results['errors']}"
         assert len(results['errors']) == 0, f"Unexpected errors: {results['errors']}"
 
-    def test_concurrent_blacklist_operations(self, concurrent_csv_app):
-        """Test concurrent blacklist add/check operations."""
+    def test_concurrent_blocklist_operations(self, concurrent_csv_app):
+        """Test concurrent blocklist add/check operations."""
         num_threads = 15
         num_operations = 30
         results = {'success': 0, 'errors': []}
         
         def worker(thread_id):
-            """Worker function for concurrent blacklist operations."""
+            """Worker function for concurrent blocklist operations."""
             try:
                 for i in range(num_operations):
                     ip = f"10.0.{thread_id}.{i}"
                     reason = f"Malicious activity from thread {thread_id}"
                     
-                    # Add IP to blacklist
-                    add_ip_blacklist(ip, reason)
+                    # Add IP to blocklist
+                    add_ip_blocklist(ip, reason)
                     
                     # Small random delay
                     time.sleep(random.uniform(0.001, 0.003))
                     
-                    # Verify IP was blacklisted
-                    if is_ip_blacklisted(ip):
+                    # Verify IP was blocklisted
+                    if is_ip_blocklisted(ip):
                         results['success'] += 1
                     else:
-                        results['errors'].append(f"Thread {thread_id}: IP {ip} not blacklisted after adding")
+                        results['errors'].append(f"Thread {thread_id}: IP {ip} not blocklisted after adding")
                         
             except Exception as e:
                 results['errors'].append(f"Thread {thread_id}: {str(e)}")
@@ -158,31 +158,31 @@ class TestConcurrentCSVAccess:
     def test_mixed_concurrent_operations(self, concurrent_csv_app):
         """Test mixed concurrent operations across all CSV files."""
         num_operations = 100
-        results = {'whitelist': 0, 'blacklist': 0, 'keywords': 0, 'errors': []}
+        results = {'allowlist': 0, 'blocklist': 0, 'keywords': 0, 'errors': []}
         
-        def whitelist_worker():
-            """Worker for whitelist operations."""
+        def allowlist_worker():
+            """Worker for allowlist operations."""
             try:
                 for i in range(num_operations):
                     ip = f"192.168.100.{i}"
-                    add_ip_whitelist(ip)
-                    if is_ip_whitelisted(ip):
-                        results['whitelist'] += 1
+                    add_ip_allowlist(ip)
+                    if is_ip_allowlisted(ip):
+                        results['allowlist'] += 1
                     time.sleep(random.uniform(0.001, 0.003))
             except Exception as e:
-                results['errors'].append(f"Whitelist worker: {str(e)}")
+                results['errors'].append(f"Allowlist worker: {str(e)}")
         
-        def blacklist_worker():
-            """Worker for blacklist operations."""
+        def blocklist_worker():
+            """Worker for blocklist operations."""
             try:
                 for i in range(num_operations):
                     ip = f"10.0.100.{i}"
-                    add_ip_blacklist(ip, "Concurrent test")
-                    if is_ip_blacklisted(ip):
-                        results['blacklist'] += 1
+                    add_ip_blocklist(ip, "Concurrent test")
+                    if is_ip_blocklisted(ip):
+                        results['blocklist'] += 1
                     time.sleep(random.uniform(0.001, 0.003))
             except Exception as e:
-                results['errors'].append(f"Blacklist worker: {str(e)}")
+                results['errors'].append(f"Blocklist worker: {str(e)}")
         
         def keyword_worker():
             """Worker for keyword operations."""
@@ -197,8 +197,8 @@ class TestConcurrentCSVAccess:
         
         # Start all workers concurrently
         threads = [
-            threading.Thread(target=whitelist_worker),
-            threading.Thread(target=blacklist_worker),
+            threading.Thread(target=allowlist_worker),
+            threading.Thread(target=blocklist_worker),
             threading.Thread(target=keyword_worker)
         ]
         
@@ -209,8 +209,8 @@ class TestConcurrentCSVAccess:
             thread.join()
         
         # Verify all operations completed successfully
-        assert results['whitelist'] == num_operations, f"Whitelist operations: expected {num_operations}, got {results['whitelist']}"
-        assert results['blacklist'] == num_operations, f"Blacklist operations: expected {num_operations}, got {results['blacklist']}"
+        assert results['allowlist'] == num_operations, f"Allowlist operations: expected {num_operations}, got {results['allowlist']}"
+        assert results['blocklist'] == num_operations, f"Blocklist operations: expected {num_operations}, got {results['blocklist']}"
         assert results['keywords'] == num_operations, f"Keyword operations: expected {num_operations}, got {results['keywords']}"
         assert len(results['errors']) == 0, f"Unexpected errors: {results['errors']}"
 
@@ -228,7 +228,7 @@ class TestConcurrentCSVAccess:
                         # All threads try to add the same set of IPs
                         ip = f"192.168.255.{i % 5}"  # Only 5 unique IPs
                         
-                        add_ip_whitelist(ip)
+                        add_ip_allowlist(ip)
                         results['duplicates_handled'] += 1
                         
                         # Brief delay to increase contention
@@ -250,7 +250,7 @@ class TestConcurrentCSVAccess:
             unique_ips = set()
             for i in range(5):
                 ip = f"192.168.255.{i}"
-                if is_ip_whitelisted(ip):
+                if is_ip_allowlisted(ip):
                     unique_ips.add(ip)
             
             assert len(unique_ips) == 5, f"Expected 5 unique IPs, found {len(unique_ips)}"
@@ -265,13 +265,13 @@ class TestConcurrentCSVAccess:
             for i in range(operations_per_thread):
                 try:
                     with concurrent_csv_app.app_context():
-                        # Whitelist operation
+                        # Allowlist operation
                         ip_white = f"172.16.{thread_id}.{i}"
-                        add_ip_whitelist(ip_white)
+                        add_ip_allowlist(ip_white)
 
-                        # Blacklist operation
+                        # Blocklist operation
                         ip_black = f"172.17.{thread_id}.{i}"
-                        add_ip_blacklist(ip_black, f"Test from thread {thread_id}")
+                        add_ip_blocklist(ip_black, f"Test from thread {thread_id}")
 
                         # Keyword operation
                         keyword = f"test_keyword_{thread_id}_{i}"
@@ -296,23 +296,23 @@ class TestConcurrentCSVAccess:
         # Verify file integrity by checking CSV files can be read
         data_dir = Path(_get_data_dir())
         
-        # Check whitelist file
-        whitelist_file = data_dir / "whitelist.csv"
-        assert whitelist_file.exists(), "Whitelist CSV file missing"
+        # Check allowlist file
+        allowlist_file = data_dir / "whitelist.csv"
+        assert allowlist_file.exists(), "Allowlist CSV file missing"
         
-        with open(whitelist_file, 'r') as f:
+        with open(allowlist_file, 'r') as f:
             lines = f.readlines()
-            assert len(lines) > 1, "Whitelist file appears corrupted"
-            assert 'ip,added_date' in lines[0], "Whitelist header corrupted"
+            assert len(lines) > 1, "Allowlist file appears corrupted"
+            assert 'ip,added_date' in lines[0], "Allowlist header corrupted"
         
-        # Check blacklist file
-        blacklist_file = data_dir / "blacklist.csv"
-        assert blacklist_file.exists(), "Blacklist CSV file missing"
+        # Check blocklist file
+        blocklist_file = data_dir / "blacklist.csv"
+        assert blocklist_file.exists(), "Blocklist CSV file missing"
         
-        with open(blacklist_file, 'r') as f:
+        with open(blocklist_file, 'r') as f:
             lines = f.readlines()
-            assert len(lines) > 1, "Blacklist file appears corrupted"
-            assert lines[0].strip().split(",") == CSV_HEADERS[BLACKLIST_CSV], "Blacklist header corrupted"
+            assert len(lines) > 1, "Blocklist file appears corrupted"
+            assert lines[0].strip().split(",") == CSV_HEADERS[BLOCKLIST_CSV], "Blocklist header corrupted"
         
         # Check keywords file
         keywords_file = data_dir / "keywords.csv"
@@ -333,8 +333,8 @@ class TestConcurrentCSVAccess:
             """Performance test worker."""
             for i in range(operations_per_thread):
                 ip = f"10.{thread_id}.{i}.100"
-                add_ip_blacklist(ip, "Performance test")
-                assert is_ip_blacklisted(ip), f"IP {ip} not found immediately after adding"
+                add_ip_blocklist(ip, "Performance test")
+                assert is_ip_blocklisted(ip), f"IP {ip} not found immediately after adding"
         
         # Run performance test
         threads = []

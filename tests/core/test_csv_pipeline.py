@@ -139,7 +139,7 @@ def test_concurrent_rate_consumption_is_atomic(tmp_path, backend):
     assert begin(e, now=111)[1] == 0
 
 
-def test_rate_flood_and_soft_blacklist(tmp_path):
+def test_rate_flood_and_soft_blocklist(tmp_path):
     e = engine(tmp_path, enabled=["rate_limit"], rate_max=1, rate_flood=2)
     assert [begin(e)[1] for _ in range(3)] == [0, 429, 403]
     assert rows(tmp_path, "blacklist.csv")[0]["reason"] == "Flood pattern"

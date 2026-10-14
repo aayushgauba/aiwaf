@@ -1,4 +1,4 @@
-from aiwaf.core.blacklist import should_unblock_ip
+from aiwaf.core.blocklist import should_unblock_ip
 
 
 def test_should_unblock_ip_obeys_feature_and_exemption_policy():

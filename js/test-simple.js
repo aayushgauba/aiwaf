@@ -1,13 +1,13 @@
 const { extractFeatures, init: initFeatures, markRequestStart } = require('./lib/featureUtils');
 const anomalyDetector = require('./lib/anomalyDetector');
-const blacklistManager = require('./lib/blacklistManager');
+const blocklistManager = require('./lib/blocklistManager');
 const rateLimiter = require('./lib/rateLimiter');
 
 async function simpleTest() {
   console.log('Simple WAF Component Test\n');
   
   // Initialize components
-  await blacklistManager.initialize();
+  await blocklistManager.initialize();
   initFeatures();
   await rateLimiter.init({
     WINDOW_SEC: 1,
@@ -55,11 +55,11 @@ async function simpleTest() {
     console.log(`   Request ${i + 1}: ${blocked ? 'BLOCKED' : 'ALLOWED'}`);
   }
   
-  console.log('\n3. Testing blacklist...');
+  console.log('\n3. Testing blocklist...');
   
   const blockIP = '192.168.1.300';
-  await blacklistManager.block(blockIP, 'Test block');
-  const isBlocked = await blacklistManager.isBlocked(blockIP);
+  await blocklistManager.block(blockIP, 'Test block');
+  const isBlocked = await blocklistManager.isBlocked(blockIP);
   console.log(`   IP ${blockIP} blocked: ${isBlocked ? 'YES' : 'NO'}`);
   
   console.log('\n4. Model information...');
