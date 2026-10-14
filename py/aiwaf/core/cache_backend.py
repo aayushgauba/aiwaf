@@ -312,7 +312,7 @@ class _SimpleRedisClient:
         return self._exec("EVAL", script, str(numkeys), *(str(arg) for arg in args))
 
 
-def _redis_from_url(redis_url: str):
+def _redis_from_url(redis_url: str, *, timeout: Optional[float] = None):
     """Return a redis client (redis-py if installed, else a simple TCP client)."""
     parsed = urlparse(redis_url)
     scheme = (parsed.scheme or "").lower()
@@ -334,9 +334,11 @@ def _redis_from_url(redis_url: str):
     except Exception:
         if scheme == 'rediss':
             raise RuntimeError('rediss:// requires redis-py; TLS not supported by built-in client') from None
-        return _SimpleRedisClient(host, port, password=password, db=db)
+        return _SimpleRedisClient(host, port, password=password, db=db,
+                                  timeout=2.0 if timeout is None else timeout)
 
-    client = redis.Redis.from_url(redis_url)
+    options = {} if timeout is None else {"socket_timeout": timeout, "socket_connect_timeout": timeout}
+    client = redis.Redis.from_url(redis_url, **options)
     return client
 
 

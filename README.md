@@ -39,14 +39,13 @@ the supported Redis backends when sharing limits across workers.
 
 Each package is versioned and released independently.
 
-Python 1.1.6, Rust/Python 0.2.5, Node.js 1.1.4, WASM 0.2.4, and Java 1.3.4 are local release candidates; see the
-[upgrade notes](docs/releases/2026-10-elv2.md).
+Python 1.1.7, Rust/Python 0.2.6, Node.js 1.1.4, WASM 0.2.4, and Java 1.3.4 are local source targets. See the package table below and [CHANGELOG](CHANGELOG.md) for release changes.
 
 | Runtime | Package | Repository version | Primary use |
 | --- | --- | ---: | --- |
-| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.6` | Django, Flask, and FastAPI protection |
+| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.7` | Django, Flask, and FastAPI protection |
 | Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.4` | Express and Node framework middleware |
-| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.5` | Native Python acceleration and JSON model inference |
+| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.6` | Native Python acceleration and JSON model inference |
 | WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.4` | Rust detection and model primitives for JavaScript |
 | Java | `io.github.aiwaf-project:aiwaf-java` | `1.3.4` | Spring MVC and Jakarta Servlet protection |
 
@@ -79,7 +78,6 @@ The runtimes share policy intent and training feature names, but their framework
 │   └── crates/aiwaf_wasm/          WebAssembly bindings
 ├── java/                           Java 17 package
 ├── tests/                          Python integration and parity tests
-├── benchmarks/                     Python middleware benchmarks
 ├── examples/                       Focused Python examples
 ├── .github/workflows/              Tests, security checks, and releases
 ├── README.md                       Canonical project documentation
@@ -97,7 +95,7 @@ pip install "aiwaf[django]"
 pip install "aiwaf[flask]"
 pip install "aiwaf[fastapi]"
 
-# Backward-compatible alias; Python 1.1.6 already installs aiwaf-rust
+# Backward-compatible alias; Python 1.1.7 already installs aiwaf-rust
 pip install "aiwaf[rust]"
 
 # Node.js middleware
@@ -121,7 +119,7 @@ Java 1.3.4, after it is published to Maven Central:
 
 The Python package requires Python 3.10 or newer. Framework dependencies are optional, so install only the extra needed by the application.
 
-Python 1.1.6 requires `aiwaf-rust>=0.2.5`; the `rust` extra remains an installation
+Python 1.1.7 requires `aiwaf-rust>=0.2.6`; the `rust` extra remains an installation
 alias. Publish the matching Rust wheel with `NativeCSVPipeline` support before
 the Python release. The Rust release workflow builds Linux x86_64/aarch64,
 musl x86_64, macOS x86_64/arm64 and Windows x86_64 wheels and checks the native
@@ -194,8 +192,11 @@ Common profile keys and defaults:
 | `rate_backend`, `rate_key_mode` | `memory`, `ip_path`; `csv` shares buckets across workers; `ip` aggregates paths. Redis is rejected |
 | `rate_window`, `rate_max`, `rate_flood` | `10`, `20`, `40`; throttle at 429, flood at 403 with blacklist persistence |
 | `soft_block_blacklist`, `ip_blocking`, `block_duration` | `False`, `True`, reputation-based duration; explicit seconds or nonpositive permanent duration |
-| `honeypot_backend` | `csv`; shared, persistent form timestamps in `pipeline_state.csv`. Optional `memory` uses a Rust map local to one engine/worker |
-| `min_form_time`, `max_page_time`, `skip_authenticated` | `1.0`, `240`, `True`; same timing policy for both honeypot backends |
+| `honeypot_backend` | Django defaults to `django_cache`; Flask/FastAPI and direct construction default to `csv`. Optional `memory` is local to one engine; `redis` and `cache` delegate timestamp I/O while Rust enforces timing |
+| `honeypot_cache_alias` | Django-only; `default`. Uses the named `CACHES` entry for honeypot timestamps, not other policy or rate state |
+| `honeypot_redis_url` | Required for `honeypot_backend="redis"`; stripped before native profile serialization. `rediss://` requires redis-py |
+| `honeypot_cache_namespace` | Redis/custom cache key prefix, default `aiwaf:native:honeypot:v1`; use the same value across workers and a distinct value for unrelated applications |
+| `min_form_time`, `max_page_time`, `skip_authenticated` | `1.0`, `240`, `True`; native Rust applies the timing policy |
 | `uuid_score_enabled`, `uuid_window`, `uuid_threshold` | `True`, `60`, `5`; weights: `uuid_malformed_weight=5`, `uuid_not_found_weight=1`, `uuid_success_decay=2` |
 | `required_headers`, `header_min_score` | `HTTP_USER_AGENT` and `HTTP_ACCEPT`, `3`; empty required list disables required-header/quality checks, retains safety caps |
 | `anomaly_window`, `anomaly_keywords` | `60`, standard anomaly vocabulary; history/scoring is held in Rust per worker |
@@ -217,23 +218,95 @@ transfer timestamps automatically. Keep `csv` for shared or persistent timing;
 CSV writes remain immediately synced. Blacklist, keyword, geo and whitelist
 policy files and immediate request logging keep their configured CSV behavior.
 
-A second matched WSL benchmark compared these two timing backends with all
-eight stages enabled. Three alternating runs of 300 requests per mode/framework
-measured the following added overhead after subtracting framework-only latency:
+### Flask and FastAPI native honeypot cache
 
-| Framework | CSV timing, AI off | Memory timing, AI off | CSV timing, AI on | Memory timing, AI on |
-| --- | ---: | ---: | ---: | ---: |
-| Flask | 3.74 ms | 0.83 ms | 3.66 ms | 0.97 ms |
-| Django | 3.67 ms | 0.91 ms | 4.02 ms | 0.83 ms |
-| FastAPI | 3.78 ms | 0.78 ms | 3.70 ms | 0.92 ms |
+Both native adapters accept Redis or a supplied synchronous cache. CSV remains
+their default. This changes honeypot timestamp storage only; other policies and
+rate-limit backends retain their configured behavior.
 
-All 13,500 measured requests returned 200 and both protected modes blocked the
-SQL/PHP probes. These are medians of per-run mean server times for a synthetic
-one-client workload with immediate logging, 80% GET / 20% JSON POST, 30 fields
-and a seeded 100-tree Rust model when AI is enabled. The performance comparison
-does not remove the persistence and cross-worker differences between backends.
-Reproduce memory mode with `--pipeline --honeypot-backend memory` in the HTTP
-benchmark harness; the default remains `--honeypot-backend csv`.
+```python
+import os
+from aiwaf.flask.csv_pipeline import NativeAIWAF
+
+profile = {
+    "data_dir": "aiwaf_data",
+    "honeypot_backend": "redis",
+    "honeypot_redis_url": os.environ["AIWAF_REDIS_URL"],
+    "honeypot_cache_namespace": "myapp:honeypot:v1",
+}
+NativeAIWAF(app, config=profile)  # Flask
+
+# FastAPI alternative:
+# from aiwaf.fast.csv_pipeline import NativeAIWAFMiddleware
+# app.add_middleware(NativeAIWAFMiddleware, config=profile)
+```
+
+For an existing Flask-Caching instance or another compatible object, select
+`honeypot_backend="cache"` and pass `honeypot_cache=cache` to either native adapter.
+The contract is `get(key)` returning a stored value or `None`, and
+`set(key, value, timeout=seconds)` returning success or `None`. Explicit `False`
+means failure. Methods must be synchronous, preserve a timestamp/expiry pair,
+honor TTL, and propagate storage errors. Disable any ignored-error option;
+no-op cache backends are unsuitable. Custom adapters must translate their own
+cache's TTL argument if it differs. A local cache still isolates workers.
+
+Rust retains timing decisions, exemptions and logical expiry. Entries have a
+300-second TTL; misses/evictions permit the POST timing check, while exceptions,
+invalid records and failed writes return generic HTTP 503. Expired-page POSTs
+return 409 until a new GET or TTL expiry, without deleting a concurrent refresh.
+FastAPI offloads the cache-backed native request check to its worker thread pool
+so synchronous network I/O does not block the event loop. Pool saturation and
+cache latency still affect request latency. Existing CSV/memory timing behavior
+and the legacy middleware chain are unchanged.
+
+To exercise independent workers against a dedicated test Redis instance, set
+`AIWAF_TEST_REDIS_URL` and run
+`python -m pytest tests/integration/test_native_honeypot_cache.py`.
+
+### Django native honeypot cache
+
+Starting with Python 1.1.7 / aiwaf-rust 0.2.6, Django's native middleware uses
+the existing Django cache for honeypot GET timestamps by default. Rust calls a
+small Python storage adapter; form timing, logical expiry, exemptions and block
+decisions remain native. Other policies retain their configured CSV storage.
+
+```python
+AIWAF_CSV_PIPELINE = {
+    "data_dir": "aiwaf_data",
+    "honeypot_cache_alias": "default",  # optional; uses CACHES["default"]
+}
+```
+
+Use a shared Django cache backend for cross-worker timing. For example, Django's
+built-in Redis cache can be configured as follows (install its Redis Python
+driver and configure the URL for your deployment):
+
+```python
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "KEY_PREFIX": "my-service",
+    },
+}
+```
+
+LocMemCache remains supported with a startup warning: it is worker-local and
+resets on restart. DummyCache is rejected when the honeypot stage is enabled.
+Configured ignored cache errors are rejected; runtime read/write failures,
+failed writes and invalid timestamp records produce generic HTTP 503, without
+silently selecting memory or CSV. Cache methods must be synchronous.
+
+Timestamp entries use a 300-second TTL and bounded, hashed client-IP keys under
+Django's key prefix/version. Expired-page POSTs return 409 until a fresh GET or
+TTL expiry. The pipeline does not delete an expired snapshot, so it cannot erase
+a concurrent GET refresh. As before, no timestamp means the timing check allows
+the POST; cache outages are distinguished from misses. Backends can evict entries
+before their TTL. Changing backends does not migrate existing timestamps.
+
+Set `"honeypot_backend": "csv"` explicitly to retain shared filesystem timing,
+or `"memory"` for the per-engine Rust map. Install the matching native extension
+before upgrading Django workers. Flask and FastAPI defaults are unchanged.
 
 Flask/FastAPI accept synchronous `country_lookup(ip)` and
 `authenticated(request)` callbacks for adapter facts. Default GeoIP uses the
@@ -250,30 +323,6 @@ than stream completion. WSGI adapters finalize when the framework response is
 available. Session/route handlers, response construction, GeoIP lookup and legacy
 custom integrations still execute in Python; the whole Python package has not
 been rewritten in Rust.
-
-Measure this path with `scripts/benchmark_release_http.py --pipeline`, alongside
-the existing chain and `--plain` framework baseline. Native execution and both
-SQL/PHP protection probes are checked by the harness; the benchmark report
-records workload details and subtracts the framework baseline for added overhead.
-
-Matched WSL tests of the complete pipeline (three alternating runs of 300
-requests per framework/mode, one client, all eight stages and immediate CSV
-logging) measured the following **added overhead**, after subtracting the same
-framework-only baseline. The comparison is against the current legacy chain.
-
-| Framework | Current chain, AI off | Native pipeline, AI off | Current chain, AI on | Native pipeline, AI on |
-| --- | ---: | ---: | ---: | ---: |
-| Flask | 10.60 ms | 3.77 ms | 14.53 ms | 3.56 ms |
-| Django | 14.18 ms | 3.52 ms | 18.98 ms | 3.66 ms |
-| FastAPI | 11.83 ms | 3.52 ms | 12.21 ms | 3.67 ms |
-
-These are medians of per-run mean server times. Native and legacy run ranges
-were separated in all six protected comparisons. All 13,500 measured requests
-returned 200 and both protected modes blocked SQL/PHP probes. The AI fixture
-used a seeded 100-tree Rust forest and 200 initial history records per client.
-The dedicated profile, storage layout and adapter semantics differ from some
-legacy configurations; this is a synthetic comparison of the documented modes,
-not a production latency guarantee or a drop-in migration result.
 
 ### Flask
 
@@ -523,13 +572,6 @@ reads refresh the Python CSV snapshot. Exemptions and blacklist writes still run
 at their original stages. Rebuild the extension from this checkout to test these
 unpublished capabilities.
 
-Run `python scripts/benchmark_native_request_batches.py` for the focused comparison.
-Three alternating Windows runs of 500 checks measured 100-field SQL inspection at
-0.650 ms combined versus 0.989 ms previous, and the CSV geo binding at 0.286 ms
-versus 0.367 ms. Early SQL rejection measured 0.067 ms versus 0.066 ms. These
-isolated, warmed checks exclude the complete middleware chain, networking, model
-scoring, and concurrent load.
-
 ### Request-time anomaly acceleration (development)
 
 With a matching rebuilt extension and a real Rust Isolation Forest, Flask and
@@ -554,16 +596,6 @@ building a dictionary per historical record. No native process-local object is
 stored in Django's cache. These changes do not introduce model auto-reload or
 shared histories for Flask/FastAPI.
 
-Run `python scripts/benchmark_anomaly_runtime.py` to compare the previous bridge,
-tuple analysis, and native histories with a real seeded forest. Five alternating
-Windows runs of 300 evaluations, a 100-tree forest, and 200 prior requests measured
-anomalous evaluation at 0.175 ms versus 0.486 ms (2.78x) and benign evaluation at
-0.040 ms versus 0.146 ms (3.61x). The same WSL benchmark measured anomalous
-evaluation at 0.178 ms versus 0.533 ms (2.99x) and benign evaluation at
-0.036 ms versus 0.126 ms (3.46x). These isolated engine timings exclude networking,
-CSV writes, real route-resolution costs, the full middleware chain, and concurrent
-load. They are not deployed-site speedup claims.
-
 Further request-path refinements use the existing native CSV log writer for
 Flask/FastAPI anomaly training logs when supported. Each row is flushed before
 returning; there is no background queue. `AIWAF_CSV_LOG_FSYNC=True` additionally
@@ -581,15 +613,7 @@ worker performs no background cleanup. Django continues to use cache timeouts.
 Rust recent-behavior analysis now counts symmetric ten-second bursts with a
 linear sweep after sorting finite timestamps, replacing two binary searches per
 record. Non-finite timestamps retain the established search path. This shared-core
-change also applies to the WASM recent-behavior API. Run
-`python scripts/benchmark_request_refinements.py` for isolated logging, route, and
-burst-analysis timings; these do not measure deployed-site throughput.
-With five runs of 300 operations in WSL, immediate CSV writes measured 0.030 ms
-versus 0.173 ms, repeated route checks 0.0175 ms versus 0.0266 ms, and analysis of
-1,000 history records 0.663 ms versus 0.787 ms. The route comparison uses the
-previous implementation with its exception import corrected; burst timings
-include Python-to-Rust tuple conversion. These benchmarks use local files and
-synthetic inputs, without concurrent load.
+change also applies to the WASM recent-behavior API.
 
 ### Python operations
 
@@ -610,15 +634,6 @@ their existing positions. Structured SQL bodies, Unicode paths/decoding, monitor
 mode, custom policy/storage hooks, custom Django converters, older extensions,
 and dynamic-keyword subsets whose ranking requires Python retain the established
 path. The engine does not replace the whole eight-middleware chain.
-
-Three alternating WSL runs of 300 requests through the full chain, at concurrency
-one with AI scoring off, observed server-time medians of 12.88 to 12.46 ms for
-Flask, 16.09 to 15.60 ms for Django, and 13.41 to 13.17 ms for FastAPI. Run ranges
-overlapped; these do not establish a dependable speedup. The opt-in default avoids
-assuming that fewer boundaries alone remove the remaining request cost. Compare
-`scripts/benchmark_release_http.py` with and without `--engine` using identical
-dependencies and traffic. `--plain` measures an endpoint without AIWAF, and the
-harness reports server processing time separately from HTTP latency.
 
 ```bash
 # Auto-detected CLI (one supported framework installed)
@@ -885,23 +900,7 @@ installed before enforcement; required middleware overrides decorator exemptions
 while profile-level exemptions remain global. Next integration is Node API routes,
 not Edge/Fetch middleware.
 
-Run `npm run test:native` in `js/` against the built WASM package and
-`node scripts/benchmark_js_pipeline.js` for full HTTP comparisons. The benchmark
-subtracts bare Express server processing latency and includes synchronous response
-finalization/logging. Its legacy comparison uses SQLite policy lookups and JSONL
-logging, while native uses Rust state and CSV output; this is an integration
-comparison with different persistence/policy semantics, not a pure language test.
-
-The matched Windows HTTP benchmark (Node v22.18.0, Express 4.22.1) measured:
-
-| Mode | Server processing | Added overhead |
-| --- | ---: | ---: |
-| Express only | 0.37 ms | 0.00 ms |
-| Legacy, AI off | 3.86 ms | 3.48 ms |
-| Native, AI off | 0.60 ms | 0.22 ms |
-| Native, AI on | 0.64 ms | 0.27 ms |
-
-Server samples include synchronous finalization and immediate logging. Overhead subtracts the matched bare Express baseline; figures are medians of per-run means. Legacy uses SQLite policy lookups and one immediate JSONL append; native uses Rust state and one immediate CSV append. These stores/policies have different persistence semantics, so this is an integration comparison, not a pure Rust-versus-JavaScript equivalence test. GeoIP is an unknown-country fixture, not a real database lookup. Synthetic local latency does not establish production throughput or latency.
+Run `npm run test:native` in `js/` against the built WASM package to validate the native integrations.
 
 ### JavaScript training and operations
 
@@ -1342,65 +1341,15 @@ pytest -q rust/tests/test_python_api.py
 mvn -f java/pom.xml test
 ```
 
-### Benchmark
-
-The in-process Flask benchmark compares a baseline app, `auto` middleware selection, and the full middleware chain:
-
-```bash
-python -m benchmarks.benchmark_auto_middleware
-python -m benchmarks.benchmark_auto_middleware --path-rules 250
-python -m benchmarks.benchmark_auto_middleware --requests 200 --rounds 3 --warmup 50
-```
-
-Use the same machine, environment, request count, and background load when comparing results. These measurements exclude network and production-server overhead.
-
-The latest native optimization measurements used three alternating runs. Timestamp
-and feature/model tests used 10,000 synthetic records; the model test used a
-20-tree forest and compared the previous Rust-feature/Python-matrix path with
-retained native features.
-
-| Scoped workload | Windows speedup | WSL Linux speedup |
-| --- | ---: | ---: |
-| Unique Apache timestamp parsing | 4.57× | 3.65× |
-| Feature extraction + Rust fit/predict boundary | 1.55× | 1.35× |
-
-Native ISO parsing was slower on both platforms, so it remains optional. An
-offline Windows Flask test-client workload with IP/keyword enforcement and CSV
-logging measured 5.95 ms/request native versus 9.18 ms/request Python (1.54×),
-using 100 initial blacklist rows and 20 requests per trial. These measurements
-exclude networking, production-server overhead, and concurrent request load;
-they do not establish a complete training or deployed-site speedup.
-
-Reproduce the focused measurements and concurrency smoke check locally:
-
-```bash
-python scripts/benchmark_native_training_boundary.py
-python scripts/benchmark_native_csv_training.py
-python scripts/benchmark_native_csv_workloads.py
-python scripts/benchmark_csv_request_reuse.py
-python scripts/profile_csv_logging.py
-python scripts/check_csv_release_concurrency.py
-```
-
-Validation of the development changes passed 282 Django tests, 134 FastAPI tests
-(one skipped), and 247 Flask/core optimization tests in separate processes.
-Coverage includes timestamp fallbacks, gzip/quoted CSV, seeded model parity,
-chunk equivalence, concurrent mutations, no-op writes, and log rotation/reopening.
-An installed-wheel Linux smoke check with four processes retained all 160 access
-rows and 80 blacklist entries. Local wheels were checked on Windows Python 3.13
-and WSL Python 3.10; the locally built Linux wheel requires glibc 2.34 or newer.
-The complete supported platform/version matrix and production load validation
-remain release checks.
-
 ## Release automation
 
 Release versions and tags must match the relevant manifest.
 
 | Package | Manifest | Tag | Workflow |
 | --- | --- | --- | --- |
-| Python `aiwaf` | `pyproject.toml` | `python-v1.1.6` | `python-publish.yml` |
+| Python `aiwaf` | `pyproject.toml` | `python-v1.1.7` | `python-publish.yml` |
 | npm `aiwaf` | `js/package.json` | `js-v1.1.4` | `npm-publish.yml` |
-| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.5` | `rust-publish.yml` |
+| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.6` | `rust-publish.yml` |
 | npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.4` | `wasm-publish.yml` |
 | Maven `aiwaf-java` | `java/pom.xml` | `java-v1.3.4` | `java-publish.yml` |
 
@@ -1437,6 +1386,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contributor setup and expectations,
 Original AIWAF project code in this checkout uses the unmodified [Elastic License 2.0](LICENSE), with separately licensed material identified in [NOTICE](NOTICE). AIWAF is the business offering these terms. ELv2 permits commercial use, modification, redistribution, and consulting, subject to its conditions. It restricts providing substantial AIWAF functionality as a hosted or managed service, bypassing license-key functionality, and removing required notices. ELv2-covered code is source available.
 
 This migration applies to this checkout and future releases expressly distributed under ELv2. Previously distributed MIT copies retain their permissions; version numbers do not retroactively change their license. Do not republish an existing version with new licensing terms. Independently versioned packages record their license in their release artifacts.
+
+Initial ELv2 release boundaries are Python/Node.js `1.1.2`, Rust/Python and WASM `0.2.2`, and Java `1.3.3`. Earlier MIT distributions retain their MIT permissions.
 
 Retained MIT contributions keep their rights and notices in [licenses/MIT.txt](licenses/MIT.txt). The bundled IPinfo Lite database is provided by [IPinfo](https://ipinfo.io/) under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); ELv2 restrictions do not apply to that data. Package metadata uses an `AND` expression where separately licensed components are included; this does not offer a choice to license the entire package under MIT. Dependencies retain their respective terms.
 

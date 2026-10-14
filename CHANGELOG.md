@@ -1,5 +1,21 @@
 # Changelog
 
+## Python 1.1.7 / aiwaf-rust 0.2.6 — native honeypot cache
+
+- Add opt-in Redis and supplied-cache honeypot timing to Flask and FastAPI's
+  native pipelines. FastAPI runs cache-backed native checks in its worker thread
+  pool. CSV remains the default in both adapters; other policies are unchanged.
+
+- Default Django native honeypot timing to Django's configured cache, with an
+  optional `honeypot_cache_alias`. Explicit CSV and native memory remain available.
+- Delegate timestamp I/O to Django while Rust owns timing, TTL validation,
+  exemptions, and block decisions. Other native policy stores retain CSV behavior.
+- Return generic HTTP 503 for cache failures or invalid state. Reject DummyCache
+  and configured ignored cache errors; warn when LocMemCache isolates workers.
+- Leave expiry cleanup to cache TTL so a stale POST cannot delete a concurrent
+  GET refresh. Until the next GET or cache expiry, repeated expired-page POSTs
+  continue to return 409. Existing timestamps are not migrated between backends.
+
 ## Node.js 1.1.4 / Java 1.3.4 — blacklist expiry concurrency fixes
 
 - Make Node blacklist request checks read-only. Database cleanup deletes only
@@ -68,8 +84,8 @@
 - Synchronize the Python runtime version with its package metadata. The
   internal Rust core crate advances to 0.2.1.
 
-See [release notes](docs/releases/2026-10-elv2.md) for version boundaries and
-release validation. These candidates have not been published.
+See the [README license section](README.md#license) for version boundaries
+and the release automation section for validation requirements.
 
 ## Java 1.3.0
 

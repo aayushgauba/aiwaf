@@ -23,7 +23,7 @@ def test_setup_py():
         setup_call = next(node for node in ast.walk(ast.parse(content))
                           if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'setup')
         required = ast.literal_eval(next(item.value for item in setup_call.keywords if item.arg == 'install_requires'))
-        assert 'aiwaf-rust>=0.2.5' in required
+        assert 'aiwaf-rust>=0.2.6' in required
         
         print(" setup.py configuration is correct")
         assert True

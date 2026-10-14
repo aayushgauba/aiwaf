@@ -45,8 +45,22 @@ class CSVPipeline:
     consume framework settings, custom stores or legacy middleware callbacks.
     A missing/outdated native extension is a startup error, never a Python fallback.
     """
-    def __init__(self, config=None, *, model=None):
+    def __init__(self, config=None, *, model=None, honeypot_cache=None):
         config = dict(config or {})
+        backend = config.get("honeypot_backend", "csv")
+        if backend in {"cache", "redis"}:
+            from .honeypot_cache import HoneypotCache, RedisHoneypotCache
+            namespace = config.pop("honeypot_cache_namespace", "aiwaf:native:honeypot:v1")
+            if backend == "redis":
+                if honeypot_cache is not None:
+                    raise ValueError("Choose honeypot_backend=cache to supply a cache object")
+                honeypot_cache = RedisHoneypotCache(config.pop("honeypot_redis_url", None))
+            if honeypot_cache is None:
+                raise ValueError("honeypot_backend=cache requires a honeypot_cache object")
+            honeypot_cache = HoneypotCache(honeypot_cache, namespace=namespace)
+            config["honeypot_backend"] = "cache"
+        elif honeypot_cache is not None and backend != "django_cache":
+            raise ValueError("A honeypot cache object requires honeypot_backend=cache")
         self.profile = config
         self.needs_country = "geo_block" in config.get("enabled", STAGES)
         try:
@@ -57,7 +71,14 @@ class CSVPipeline:
         if isinstance(directory, str) and directory:
             from .policy_csv_storage import PolicyCSVStorage
             PolicyCSVStorage(data_dir=directory)
-        self.native = factory(json.dumps(config, allow_nan=False))
+        profile_json = json.dumps(config, allow_nan=False)
+        if honeypot_cache is None:
+            self.native = factory(profile_json)
+        else:
+            try:
+                self.native = factory(profile_json, honeypot_cache)
+            except TypeError as error:
+                raise RuntimeError("Cache honeypot timing requires aiwaf-rust>=0.2.6 with cache delegation support") from error
         self.policy = _BufferPolicy(config.get("sql_mode", "block"), config.get("max_bytes", 65536))
         if model is not None:
             self.native.set_model(model)

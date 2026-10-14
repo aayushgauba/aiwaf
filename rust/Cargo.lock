@@ -48,7 +48,7 @@ dependencies = [
 
 [[package]]
 name = "aiwaf_rust"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "aiwaf_core",
  "csv",

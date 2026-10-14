@@ -6,12 +6,12 @@ from .geoip import get_country_for_ip
 
 
 class NativeAIWAF:
-    def __init__(self, app, config=None, *, model=None, country_lookup=None, authenticated=None):
+    def __init__(self, app, config=None, *, model=None, country_lookup=None, authenticated=None, honeypot_cache=None):
         validate_fact_callback(country_lookup)
         validate_fact_callback(authenticated)
         if app.extensions.get("aiwaf") or app.extensions.get("aiwaf_csv_pipeline"):
             raise RuntimeError("Install one AIWAF chain per app")
-        self.pipeline = CSVPipeline(config, model=model)
+        self.pipeline = CSVPipeline(config, model=model, honeypot_cache=honeypot_cache)
         app.extensions["aiwaf_csv_pipeline"] = self
 
         @app.before_request

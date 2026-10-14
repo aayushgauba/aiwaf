@@ -1,4 +1,6 @@
 """Pure ASGI adapter: inspect a bounded body prefix and replay exact messages."""
+from functools import partial
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Match
@@ -29,11 +31,12 @@ def route_facts(router, scope):
 
 
 class NativeAIWAFMiddleware:
-    def __init__(self, app, config=None, *, model=None, country_lookup=None, authenticated=None):
+    def __init__(self, app, config=None, *, model=None, country_lookup=None, authenticated=None, honeypot_cache=None):
         validate_fact_callback(country_lookup)
         validate_fact_callback(authenticated)
         self.app = app
-        self.pipeline = CSVPipeline(config, model=model)
+        self.pipeline = CSVPipeline(config, model=model, honeypot_cache=honeypot_cache)
+        self.cache_io = self.pipeline.profile.get("honeypot_backend") == "cache"
         self.country_lookup = country_lookup
         self.authenticated = authenticated
 
@@ -45,11 +48,12 @@ class NativeAIWAFMiddleware:
         endpoint, exists, methods = route_facts(router, scope)
         ip = resolve_ip_from_fastapi_request(request)
         query, body, exhausted = await self.pipeline.capture_asgi(request)
-        ctx, status, payload = self.pipeline.begin(ip=ip, path=scope.get("path", "/"), method=request.method,
+        begin = partial(self.pipeline.begin, ip=ip, path=scope.get("path", "/"), method=request.method,
             headers=environ_headers(request.headers, "HTTP/" + scope.get("http_version", "1.1")),
             query=query, body=body, exists=exists, methods=methods, endpoint=endpoint,
             country=(fact_value(self.country_lookup, ip) if self.country_lookup else get_country_for_ip(ip)) if self.pipeline.needs_country else "",
             authenticated=fact_value(self.authenticated, request) if self.authenticated else False, exhausted=exhausted)
+        ctx, status, payload = await run_in_threadpool(begin) if self.cache_io else begin()
         if status:
             self.pipeline.finish(ctx, status, len(payload.encode()))
             return await Response(payload, status_code=status, media_type="application/json")(scope, request.receive, send)

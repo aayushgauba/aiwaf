@@ -375,62 +375,6 @@ pub fn csv_log_append_uncached(
     })
 }
 
-#[pyfunction]
-pub fn csv_log_profile(
-    py: Python<'_>,
-    path: String,
-    headers: Vec<String>,
-    row: Vec<String>,
-    durable: bool,
-) -> PyResult<Vec<f64>> {
-    py.allow_threads(|| {
-        use std::time::Instant;
-        let mut times = Vec::new();
-        let mut mark = Instant::now();
-        let path = Path::new(&path);
-        if let Some(parent) = path.parent().filter(|p| !p.is_dir()) {
-            std::fs::create_dir_all(parent).map_err(error)?;
-        }
-        times.push(mark.elapsed().as_secs_f64() * 1000.0);
-        mark = Instant::now();
-        let mut file = OpenOptions::new()
-            .read(true)
-            .append(true)
-            .create(true)
-            .open(path)
-            .map_err(error)?;
-        times.push(mark.elapsed().as_secs_f64() * 1000.0);
-        mark = Instant::now();
-        FileExt::lock_exclusive(&file).map_err(error)?;
-        times.push(mark.elapsed().as_secs_f64() * 1000.0);
-        mark = Instant::now();
-        let header = file.metadata().map_err(error)?.len() == 0;
-        times.push(mark.elapsed().as_secs_f64() * 1000.0);
-        mark = Instant::now();
-        {
-            let mut writer = csv::WriterBuilder::new()
-                .terminator(csv::Terminator::CRLF)
-                .flexible(true)
-                .from_writer(&mut file);
-            if header {
-                writer.write_record(headers).map_err(error)?;
-            }
-            writer.write_record(row).map_err(error)?;
-            writer.flush().map_err(error)?;
-        }
-        times.push(mark.elapsed().as_secs_f64() * 1000.0);
-        mark = Instant::now();
-        if durable {
-            file.sync_data().map_err(error)?;
-        }
-        times.push(mark.elapsed().as_secs_f64() * 1000.0);
-        mark = Instant::now();
-        drop(file);
-        times.push(mark.elapsed().as_secs_f64() * 1000.0);
-        Ok(times)
-    })
-}
-
 fn write_csv(
     py: Python<'_>,
     path: String,
@@ -1347,7 +1291,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(csv_log_append, m)?)?;
     m.add_function(wrap_pyfunction!(csv_log_close, m)?)?;
     m.add_function(wrap_pyfunction!(csv_log_append_uncached, m)?)?;
-    m.add_function(wrap_pyfunction!(csv_log_profile, m)?)?;
     m.add_function(wrap_pyfunction!(csv_keyword_apply, m)?)?;
     m.add_function(wrap_pyfunction!(csv_keyword_apply_from_store, m)?)?;
     m.add_function(wrap_pyfunction!(csv_keywords_update, m)?)?;

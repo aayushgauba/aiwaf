@@ -6,12 +6,18 @@ from aiwaf.core.csv_pipeline import CSVPipeline, validate_fact_callback, fact_va
 from aiwaf.core.honeypot import is_authenticated_session_context
 from aiwaf.core.request_context import extract_ip_from_django_request
 from .geoip import lookup_country
+from .honeypot_cache import DjangoHoneypotCache
 
 
 class NativeAIWAFMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
-        self.pipeline = CSVPipeline(getattr(settings, "AIWAF_CSV_PIPELINE", {}))
+        config = dict(getattr(settings, "AIWAF_CSV_PIPELINE", {}) or {})
+        config.setdefault("honeypot_backend", "django_cache")
+        alias = config.pop("honeypot_cache_alias", "default")
+        active = "honeypot" in config.get("enabled", {"honeypot"})
+        cache = DjangoHoneypotCache(alias, validate_backend=active) if config["honeypot_backend"] == "django_cache" else None
+        self.pipeline = CSVPipeline(config, honeypot_cache=cache)
         self.country_lookup = getattr(settings, "AIWAF_CSV_PIPELINE_COUNTRY_LOOKUP", None)
         validate_fact_callback(self.country_lookup)
         model = getattr(settings, "AIWAF_CSV_PIPELINE_MODEL", None)

@@ -1,4 +1,4 @@
-//! Rust-owned CSV enforcement pipeline. No Python callbacks or policy fallbacks.
+//! Rust-owned enforcement with CSV state and optional delegated honeypot cache I/O.
 use crate::{csv_runtime as csv, runtime_policy as policy};
 use aiwaf_core::{
     IsolationForest, RecentEntryInput, analyze_recent_behavior, validate_headers_full_default,
@@ -593,9 +593,26 @@ pub struct NativeCSVPipeline {
     state: Mutex<State>,
     id: u64,
     processed: AtomicU64,
+    honeypot_cache: Option<PyObject>,
 }
 
 impl NativeCSVPipeline {
+    fn cached_honeypot_time(&self, py: Python<'_>, ip: &str, now: f64) -> PyResult<Option<f64>> {
+        let cache = self
+            .honeypot_cache
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("Honeypot cache missing"))?;
+        let value: Option<(f64, f64)> = cache
+            .call_method1(py, "get_timestamp", (ip,))?
+            .extract(py)?;
+        match value {
+            Some((time, expiry)) if !time.is_finite() || !expiry.is_finite() || expiry < time => {
+                Err(PyValueError::new_err("Invalid cached honeypot timestamp"))
+            }
+            Some((time, expiry)) if now <= expiry => Ok(Some(time)),
+            _ => Ok(None),
+        }
+    }
     fn file(&self, name: &str) -> String {
         Path::new(&self.profile.data_dir)
             .join(name)
@@ -847,6 +864,19 @@ impl NativeCSVPipeline {
                             .insert(f.ip.clone(), (f.now, f.now + 300.0));
                         Ok(())
                     })?;
+                } else if ["django_cache", "cache"].contains(&p.honeypot_backend.as_str()) {
+                    let result = self.honeypot_cache.as_ref().unwrap().call_method1(
+                        py,
+                        "set_timestamp",
+                        (f.ip.clone(), f.now, f.now + 300.0, 300),
+                    );
+                    if result.is_err() {
+                        return Ok((
+                            503,
+                            json!({"error":"honeypot_cache_unavailable"}),
+                            "Honeypot cache unavailable".into(),
+                        ));
+                    }
                 } else {
                     csv::csv_kv_update(
                         py,
@@ -880,6 +910,26 @@ impl NativeCSVPipeline {
                         }
                         Ok(decision)
                     })?
+                } else if ["django_cache", "cache"].contains(&p.honeypot_backend.as_str()) {
+                    let time = match self.cached_honeypot_time(py, &f.ip, f.now) {
+                        Ok(time) => time,
+                        Err(_) => {
+                            return Ok((
+                                503,
+                                json!({"error":"honeypot_cache_unavailable"}),
+                                "Honeypot cache unavailable".into(),
+                            ));
+                        }
+                    };
+                    // Do not delete a stale snapshot: a concurrent GET may have
+                    // refreshed it. Cache TTL owns physical cleanup.
+                    policy::policy_form(
+                        f.now,
+                        time,
+                        f.path.clone(),
+                        p.min_form_time,
+                        p.max_page_time,
+                    )
                 } else {
                     let time =
                         csv::csv_kv_get(py, self.file("pipeline_state.csv"), key.clone(), f.now)?
@@ -944,14 +994,19 @@ impl NativeCSVPipeline {
 #[pymethods]
 impl NativeCSVPipeline {
     #[new]
-    fn new(py: Python<'_>, profile_json: String) -> PyResult<Self> {
+    #[pyo3(signature = (profile_json, honeypot_cache=None))]
+    fn new(
+        py: Python<'_>,
+        profile_json: String,
+        honeypot_cache: Option<PyObject>,
+    ) -> PyResult<Self> {
         let mut p: Profile = serde_json::from_str(&profile_json)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         if p.data_dir.is_empty()
             || !["block", "off"].contains(&p.sql_mode.as_str())
             || !(1..=1048576).contains(&p.max_bytes)
             || !["memory", "csv"].contains(&p.rate_backend.as_str())
-            || !["memory", "csv"].contains(&p.honeypot_backend.as_str())
+            || !["memory", "csv", "django_cache", "cache"].contains(&p.honeypot_backend.as_str())
             || !["ip", "ip_path"].contains(&p.rate_key_mode.as_str())
             || p.enabled.iter().any(|s| !STAGES.contains(&s.as_str()))
             || [p.rate_window, p.anomaly_window, p.uuid_window]
@@ -972,6 +1027,20 @@ impl NativeCSVPipeline {
             .any(|v| *v < 0)
         {
             return Err(PyValueError::new_err("Invalid native CSV pipeline profile"));
+        }
+        if ["django_cache", "cache"].contains(&p.honeypot_backend.as_str()) {
+            let cache = honeypot_cache.as_ref().ok_or_else(|| {
+                PyValueError::new_err("Cache backend requires a honeypot cache adapter")
+            })?;
+            for method in ["get_timestamp", "set_timestamp"] {
+                if !cache.bind(py).getattr(method)?.is_callable() {
+                    return Err(PyValueError::new_err("Invalid honeypot cache adapter"));
+                }
+            }
+        } else if honeypot_cache.is_some() {
+            return Err(PyValueError::new_err(
+                "Cache adapter requires honeypot_backend=cache or django_cache",
+            ));
         }
         if p.exempt_paths
             .iter()
@@ -998,6 +1067,7 @@ impl NativeCSVPipeline {
             state: Mutex::new(State::default()),
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             processed: AtomicU64::new(0),
+            honeypot_cache,
         };
         for (name, fields) in [
             ("whitelist.csv", strings(&["ip", "added_date"])),
@@ -1017,7 +1087,7 @@ impl NativeCSVPipeline {
             ),
             ("rate_buckets.csv", strings(&["key", "value", "expires_at"])),
         ] {
-            if name == "pipeline_state.csv" && pipeline.profile.honeypot_backend == "memory" {
+            if name == "pipeline_state.csv" && pipeline.profile.honeypot_backend != "csv" {
                 continue;
             }
             let path = pipeline.file(name);
