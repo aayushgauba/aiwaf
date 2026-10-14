@@ -53,4 +53,85 @@ class ExemptionsCoreParityTest {
         assertEquals("ai_anomaly", ExemptionsCore.normalizeMiddlewareName("AIAnomalyMiddleware"));
         assertEquals("logging", ExemptionsCore.normalizeMiddlewareName("AIWAFLoggingMiddleware"));
     }
+
+    @Test
+    void normalize_path_handles_edge_cases() {
+        assertEquals("/", ExemptionsCore.normalizePath(null, null));
+        assertEquals("/", ExemptionsCore.normalizePath("   ", null));
+
+        assertEquals("/api/users",
+                ExemptionsCore.normalizePath("API///Users", false));
+
+        assertEquals("/api/users/",
+                ExemptionsCore.normalizePath("  //API///Users//  ", true));
+
+        assertEquals("/api/users",
+                ExemptionsCore.normalizePath("/api/users/", false));
+
+        assertEquals("/api/users/",
+                ExemptionsCore.normalizePath("/api/users", true));
+
+        assertEquals("/",
+                ExemptionsCore.normalizePath("////", false));
+    }
+
+@Test
+void optimized_normalization_matches_original() {
+    String[] paths = {
+        "",
+        "/",
+        "////",
+        "api/users",
+        "/api//users",
+        "///API///Users///",
+        "  /api/users  ",
+        "/Admin/Login",
+        "index.html",
+        "/api/v1/users/123",
+        "/a///b///c",
+        " / ",
+        "\t/api//test\n"
+    };
+
+    Boolean[] modes = {null, true, false};
+
+    for (String path : paths) {
+        for (Boolean mode : modes) {
+            String expected = originalNormalizePath(path, mode);
+            String actual = ExemptionsCore.normalizePath(path, mode);
+
+            assertEquals(expected, actual,
+                    "Mismatch for path: " + path + ", mode: " + mode);
+        }
+    }
+}
+
+private static String originalNormalizePath(
+        String path, Boolean trailingSlash) {
+
+    if (path == null || path.isBlank()) {
+        return "/";
+    }
+
+    String cleaned = path.trim().replaceAll("/+", "/");
+
+    if (!cleaned.startsWith("/")) {
+        cleaned = "/" + cleaned;
+    }
+
+    if (Boolean.TRUE.equals(trailingSlash)
+            && !cleaned.endsWith("/")) {
+        cleaned = cleaned + "/";
+    }
+
+    if (Boolean.FALSE.equals(trailingSlash)
+            && cleaned.length() > 1
+            && cleaned.endsWith("/")) {
+        cleaned = cleaned.substring(0, cleaned.length() - 1);
+    }
+
+    return cleaned.toLowerCase(java.util.Locale.ROOT);
+}
+
+
 }

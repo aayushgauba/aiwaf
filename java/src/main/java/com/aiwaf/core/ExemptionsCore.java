@@ -10,17 +10,43 @@ public final class ExemptionsCore {
         if (path == null || path.isBlank()) {
             return "/";
         }
-        String cleaned = path.trim().replaceAll("/+", "/");
-        if (!cleaned.startsWith("/")) {
-            cleaned = "/" + cleaned;
+
+        String input = path.trim();
+        StringBuilder result = new StringBuilder(input.length() + 2);
+
+        if (input.charAt(0) != '/') {
+            result.append('/');
         }
-        if (Boolean.TRUE.equals(trailingSlash) && !cleaned.endsWith("/")) {
-            cleaned = cleaned + "/";
+
+        boolean previousSlash = false;
+
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+
+            if (c == '/') {
+                if (!previousSlash) {
+                    result.append('/');
+                }
+                previousSlash = true;
+            } else {
+                result.append(c);
+                previousSlash = false;
+            }
         }
-        if (Boolean.FALSE.equals(trailingSlash) && cleaned.length() > 1 && cleaned.endsWith("/")) {
-            cleaned = cleaned.substring(0, cleaned.length() - 1);
+
+        int length = result.length();
+
+        if (Boolean.TRUE.equals(trailingSlash)) {
+            if (result.charAt(length - 1) != '/') {
+                result.append('/');
+            }
+        } else if (Boolean.FALSE.equals(trailingSlash)) {
+            if (length > 1 && result.charAt(length - 1) == '/') {
+                result.setLength(length - 1);
+            }
         }
-        return cleaned.toLowerCase(Locale.ROOT);
+
+        return result.toString().toLowerCase(Locale.ROOT);
     }
 
     public static boolean isPathExempt(
