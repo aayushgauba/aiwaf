@@ -7,7 +7,7 @@ README_PATH = HERE / "README.md"
 
 setup(
     name="aiwaf",
-    version="1.1.5",
+    version="1.1.6",
     description="AI-driven, self-learning Web Application Firewall for Python web applications",
     long_description=README_PATH.read_text(encoding="utf-8") if README_PATH.exists() else "AIWAF",
     long_description_content_type="text/markdown",
@@ -18,7 +18,7 @@ setup(
     package_dir={"": "py"},
     python_requires=">=3.10",
     install_requires=[
-        "aiwaf-rust>=0.2.4",
+        "aiwaf-rust>=0.2.5",
         "numpy>2",
         "pandas>2",
         "scikit-learn>=1.6.0",

@@ -103,11 +103,6 @@ async function initialize() {
     dbAvailable = false;
   }
 
-  if (!dbAvailable) {
-    const existing = csvStore.readRows(csvPath, headers);
-    csvStore.writeRows(csvPath, headers, existing);
-  }
-
   initialized = true;
   return dbAvailable;
 }
@@ -140,22 +135,21 @@ async function saveRow(row) {
       dbAvailable = false;
     }
   }
-  const rows = csvRows();
-  const index = rows.findIndex(item => item.ip_address === row.ip_address);
-  const stored = { ...row, id: index >= 0 ? rows[index].id : csvStore.nextId(rows) };
-  if (index >= 0) rows[index] = stored;
-  else rows.push(stored);
-  csvStore.writeRows(csvPath, headers, rows.map(serializeRow));
+  await csvStore.updateRows(csvPath, headers, current => {
+    const rows = current.map(normalizeRow);
+    const index = rows.findIndex(item => item.ip_address === row.ip_address);
+    const stored = { ...row, id: index >= 0 ? rows[index].id : csvStore.nextId(rows) };
+    if (index >= 0) rows[index] = stored;
+    else rows.push(stored);
+    return { rows: rows.map(serializeRow) };
+  });
 }
 
 module.exports = {
   async isBlocked(ip) {
     const row = await rawRow(ip);
-    if (!isActive(row)) {
-      if (row) await this.unblock(ip);
-      return false;
-    }
-    return true;
+    // An expired snapshot is not authority to delete a concurrent refresh.
+    return isActive(row);
   },
 
   async block(ip, reason = 'WAF blocked', options = {}) {
@@ -212,10 +206,11 @@ module.exports = {
       }
     }
 
-    const rows = csvRows();
-    const filtered = rows.filter(row => String(row.ip_address) !== normalizedIp);
-    csvStore.writeRows(csvPath, headers, filtered.map(serializeRow));
-    return filtered.length !== rows.length;
+    return csvStore.updateRows(csvPath, headers, current => {
+      const rows = current.map(normalizeRow);
+      const filtered = rows.filter(row => row.ip_address !== normalizedIp);
+      return { rows: filtered.map(serializeRow), result: filtered.length !== rows.length };
+    });
   },
 
   async getBlockedIPs({ activeOnly = true } = {}) {
@@ -237,10 +232,21 @@ module.exports = {
   },
 
   async cleanupExpired(now = Date.now() / 1000) {
-    const rows = await this.getBlockedIPs({ activeOnly: false });
-    const expired = rows.filter(row => !row.permanent && row.expires_at && row.expires_at <= now);
-    for (const row of expired) await this.unblock(row.ip_address);
-    return expired.length;
+    if (await initialize()) {
+      try {
+        // Evaluate expiry in the DELETE itself, against the current row.
+        return await db('blocked_ips').where('permanent', false)
+          .whereNotNull('reputation_reason').whereNot('reputation_reason', '')
+          .where('expires_at', '>', 0).where('expires_at', '<=', now).del();
+      } catch (err) {
+        dbAvailable = false;
+      }
+    }
+    return csvStore.updateRows(csvPath, headers, current => {
+      const rows = current.map(normalizeRow);
+      const active = rows.filter(row => isActive(row, now));
+      return { rows: active.map(serializeRow), result: rows.length - active.length };
+    });
   },
 
   async getStatistics() {
@@ -343,9 +349,7 @@ module.exports = {
       }
     }
 
-    const rows = csvRows();
-    csvStore.writeRows(csvPath, headers, []);
-    return rows.length;
+    return csvStore.updateRows(csvPath, headers, rows => ({ rows: [], result: rows.length }));
   },
 
   async initialize() {

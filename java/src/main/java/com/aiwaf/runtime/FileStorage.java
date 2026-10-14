@@ -11,10 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
 
 public class FileStorage implements StorageBackend {
-    private static final Logger LOG = Logger.getLogger(FileStorage.class.getName());
     private static final class Entry implements java.io.Serializable {
         Object value;
         Long expiresAtMillis;
@@ -24,17 +22,17 @@ public class FileStorage implements StorageBackend {
     private final Map<String, Entry> data = new ConcurrentHashMap<>();
 
     public FileStorage(String filePath) {
-        this.filePath = Path.of(filePath);
-        load();
+        this.filePath = Path.of(filePath).toAbsolutePath().normalize();
+        StorageFileLock.withLock(this.filePath, () -> { load(); return null; });
     }
 
     private synchronized void load() {
+        data.clear();
         try {
             if (!Files.exists(filePath)) return;
             SecureFiles.rejectSymbolicLinks(filePath);
             if (!SecureFiles.verifySignature(filePath)) {
-                LOG.warning("Unable to verify file storage signature");
-                return;
+                throw new IllegalStateException("Unable to verify file storage signature");
             }
             try (var in = SafeObjectInputStreams.open(
                     new FileInputStream(filePath.toFile()), SafeObjectInputStreams.Profile.STORAGE)) {
@@ -46,11 +44,13 @@ public class FileStorage implements StorageBackend {
                             data.put(key, entry);
                         }
                     }
+                } else {
+                    throw new IllegalStateException("Invalid file storage payload");
                 }
             }
         } catch (Exception ex) {
-            LOG.warning("Unable to load file storage: " + ex.getClass().getSimpleName());
             data.clear();
+            throw new IllegalStateException("Unable to load file storage", ex);
         }
     }
 
@@ -62,7 +62,7 @@ public class FileStorage implements StorageBackend {
                 }
             });
         } catch (Exception ex) {
-            LOG.warning("Unable to persist file storage: " + ex.getClass().getSimpleName());
+            throw new IllegalStateException("Unable to persist file storage", ex);
         }
     }
 
@@ -70,7 +70,7 @@ public class FileStorage implements StorageBackend {
         long now = System.currentTimeMillis();
         for (Map.Entry<String, Entry> e : data.entrySet()) {
             Long expires = e.getValue().expiresAtMillis;
-            if (expires != null && now > expires) {
+            if (expires != null && now >= expires) {
                 data.remove(e.getKey());
             }
         }
@@ -78,27 +78,37 @@ public class FileStorage implements StorageBackend {
 
     @Override
     public synchronized Object get(String key) {
-        cleanupExpired();
-        Entry entry = data.get(key);
-        if (entry == null) return null;
-        return entry.value;
+        return StorageFileLock.withLock(filePath, () -> {
+            load();
+            cleanupExpired();
+            Entry entry = data.get(key);
+            if (entry == null) return null;
+            return entry.value;
+        });
     }
 
     @Override
     public synchronized boolean set(String key, Object value, Integer ttlSeconds) {
-        Entry entry = new Entry();
-        entry.value = value;
-        entry.expiresAtMillis = ttlSeconds == null ? null : System.currentTimeMillis() + (ttlSeconds * 1000L);
-        data.put(key, entry);
-        save();
-        return true;
+        return StorageFileLock.withLock(filePath, () -> {
+            load();
+            cleanupExpired();
+            Entry entry = new Entry();
+            entry.value = value;
+            entry.expiresAtMillis = ttlSeconds == null ? null : System.currentTimeMillis() + (ttlSeconds * 1000L);
+            data.put(key, entry);
+            save();
+            return true;
+        });
     }
 
     @Override
     public synchronized boolean delete(String key) {
-        boolean removed = data.remove(key) != null;
-        if (removed) save();
-        return removed;
+        return StorageFileLock.withLock(filePath, () -> {
+            load();
+            boolean removed = data.remove(key) != null;
+            if (removed) save();
+            return removed;
+        });
     }
 
     @Override
@@ -108,15 +118,18 @@ public class FileStorage implements StorageBackend {
 
     @Override
     public synchronized List<String> getAllKeys(String globPattern) {
-        cleanupExpired();
-        List<String> keys = new ArrayList<>();
-        String pattern = globPattern == null || globPattern.isBlank() ? "*" : globPattern;
-        String regex = pattern.replace(".", "\\.").replace("*", ".*");
-        for (String key : data.keySet()) {
-            if (key.matches(regex)) {
-                keys.add(key);
+        return StorageFileLock.withLock(filePath, () -> {
+            load();
+            cleanupExpired();
+            List<String> keys = new ArrayList<>();
+            String pattern = globPattern == null || globPattern.isBlank() ? "*" : globPattern;
+            String regex = pattern.replace(".", "\\.").replace("*", ".*");
+            for (String key : data.keySet()) {
+                if (key.matches(regex)) {
+                    keys.add(key);
+                }
             }
-        }
-        return keys;
+            return keys;
+        });
     }
 }

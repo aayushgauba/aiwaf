@@ -1,6 +1,41 @@
 # Changelog
 
+## Node.js 1.1.4 / Java 1.3.4 — blacklist expiry concurrency fixes
+
+- Make Node blacklist request checks read-only. Database cleanup deletes only
+  rows still expired when the delete executes; CSV cleanup checks the latest
+  rows under the same cross-process lock used by blacklist writes.
+- Reload Java CSV and file storage under a shared JVM and OS file lock for each
+  operation. Listing filters expiry without rewriting disk; mutations preserve
+  updates from other instances and processes and report persistence failures.
+- Verify refreshed blocks survive cleanup and concurrent writers retain all
+  unrelated blocks. These fixes are separate from offline training replay.
+
+## Python 1.1.6 / aiwaf-rust 0.2.5 — training replay protection
+
+- Make Flask CLI blacklist listing read-only. Expiry filtering no longer writes
+  an older snapshot over blocks concurrently added or refreshed by a trainer.
+- Display the canonical block date in CLI output instead of reporting Unknown
+  when CSV entries use `added_date` rather than the old `timestamp` field.
+
+- Persist Rust-owned enforcement receipts independently of blacklist expiry and
+  manual unblocking. Reusing handled requests cannot extend or recreate a block.
+- Apply 404 thresholds and anomaly enforcement to fresh evidence in Flask,
+  FastAPI, and Django, while retaining full history for model fitting and learning.
+- Serialize trainers with a cross-process file lock and atomically persist
+  SHA-256 receipts. Preserve receipts across log rotation and application restarts.
+- Require the matching native package; missing capabilities and corrupt receipt
+  state fail visibly instead of silently allowing replay.
+
 ## Node.js dependency security updates
+
+- Node.js 1.1.4 / WASM 0.2.4 share Rust-owned offline enforcement receipts with
+  Python. Historical requests cannot extend or recreate handled blocks; fresh
+  404 and anomaly evidence must independently satisfy enforcement thresholds.
+- Persist Node receipts across restarts and serialize offline trainers. Report
+  missing native APIs, invalid state, and storage failures with a CLI failure.
+- Keep Java model training free of blacklist side effects, verified by a new
+  runtime-state regression test. File storage concurrency is fixed separately.
 
 - Upgrade Jest, Fastify, and the NestJS test dependencies to patched releases.
 - Replace the direct deprecated glob 8 dependency with maintained glob 13.

@@ -72,7 +72,39 @@ function writeRows(filePath, headers, rows) {
   for (const row of rows) {
     lines.push(headers.map(header => escapeCsv(row[header] ?? '')).join(','));
   }
-  fs.writeFileSync(filePath, `${lines.join('\n')}\n`, 'utf8');
+  const temp = `${filePath}.${process.pid}.${require('crypto').randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temp, `${lines.join('\n')}\n`, 'utf8');
+    fs.renameSync(temp, filePath);
+  } finally {
+    if (fs.existsSync(temp)) fs.unlinkSync(temp);
+  }
+}
+
+// All blacklist mutations use this lock and read the current file inside it.
+// A crash leaves the lock in place; recovery must first stop the owning writer.
+async function updateRows(filePath, headers, update, timeoutMs = 60000) {
+  filePath = path.resolve(filePath);
+  ensureDir(filePath);
+  const lock = `${filePath}.lock`;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      fs.mkdirSync(lock);
+      break;
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      if (Date.now() >= deadline) throw new Error(`CSV mutation lock timeout: ${lock}`);
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  }
+  try {
+    const { rows, result } = update(readRows(filePath, headers));
+    writeRows(filePath, headers, rows);
+    return result;
+  } finally {
+    fs.rmdirSync(lock);
+  }
 }
 
 function appendRow(filePath, headers, row) {
@@ -97,5 +129,6 @@ module.exports = {
   readRows,
   writeRows,
   appendRow,
+  updateRows,
   nextId
 };

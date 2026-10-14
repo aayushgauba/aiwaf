@@ -1,5 +1,12 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+
+async function runIsolatedTraining() {
+  let train;
+  jest.isolateModules(() => { train = require('../train'); });
+  await train();
+}
 
 function writeLog(lines) {
   const dir = path.join(process.cwd(), 'logs', 'train-tests');
@@ -14,11 +21,21 @@ function makeLine(ip, pathVal, status = 404) {
 }
 
 describe('trainer parity', () => {
+  let stateDirectory;
   beforeEach(() => {
     jest.resetModules();
+    stateDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'aiwaf-train-'));
+    process.env.AIWAF_TRAINING_STATE_DIR = stateDirectory;
+    if (process.env.AIWAF_NATIVE_TEST_MODULE) {
+      jest.doMock(require.resolve('aiwaf-wasm'), () => require(process.env.AIWAF_NATIVE_TEST_MODULE));
+    }
   });
 
   afterEach(() => {
+    if (path.dirname(stateDirectory) !== path.resolve(os.tmpdir())
+        || !path.basename(stateDirectory).startsWith('aiwaf-train-')) throw new Error('Unsafe test cleanup');
+    fs.rmSync(stateDirectory, { recursive: true, force: true });
+    delete process.env.AIWAF_TRAINING_STATE_DIR;
     delete process.env.AIWAF_MIDDLEWARE_LOG_PATH;
     delete process.env.AIWAF_MIDDLEWARE_LOG_CSV_PATH;
   });
@@ -54,12 +71,7 @@ describe('trainer parity', () => {
     const runTrainer = async (jsonPath, csvEventPath) => {
       process.env.AIWAF_MIDDLEWARE_LOG_PATH = jsonPath;
       process.env.AIWAF_MIDDLEWARE_LOG_CSV_PATH = csvEventPath;
-      await new Promise(resolve => {
-        jest.isolateModules(() => {
-          require('../train');
-          setTimeout(resolve, 75);
-        });
-      });
+      await runIsolatedTraining();
       jest.resetModules();
     };
 
@@ -99,12 +111,7 @@ describe('trainer parity', () => {
       getBlockedIPs: jest.fn(async () => [])
     }));
 
-    await new Promise(resolve => {
-      jest.isolateModules(() => {
-        require('../train');
-        setTimeout(resolve, 50);
-      });
-    });
+    await runIsolatedTraining();
 
     expect(add).toHaveBeenCalled();
     expect(remove).toHaveBeenCalledWith('admin');
@@ -139,12 +146,7 @@ describe('trainer parity', () => {
       getBlockedIPs: jest.fn(async () => [])
     }));
 
-    await new Promise(resolve => {
-      jest.isolateModules(() => {
-        require('../train');
-        setTimeout(resolve, 50);
-      });
-    });
+    await runIsolatedTraining();
 
     expect(unblock).toHaveBeenCalledWith('203.0.113.3');
     expect(block).toHaveBeenCalledWith('203.0.113.2', expect.stringContaining('Excessive 404s'));
@@ -176,12 +178,7 @@ describe('trainer parity', () => {
       getBlockedIPs: jest.fn(async () => [])
     }));
 
-    await new Promise(resolve => {
-      jest.isolateModules(() => {
-        require('../train');
-        setTimeout(resolve, 50);
-      });
-    });
+    await runIsolatedTraining();
 
     expect(save).toHaveBeenCalled();
   });

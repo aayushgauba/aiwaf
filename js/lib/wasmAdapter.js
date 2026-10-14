@@ -46,7 +46,8 @@ async function loadWasmFromDisk() {
     rust_payload_from_records: bg.rust_payload_from_records,
     python_feature_from_record: bg.python_feature_from_record,
     python_features_batched: bg.python_features_batched,
-    NativeRequestPipeline: bg.NativeRequestPipeline
+    NativeRequestPipeline: bg.NativeRequestPipeline,
+    NativeTrainingEvidence: bg.NativeTrainingEvidence
   };
 }
 
@@ -544,7 +545,16 @@ async function createRequestPipeline(profile = {}, model = null) {
   return { native, setModel };
 }
 
+async function createTrainingEvidence(state) {
+  const mod = await loadWasm();
+  if (!mod || typeof mod.NativeTrainingEvidence !== 'function') {
+    throw new Error('Training replay protection requires aiwaf-wasm>=0.2.4 with NativeTrainingEvidence; install the matching build');
+  }
+  return new mod.NativeTrainingEvidence(state);
+}
+
 module.exports = {
+  createTrainingEvidence,
   createRequestPipeline,
   createIsolationForest,
   createIsolationForestFromJSON,

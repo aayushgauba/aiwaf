@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,8 +35,8 @@ public final class CsvStorage implements StorageBackend {
     private final Map<String, Entry> data = new HashMap<>();
 
     public CsvStorage(String filePath) {
-        this.filePath = Path.of(filePath);
-        loadData();
+        this.filePath = Path.of(filePath).toAbsolutePath().normalize();
+        StorageFileLock.withLock(this.filePath, () -> { loadData(); return null; });
     }
 
     private synchronized void loadData() {
@@ -76,8 +77,9 @@ public final class CsvStorage implements StorageBackend {
                 entry.expiresAtEpochSeconds = expiresAt;
                 data.put(key, entry);
             }
-        } catch (Exception ignored) {
+        } catch (IOException ex) {
             data.clear();
+            throw new IllegalStateException("Unable to load CSV storage", ex);
         }
     }
 
@@ -103,8 +105,13 @@ public final class CsvStorage implements StorageBackend {
                     writer.newLine();
                 }
             }
-            Files.move(temp, filePath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException ignored) {
+            try {
+                Files.move(temp, filePath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ex) {
+                Files.move(temp, filePath, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to persist CSV storage", ex);
         }
     }
 
@@ -113,7 +120,7 @@ public final class CsvStorage implements StorageBackend {
         List<String> expiredKeys = new ArrayList<>();
         for (Map.Entry<String, Entry> e : data.entrySet()) {
             Double expiresAt = e.getValue().expiresAtEpochSeconds;
-            if (expiresAt != null && nowSeconds > expiresAt) {
+            if (expiresAt != null && nowSeconds >= expiresAt) {
                 expiredKeys.add(e.getKey());
             }
         }
@@ -121,34 +128,43 @@ public final class CsvStorage implements StorageBackend {
             for (String key : expiredKeys) {
                 data.remove(key);
             }
-            saveData();
         }
     }
 
     @Override
     public synchronized Object get(String key) {
-        cleanupExpired();
-        Entry entry = data.get(key);
-        return entry == null ? null : entry.value;
+        return StorageFileLock.withLock(filePath, () -> {
+            loadData();
+            cleanupExpired();
+            Entry entry = data.get(key);
+            return entry == null ? null : entry.value;
+        });
     }
 
     @Override
     public synchronized boolean set(String key, Object value, Integer ttlSeconds) {
-        Entry entry = new Entry();
-        entry.value = value;
-        entry.expiresAtEpochSeconds = ttlSeconds == null ? null : (System.currentTimeMillis() / 1000.0) + ttlSeconds;
-        data.put(key, entry);
-        saveData();
-        return true;
+        return StorageFileLock.withLock(filePath, () -> {
+            loadData();
+            cleanupExpired();
+            Entry entry = new Entry();
+            entry.value = value;
+            entry.expiresAtEpochSeconds = ttlSeconds == null ? null : (System.currentTimeMillis() / 1000.0) + ttlSeconds;
+            data.put(key, entry);
+            saveData();
+            return true;
+        });
     }
 
     @Override
     public synchronized boolean delete(String key) {
-        boolean removed = data.remove(key) != null;
-        if (removed) {
-            saveData();
-        }
-        return removed;
+        return StorageFileLock.withLock(filePath, () -> {
+            loadData();
+            boolean removed = data.remove(key) != null;
+            if (removed) {
+                saveData();
+            }
+            return removed;
+        });
     }
 
     @Override
@@ -158,16 +174,19 @@ public final class CsvStorage implements StorageBackend {
 
     @Override
     public synchronized List<String> getAllKeys(String globPattern) {
-        cleanupExpired();
-        String pattern = (globPattern == null || globPattern.isBlank()) ? "*" : globPattern;
-        String regex = pattern.replace(".", "\\.").replace("*", ".*");
-        List<String> keys = new ArrayList<>();
-        for (String key : data.keySet()) {
-            if (key.matches(regex)) {
-                keys.add(key);
+        return StorageFileLock.withLock(filePath, () -> {
+            loadData();
+            cleanupExpired();
+            String pattern = (globPattern == null || globPattern.isBlank()) ? "*" : globPattern;
+            String regex = pattern.replace(".", "\\.").replace("*", ".*");
+            List<String> keys = new ArrayList<>();
+            for (String key : data.keySet()) {
+                if (key.matches(regex)) {
+                    keys.add(key);
+                }
             }
-        }
-        return keys;
+            return keys;
+        });
     }
 
     private Object deserializeValue(String rawValue) {

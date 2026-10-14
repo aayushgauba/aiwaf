@@ -65,11 +65,12 @@ describe('wasmAdapter', () => {
       throw new Error('not installed');
     });
 
-    const { createIsolationForest } = require('../lib/wasmAdapter');
+    const { createIsolationForest, createTrainingEvidence } = require('../lib/wasmAdapter');
     const model = await createIsolationForest({ nTrees: 10, sampleSize: 8 });
     expect(model).not.toHaveProperty('__aiwafWasm', true);
     expect(typeof model.fit).toBe('function');
     expect(typeof model.anomalyScore).toBe('function');
+    await expect(createTrainingEvidence('{"version":1,"ips":{}}')).rejects.toThrow('Training replay protection requires');
   });
 
   it('supports the current Rust wasm IsolationForest export shape', async () => {

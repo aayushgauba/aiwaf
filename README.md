@@ -39,16 +39,16 @@ the supported Redis backends when sharing limits across workers.
 
 Each package is versioned and released independently.
 
-Python 1.1.5, Rust/Python 0.2.4, Node.js 1.1.3, WASM 0.2.3, and Java 1.3.3 are local release candidates; see the
+Python 1.1.6, Rust/Python 0.2.5, Node.js 1.1.4, WASM 0.2.4, and Java 1.3.4 are local release candidates; see the
 [upgrade notes](docs/releases/2026-10-elv2.md).
 
 | Runtime | Package | Repository version | Primary use |
 | --- | --- | ---: | --- |
-| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.5` | Django, Flask, and FastAPI protection |
-| Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.3` | Express and Node framework middleware |
-| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.4` | Native Python acceleration and JSON model inference |
-| WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.3` | Rust detection and model primitives for JavaScript |
-| Java | `io.github.aiwaf-project:aiwaf-java` | `1.3.3` | Spring MVC and Jakarta Servlet protection |
+| Python | [`aiwaf`](https://pypi.org/project/aiwaf/) | `1.1.6` | Django, Flask, and FastAPI protection |
+| Node.js | [`aiwaf`](https://www.npmjs.com/package/aiwaf) | `1.1.4` | Express and Node framework middleware |
+| Rust/Python | [`aiwaf-rust`](https://pypi.org/project/aiwaf-rust/) | `0.2.5` | Native Python acceleration and JSON model inference |
+| WebAssembly | [`aiwaf-wasm`](https://www.npmjs.com/package/aiwaf-wasm) | `0.2.4` | Rust detection and model primitives for JavaScript |
+| Java | `io.github.aiwaf-project:aiwaf-java` | `1.3.4` | Spring MVC and Jakarta Servlet protection |
 
 Supported framework integrations include Django, Flask, FastAPI, Express, Fastify, Hapi, Koa, NestJS, Next.js API routes, AdonisJS, Sails.js, Spring MVC, and Jakarta Servlet.
 
@@ -97,7 +97,7 @@ pip install "aiwaf[django]"
 pip install "aiwaf[flask]"
 pip install "aiwaf[fastapi]"
 
-# Backward-compatible alias; Python 1.1.5 already installs aiwaf-rust
+# Backward-compatible alias; Python 1.1.6 already installs aiwaf-rust
 pip install "aiwaf[rust]"
 
 # Node.js middleware
@@ -107,13 +107,13 @@ npm install aiwaf
 npm install aiwaf-wasm
 ```
 
-Java 1.3.3, after it is published to Maven Central:
+Java 1.3.4, after it is published to Maven Central:
 
 ```xml
 <dependency>
   <groupId>io.github.aiwaf-project</groupId>
   <artifactId>aiwaf-java</artifactId>
-  <version>1.3.3</version>
+  <version>1.3.4</version>
 </dependency>
 ```
 
@@ -121,7 +121,7 @@ Java 1.3.3, after it is published to Maven Central:
 
 The Python package requires Python 3.10 or newer. Framework dependencies are optional, so install only the extra needed by the application.
 
-Python 1.1.5 requires `aiwaf-rust>=0.2.4`; the `rust` extra remains an installation
+Python 1.1.6 requires `aiwaf-rust>=0.2.5`; the `rust` extra remains an installation
 alias. Publish the matching Rust wheel with `NativeCSVPipeline` support before
 the Python release. The Rust release workflow builds Linux x86_64/aarch64,
 musl x86_64, macOS x86_64/arm64 and Windows x86_64 wheels and checks the native
@@ -426,7 +426,7 @@ When `aiwaf_rust` is importable, supported acceleration paths are selected autom
 
 ### Rust-backed CSV runtime and training
 
-The Python 1.1.5 and `aiwaf-rust` 0.2.4 release candidates add native CSV storage,
+The Python package and `aiwaf-rust` provide native CSV storage,
 shared policy evaluation, and training preparation for Django, Flask, and FastAPI.
 Install matching Python and Rust builds and reload application workers to activate
 the new capabilities. Older extensions retain the compatible Python fallback.
@@ -1028,7 +1028,7 @@ cp -R ../licenses crates/aiwaf_wasm/pkg/
 
 ## Java package
 
-AIWAF Java 1.3.3 targets Java 17, Spring Framework 7.0, and Jakarta Servlet 6.1. It is a native Java implementation and does not load the Rust library.
+AIWAF Java 1.3.4 targets Java 17, Spring Framework 7.0, and Jakarta Servlet 6.1. It is a native Java implementation and does not load the Rust library.
 
 ### Core engine
 
@@ -1117,7 +1117,7 @@ UUID protection uses Python-compatible weighted signals: malformed input, valid 
 Generate a route manifest from the live Spring application rather than supplying controller methods manually:
 
 ```bash
-java -cp "your-app.jar:aiwaf-java-1.3.3.jar" \
+java -cp "your-app.jar:aiwaf-java-1.3.4.jar" \
   com.aiwaf.cli.AiwafConsole init \
   --app com.example.Application \
   --output .aiwaf/paths.json
@@ -1187,6 +1187,76 @@ mvn -Dgpg.skip=true package
 ```
 
 The build produces the main, source, and Javadoc JARs under `java/target/`. The main JAR embeds the root license as `META-INF/LICENSE`. FastR training is optional and falls back to the Java trainer when R or `jsonlite` is unavailable.
+
+### Python training replay protection
+
+Python 1.1.6 with aiwaf-rust 0.2.5 records the evidence used by offline training
+to block each IP. Rust computes SHA-256 receipts, locks concurrent trainers,
+and persists `training_evidence.json` in the policy data directory. Flask,
+FastAPI, and Django continue fitting models and learning keywords from history,
+but block decisions use requests that have not already been handled for that IP.
+Replaying old logs cannot extend an active block or recreate one after expiry
+or manual removal. Fresh traffic must independently satisfy the blocking rules.
+
+CLI listing filters expired blocks for display without rewriting its snapshot
+back to the blacklist. This prevents concurrent training updates from being
+erased by an older cleanup snapshot. Default first blocks last 900 seconds.
+
+Keep the receipt file across restarts, log rotation, and blacklist clearing.
+Receipts do not expire and grow with the distinct requests used in block
+decisions. `AIWAF_TRAINING_STATE_DIR` can select a durable shared directory;
+trainers sharing a blacklist must also share this directory. Missing native
+capabilities or corrupt receipt state stop training visibly. A crash between
+writing a block and committing its receipt can still require recovery; the two
+writes are not a single transaction.
+
+Receipts start with the first training run on this version. Requests processed
+by older versions have no receipts, so previous enforcement cannot be inferred
+retroactively. This change does not alter block durations or diagnose a block
+disappearing before its expiry.
+
+### JavaScript training replay protection
+
+Node.js 1.1.4 with aiwaf-wasm 0.2.4 uses the same Rust receipt algorithm as
+Python. The shared trainer applies this protection across JavaScript framework
+adapters. The WASM `NativeTrainingEvidence` API hashes and filters evidence;
+Node persists `node_training_evidence.json` in the blacklist CSV directory, or
+the directory selected by `AIWAF_TRAINING_STATE_DIR`. Preserve this file across
+expiry, unblocking, blacklist clearing, and log rotation. Sharing a blacklist
+also requires sharing the evidence directory. Model fitting and keyword learning
+still use full history; 404 and anomaly enforcement use fresh evidence only.
+Log records without a valid stable timestamp are excluded from training.
+
+The Node host serializes trainers with an exclusive lock directory. A crashed
+trainer may leave `node_training_evidence.lock`; subsequent training fails
+visibly rather than bypassing that lock. Remove that lock directory only after
+confirming its trainer has stopped. Receipt snapshots are written and synced
+before atomic replacement. As in Python, block writes and receipt commits are
+separate operations, so a crash between them can still require recovery.
+
+The CLI exits with failure for missing WASM receipt support, corrupt state, or
+storage errors. Programmatic callers can await `require('aiwaf/train')()`.
+Publish the matching WASM package before the Node package; `test:wasm-real`
+checks receipt restoration against the installed dependency, not just a fixture.
+
+Java's `train-model` operation fits and saves a model without adding blacklist
+entries. Servlet and Spring use that shared Java core. Retraining alone therefore
+cannot extend or recreate their runtime blocks; a regression test verifies this.
+
+Blacklist expiry is also protected against concurrent updates. Node request
+checks and listings do not delete expired snapshots. Explicit cleanup checks
+expiry in the database DELETE, or inside the CSV mutation lock after reading
+the current rows. CSV blacklist writers use the same lock and atomically replace
+the file. A crashed writer can leave `<blacklist CSV path>.lock`; stop its owner
+before removing that lock directory. Lock acquisition times out after 60 seconds
+and reports an error rather than proceeding without protection.
+
+Java CSV and file storage reload current data under a shared JVM and OS sidecar
+lock for each operation. Reads filter expiry without rewriting disk; writes
+preserve other instances' updates. OS locks release when a process exits; the
+sidecar lock file stays in place and must not be removed while workers run.
+File storage now incurs a reload for each operation. Restart all old workers
+when upgrading so every writer participates in the locking protocol.
 
 ## Shared training schema
 
@@ -1328,17 +1398,23 @@ Release versions and tags must match the relevant manifest.
 
 | Package | Manifest | Tag | Workflow |
 | --- | --- | --- | --- |
-| Python `aiwaf` | `pyproject.toml` | `python-v1.1.5` | `python-publish.yml` |
-| npm `aiwaf` | `js/package.json` | `js-v1.1.3` | `npm-publish.yml` |
-| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.4` | `rust-publish.yml` |
-| npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.3` | `wasm-publish.yml` |
-| Maven `aiwaf-java` | `java/pom.xml` | `java-v1.3.3` | `java-publish.yml` |
+| Python `aiwaf` | `pyproject.toml` | `python-v1.1.6` | `python-publish.yml` |
+| npm `aiwaf` | `js/package.json` | `js-v1.1.4` | `npm-publish.yml` |
+| PyPI `aiwaf-rust` | `rust/pyproject.toml` + `rust/Cargo.toml` | `rust-v0.2.5` | `rust-publish.yml` |
+| npm `aiwaf-wasm` | `rust/crates/aiwaf_wasm/Cargo.toml` | `wasm-v0.2.4` | `wasm-publish.yml` |
+| Maven `aiwaf-java` | `java/pom.xml` | `java-v1.3.4` | `java-publish.yml` |
 
 Python and Rust publish to PyPI with trusted publishing. The npm workflows use npm trusted publishing and stage packages for approval. Configure the trusted publisher with organization `aiwaf-project`, repository `aiwaf`, the exact workflow filename, and the environment used by that workflow.
 
 Java publishing uses the protected `maven-publish` environment plus `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `CENTRAL_TOKEN_USERNAME`, and `CENTRAL_TOKEN_PASSWORD`. The workflow verifies the tag, runs tests, signs the POM and all three JARs, uploads the deployment bundle, and waits for Maven Central publication.
 
 Registry releases are immutable. Increment the relevant manifest version before publishing another release.
+
+For the replay fix, publish `aiwaf-rust 0.2.5` before Python `aiwaf 1.1.6`, and
+`aiwaf-wasm 0.2.4` before npm `aiwaf 1.1.4`. After WASM publication, refresh the
+npm lockfile against the registry to record the actual companion checksum, then
+run `npm ci` and the release checks. The prepared future WASM lock entry has no
+integrity checksum; it cannot be installed until that package is published.
 
 ## Security and limitations
 

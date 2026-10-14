@@ -244,6 +244,7 @@ js/aiwaf.sqlite
 /js/LICENSE
 /js/NOTICE
 /js/licenses/
+/js/geolock/ipinfo_lite.mmdb
 /rust/README.md
 /rust/LICENSE
 /rust/NOTICE
@@ -260,6 +261,7 @@ js/aiwaf.sqlite
 /java/**/*.class
 /java/**/*.log
 /java/**/*.bin
+/java/**/*.bin.lock
 /java/**/*.tmp
 /java/**/*.swp
 /java/**/*~

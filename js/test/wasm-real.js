@@ -3,7 +3,8 @@ async function run() {
     createIsolationForest,
     createIsolationForestFromJSON,
     getWasmStatus,
-    validateHeaders
+    validateHeaders,
+    createTrainingEvidence
   } = require('../lib/wasmAdapter');
   const headers = {
     'user-agent': 'Mozilla/5.0',
@@ -12,6 +13,20 @@ async function run() {
     'accept-encoding': 'gzip, deflate, br',
     connection: 'keep-alive'
   };
+
+  const receipts = await createTrainingEvidence('{"version":1,"ips":{}}');
+  const records = JSON.stringify([['203.0.113.1', '2026-10-10T12:00:00Z', '/missing.php', '404']]);
+  let snapshot;
+  try {
+    if (receipts.fresh_indices(records) !== '[0]') throw new Error('WASM receipt engine did not recognize fresh evidence');
+    snapshot = receipts.committed_state('203.0.113.1');
+    receipts.commit('203.0.113.1');
+    if (receipts.can_block('203.0.113.1')) throw new Error('WASM receipt engine allowed duplicate enforcement');
+  } finally { receipts.free(); }
+  const replay = await createTrainingEvidence(snapshot);
+  try {
+    if (replay.fresh_indices(records) !== '[]') throw new Error('WASM receipts did not survive restoration');
+  } finally { replay.free(); }
 
   const result = await validateHeaders(
     headers,

@@ -8,6 +8,9 @@ const requestLogStore = require('./lib/requestLogStore');
 const modelStore = require('./lib/modelStore');
 const blacklistManager = require('./lib/blacklistManager');
 const { calculateTrainingFeatures } = require('./lib/trainingFeatures');
+const { withTrainingEvidence } = require('./lib/trainingEvidence');
+const TRAINING_STATE_DIR = process.env.AIWAF_TRAINING_STATE_DIR
+  || path.dirname(process.env.AIWAF_BLOCKED_IPS_CSV_PATH || path.join('logs', 'storage', 'blocked_ips.csv'));
 
 const STATIC_KW = [
   '.php', '.xmlrpc', 'wp-', '.env', '.git', '.bak',
@@ -337,7 +340,7 @@ function parseLogLine(line) {
   const status = match[4];
   const rt = match[5] ? parseFloat(match[5]) : 0.0;
 
-  let timestamp = new Date();
+  let timestamp = new Date(NaN);
   try {
     const cleanTimestamp = timestampStr.split(' ')[0];
     const monthMap = {
@@ -349,12 +352,16 @@ function parseLogLine(line) {
     const parts = cleanTimestamp.split(/[/:\s]/);
     if (parts.length >= 6) {
       const [day, monthText, year, hour, minute, second] = parts;
-      const month = monthMap[monthText] || '01';
-      timestamp = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`);
+      const month = monthMap[monthText];
+      if (!month) return null;
+      const offset = timestampStr.trim().split(/\s+/)[1] || '+0000';
+      if (!/^[+-]\d{4}$/.test(offset)) return null;
+      timestamp = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}${offset.slice(0, 3)}:${offset.slice(3)}`);
     }
   } catch (err) {
-    timestamp = new Date();
+    return null;
   }
+  if (!Number.isFinite(timestamp.getTime())) return null;
 
   return {
     ip,
@@ -367,29 +374,33 @@ function parseLogLine(line) {
 
 function parseMiddlewareEvent(event) {
   if (!event || !event.path || !event.ip) return null;
+  const timestamp = new Date(event.timestamp);
+  if (!event.timestamp || !Number.isFinite(timestamp.getTime())) return null;
 
   return {
     ip: String(event.ip),
     path: String(event.path).split('?')[0],
     status: String(event.status || 200),
     responseTime: Number(event.responseTime || 0),
-    timestamp: event.timestamp ? new Date(event.timestamp) : new Date()
+    timestamp
   };
 }
 
 function parseDbEvent(event) {
   if (!event || !event.path || !event.ip) return null;
+  const timestamp = new Date(event.timestamp);
+  if (!event.timestamp || !Number.isFinite(timestamp.getTime())) return null;
   return {
     ip: String(event.ip),
     path: String(event.path).split('?')[0],
     status: String(event.status || 200),
     responseTime: Number(event.responseTime || 0),
-    timestamp: event.timestamp ? new Date(event.timestamp) : new Date()
+    timestamp
   };
 }
 
-(async () => {
-  try {
+async function train() {
+  return withTrainingEvidence(TRAINING_STATE_DIR, async evidence => {
     const rawAccessLines = await readAccessLogLines();
     let parsedRequests = rawAccessLines.map(parseLogLine).filter(Boolean);
 
@@ -423,12 +434,15 @@ function parseDbEvent(event) {
       return;
     }
 
+    // Unstable/missing timestamps cannot establish fresh evidence on a replay.
+    parsedRequests = parsedRequests.filter(record => Number.isFinite(record.timestamp.getTime()));
+    const freshRequests = evidence.fresh(parsedRequests);
     await unblockExemptIps();
 
     const ip404Counts = new Map();
     const ip404LoginCounts = new Map();
     const ipTimes = new Map();
-    for (const record of parsedRequests) {
+    for (const record of freshRequests) {
       const ts = record.timestamp instanceof Date ? record.timestamp.getTime() : new Date(record.timestamp).getTime();
       if (!ipTimes.has(record.ip)) ipTimes.set(record.ip, []);
       ipTimes.get(record.ip).push(ts);
@@ -444,7 +458,7 @@ function parseDbEvent(event) {
       if (count >= 6) {
         const loginCount = ip404LoginCounts.get(ip) || 0;
         if (count > loginCount) {
-          await blacklistManager.block(ip, `Excessive 404s (non-login ${count}/${count + loginCount})`);
+          await evidence.block(ip, () => blacklistManager.block(ip, `Excessive 404s (non-login ${count}/${count + loginCount})`));
         }
       }
     }
@@ -487,8 +501,9 @@ function parseDbEvent(event) {
 
       // Identify anomalous IPs and optionally block if suspicious.
       const anomaliesByIp = new Map();
-      parsedRequests.forEach((record, idx) => {
-        const feature = features[idx];
+      const enforcementFeatures = freshRequests.length ? await calculateTrainingFeatures(freshRequests, STATIC_KW, STATUS_IDX) : [];
+      freshRequests.forEach((record, idx) => {
+        const feature = enforcementFeatures[idx];
         if (!feature) return;
         const isAnomaly = model.isAnomaly(feature, 0.5);
         if (!isAnomaly) return;
@@ -519,7 +534,7 @@ function parseDbEvent(event) {
         if (avgKwHits < 2 && max404s < 10 && avgBurst < 15 && totalRequests < 100) {
           continue;
         }
-        await blacklistManager.block(ip, `AI anomaly + suspicious patterns (kw:${avgKwHits.toFixed(1)}, 404s:${max404s}, burst:${avgBurst.toFixed(1)})`);
+        await evidence.block(ip, () => blacklistManager.block(ip, `AI anomaly + suspicious patterns (kw:${avgKwHits.toFixed(1)}, 404s:${max404s}, burst:${avgBurst.toFixed(1)})`));
       }
     } else {
       console.log(`AI training skipped: ${parsedRequests.length} logs < ${MIN_AI_LOGS}`);
@@ -558,7 +573,18 @@ function parseDbEvent(event) {
     } catch (err) {
       // ignore
     }
-  } catch (err) {
-    console.error('Training failed:', err);
+  });
+}
+
+module.exports = train;
+async function runCLI() {
+  try {
+    await train();
+    process.exitCode = 0;
+  } catch (error) {
+    console.error('Training failed:', error);
+    process.exitCode = 1;
   }
-})();
+}
+module.exports.runCLI = runCLI;
+if (require.main === module) runCLI();

@@ -71,8 +71,8 @@ def get_storage_instance():
                 for ip, entry in blacklist.items()
                 if not entry.get("expires_at") or float(entry.get("expires_at")) > now
             }
-            if len(active) != len(blacklist):
-                csv_impl.rewrite_blacklist(data_dir, active)
+            # Listing is read-only. A worker/trainer may have added or refreshed
+            # entries since this snapshot; rewriting it would erase those blocks.
             return active
         
         def _read_csv_keywords():
@@ -1260,7 +1260,7 @@ def main():
             for ip, data in blacklist.items():
                 if isinstance(data, dict):
                     reason = data.get('reason', 'Unknown')
-                    timestamp = data.get('timestamp', 'Unknown')
+                    timestamp = data.get('added_date') or data.get('timestamp') or 'Unknown'
                     print(f"   {ip} - {reason} ({timestamp})")
                 else:
                     print(f"   {ip}")
@@ -1329,7 +1329,7 @@ def main():
         for ip, data in blacklist.items():
             if isinstance(data, dict):
                 reason = data.get('reason', 'Unknown')
-                timestamp = data.get('timestamp', 'Unknown')
+                timestamp = data.get('added_date') or data.get('timestamp') or 'Unknown'
                 expires = data.get('expires_at') or data.get('expires') or ''
                 suffix = f", expires={expires}" if expires else ""
                 print(f"   {ip} - {reason} ({timestamp}{suffix})")

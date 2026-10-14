@@ -34,6 +34,8 @@ describe('blacklistManager', () => {
     expect(info).toEqual(expect.objectContaining({ score: 60, offenses: 2, duration: 3600 }));
     expect(info.extended_request_info).toEqual({ path: '/x' });
     expect(await manager.isBlocked('203.0.113.10')).toBe(false);
+    expect(await manager.getBlockInfo('203.0.113.10')).not.toBeNull();
+    expect(await manager.cleanupExpired()).toBe(1);
 
     await manager.blockPermanent('203.0.113.11', 'manual');
     expect(await manager.isBlocked('203.0.113.11')).toBe(true);

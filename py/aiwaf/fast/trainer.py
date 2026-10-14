@@ -17,6 +17,16 @@ from aiwaf.core.training_features import extract_raw_features, extract_native_ba
 from aiwaf.core.training_logic import get_default_legitimate_keywords, is_malicious_context
 from aiwaf.core.model_artifacts import rust_model_artifact
 from aiwaf.core.model_serialization import dump_model_artifact
+from aiwaf.core.training_evidence import guard_training, current_evidence, fresh_anomaly_statistics
+from aiwaf.core.runtime_storage import get_storage
+from aiwaf.core.storage_schema import DEFAULT_DATA_DIR
+
+
+def _evidence_directory(app, **options):
+    config = options.get('config') or getattr(getattr(app, 'state', None), 'aiwaf_config', None)
+    storage = get_storage()
+    default = getattr(storage, 'data_dir', None) or Path(getattr(storage, 'file_path', Path(DEFAULT_DATA_DIR) / 'runtime_metadata.csv')).parent
+    return config.get('AIWAF_TRAINING_STATE_DIR', default) if config is not None else default
 
 STATIC_KW = ['.php', 'xmlrpc', 'wp-', '.env', '.git', '.bak', 'config', 'shell', 'filemanager']
 
@@ -58,6 +68,7 @@ def _read_logs(log_dir):
     return records
 
 
+@guard_training(_evidence_directory)
 def train_from_logs(app, *, log_dir=None, disable_ai=False, force_ai=False,
                     min_ai_logs=10000, model_path=None, config=None):
     """Train offline; storage must already be initialized by AIWAF or the caller.
@@ -85,14 +96,16 @@ def train_from_logs(app, *, log_dir=None, disable_ai=False, force_ai=False,
                 exempt_cache[path] = is_path_exempt(path, configured_paths, allow_wildcards=True, allow_prefix=True)
             return exempt_cache[path]
         errors, exempt_errors, times = aggregate_training_records(parsed, exempt)
+        evidence = current_evidence()
+        fresh = evidence.fresh(parsed)
+        fresh_errors, fresh_exempt_errors, fresh_times = aggregate_training_records(fresh, exempt)
         blacklist, exemptions, keywords = get_blacklist_store(), get_exemption_store(), get_keyword_store()
         def block(ip, reason):
             if exemptions.is_exempted(ip):
                 return False
-            blacklist.block_ip(ip, reason)
-            return True
-        for ip, count in errors.items():
-            exempt_count = exempt_errors.get(ip, 0)
+            return evidence.block(ip, lambda: blacklist.block_ip(ip, reason))
+        for ip, count in fresh_errors.items():
+            exempt_count = fresh_exempt_errors.get(ip, 0)
             if count >= 6 and count > exempt_count:
                 result['blocked_404'] += block(ip, f'Excessive 404s (>=6 non-login, {count}/{count + exempt_count})')
         features = extract_native_batch(parsed, errors, known, exempt, STATUS_IDX, STATIC_KW) if use_rust else None
@@ -110,8 +123,13 @@ def train_from_logs(app, *, log_dir=None, disable_ai=False, force_ai=False,
                 statistics = features.fit_predict(model)
             else:
                 model.fit(matrix)
-                statistics = anomaly_statistics(features, model.predict(matrix))
+                statistics = {} if evidence.had_history else anomaly_statistics(features, model.predict(matrix))
             result['model'] = model
+            if evidence.had_history:
+                fresh_features = extract_raw_features(fresh, fresh_errors, known, exempt, STATUS_IDX, STATIC_KW) if use_rust and fresh else None
+                if fresh_features is None:
+                    fresh_features = python_training_features(fresh, fresh_errors, fresh_times, known, exempt, STATIC_KW, STATUS_IDX)
+                statistics = fresh_anomaly_statistics(model, columns, fresh_features)
             for ip, (kw, errors_count, burst, count) in statistics.items():
                 if (kw < 2 and errors_count < 10 and burst < 15 and count < 100) or (kw == 0 and errors_count == 0):
                     continue

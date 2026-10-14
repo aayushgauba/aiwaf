@@ -48,6 +48,8 @@ from ..core.training_features import (
 from ..core.model_artifacts import rust_model_artifact, sklearn_model_artifact
 from ..core.model_serialization import can_serialize_model_artifact, dump_model_artifact
 from ..core.training_logic import is_malicious_context as core_is_malicious_context
+from ..core.training_evidence import guard_training, current_evidence, fresh_anomaly_statistics, TrainingEvidenceError
+from .storage import _resolve_csv_data_dir
 from ..core.rust_backend import (
     rust_available,
     extract_features as rust_extract_features,
@@ -591,6 +593,7 @@ def _print_geoip_blocklist_summary():
     _print_geoip_summary(blocked_ips, "GeoIP summary for blocked IPs (top 10):")
 
 
+@guard_training(lambda *args, **kwargs: getattr(settings, 'AIWAF_TRAINING_STATE_DIR', _resolve_csv_data_dir()))
 def train(disable_ai=False, force_ai=False) -> None:
     """Enhanced training with improved keyword filtering and exemption handling
     
@@ -620,6 +623,9 @@ def train(disable_ai=False, force_ai=False) -> None:
     ip_404_login = defaultdict(int)  # Track 404s on login paths separately
     ip_times = defaultdict(list)
     seen_any_lines = False
+    evidence = current_evidence()
+    fresh_records = []
+    fresh_404, fresh_login, fresh_times = defaultdict(int), defaultdict(int), defaultdict(list)
 
     # Pass 1: collect aggregate stats only (no full parsed list in memory)
     use_native_preparation = _is_csv_mode() and _parse is _DEFAULT_PARSE
@@ -631,6 +637,16 @@ def train(disable_ai=False, force_ai=False) -> None:
     for line_count, records in _training_batches(use_native_preparation):
         seen_any_lines |= bool(line_count)
         parsed_count += len(records)
+        fresh = evidence.fresh(records)
+        if evidence.had_history:
+            fresh_records.extend(fresh)
+        fresh_errors, fresh_exempt_errors, fresh_ip_times = aggregate_training_records(fresh, _aggregate_exempt)
+        for ip, count in fresh_errors.items():
+            fresh_404[ip] += count
+        for ip, count in fresh_exempt_errors.items():
+            fresh_login[ip] += count
+        for ip, values in fresh_ip_times.items():
+            fresh_times[ip].extend(values)
         errors, exempt_errors, times = aggregate_training_records(records, _aggregate_exempt)
         for ip, count in errors.items():
             ip_404[ip] += count
@@ -648,15 +664,16 @@ def train(disable_ai=False, force_ai=False) -> None:
         return
 
     # 3. Optional immediate 404flood blocking (only for non-login paths)
-    for ip, count in ip_404.items():
+    for ip, count in fresh_404.items():
         if count >= 6:
             # Only block if they have significant non-login 404s
-            login_404s = ip_404_login.get(ip, 0)
+            login_404s = fresh_login.get(ip, 0)
             total_404s = count + login_404s
             
             # Don't block if majority of 404s are on login paths
             if count > login_404s:  # More non-login 404s than login 404s
-                BlacklistManager.block(ip, f"Excessive 404s (≥6 non-login, {count}/{total_404s})")
+                if getattr(settings, 'AIWAF_ENABLE_IP_BLOCKING', True) and not exemption_store.is_exempted(ip):
+                    evidence.block(ip, lambda: BlacklistManager.block(ip, f"Excessive 404s (≥6 non-login, {count}/{total_404s})"))
 
     keyword_learning_enabled = getattr(settings, "AIWAF_ENABLE_KEYWORD_LEARNING", True)
     legitimate_keywords = get_legitimate_keywords() if keyword_learning_enabled else set()
@@ -925,7 +942,10 @@ def train(disable_ai=False, force_ai=False) -> None:
                 logger.info(f"Created with scikit-learn v{metadata['sklearn_version']}")
             
             # Check for anomalies and intelligently decide which IPs to block
-            if use_rust_ai and native_batch:
+            if evidence.had_history:
+                fresh_features = _generate_feature_dicts(fresh_records, fresh_404, fresh_times) if fresh_records else []
+                statistics = fresh_anomaly_statistics(model, feature_cols, fresh_features)
+            elif use_rust_ai and native_batch:
                 statistics = native_statistics
             else:
                 preds = model.predict(X)
@@ -941,7 +961,7 @@ def train(disable_ai=False, force_ai=False) -> None:
                 
                 for ip in anomalous_ips:
                     # Skip if IP is exempted
-                    if exemption_store.is_exempted(ip):
+                    if not getattr(settings, 'AIWAF_ENABLE_IP_BLOCKING', True) or exemption_store.is_exempted(ip):
                         continue
                     
                     # Get this IP's behavior from the data
@@ -965,12 +985,13 @@ def train(disable_ai=False, force_ai=False) -> None:
                         continue
                     
                     # Block if it shows clear signs of malicious behavior
-                    BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
-                    blocked_count += 1
+                    blocked_count += evidence.block(ip, lambda: BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})"))
                     logger.info(f"   - {ip}: Blocked for suspicious behavior (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
                 
                 logger.info(f"    Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs (others looked legitimate)")
         
+        except TrainingEvidenceError:
+            raise
         except ImportError as e:
             logger.info(f"AI model training failed - missing dependencies: {e}")
             logger.info("   Continuing with keyword learning only...")

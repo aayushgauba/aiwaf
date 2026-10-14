@@ -40,13 +40,14 @@ AI_AVAILABLE = PANDAS_AVAILABLE
 from flask import Flask, current_app
 
 # AIWAF imports
-from .storage import get_exemption_store, get_keyword_store, _get_storage_mode, _read_csv_blacklist
+from .storage import get_exemption_store, get_keyword_store, _get_storage_mode, _read_csv_blacklist, _get_data_dir
 from .blacklist_manager import BlacklistManager
 from .utils import is_exempt, is_path_exempt
 from .geoip import lookup_country_name
 from aiwaf.core.constants import STATUS_IDX as CORE_STATUS_IDX
 from aiwaf.core.logs import parse_log_line as core_parse_log_line
 from aiwaf.core.training_pipeline import parse_training_logs, iter_csv_training_batches, aggregate_training_records, learn_training_keywords, anomaly_statistics
+from aiwaf.core.training_evidence import guard_training, current_evidence, fresh_anomaly_statistics, TrainingEvidenceError
 from aiwaf.core.training import extract_rust_features_parallel as core_extract_rust_features_parallel
 from aiwaf.core.training_logic import is_malicious_context as core_is_malicious_context
 from aiwaf.core.training_features import (
@@ -518,6 +519,7 @@ class FlaskAITrainer:
             max_workers=max_workers,
         )
     
+    @guard_training(lambda self, *args, **kwargs: self.get_config('AIWAF_TRAINING_STATE_DIR', _get_data_dir()))
     def train(self, disable_ai: bool = False) -> None:
         """Enhanced training with improved keyword filtering and exemption handling"""
         logger.info(" Starting AIWAF Flask enhanced training...")
@@ -580,16 +582,20 @@ class FlaskAITrainer:
             logger.info(f"  Only {len(parsed)} valid entries parsed - need at least 50 for basic training")
             return
         
+        evidence = current_evidence()
+        fresh = evidence.fresh(parsed)
+        fresh_404, fresh_login, fresh_times = aggregate_training_records(fresh, is_path_exempt)
+        # Fit on history, but enforce only against unconsumed requests.
         # 404 flood blocking (only for non-login paths)
         blocked_404_count = 0
-        for ip, count in ip_404.items():
+        for ip, count in fresh_404.items():
             if count >= 6:
-                login_404s = ip_404_login.get(ip, 0)
+                login_404s = fresh_login.get(ip, 0)
                 total_404s = count + login_404s
                 
                 if count > login_404s:
-                    BlacklistManager.block(ip, f"Excessive 404s (>=6 non-login, {count}/{total_404s})")
-                    blocked_404_count += 1
+                    if self.get_config('AIWAF_ENABLE_IP_BLOCKING', True) and not exemption_store.is_exempted(ip):
+                        blocked_404_count += evidence.block(ip, lambda: BlacklistManager.block(ip, f"Excessive 404s (>=6 non-login, {count}/{total_404s})"))
         
         if blocked_404_count > 0:
             logger.info(f" Blocked {blocked_404_count} IPs for excessive 404 errors")
@@ -671,7 +677,10 @@ class FlaskAITrainer:
                     logger.info(f" Trained on {len(X)} samples with scikit-learn v{sklearn.__version__}")
                 
                 # Check for anomalies and intelligently decide which IPs to block
-                if use_rust_iforest and native_batch:
+                if evidence.had_history:
+                    fresh_features = self._generate_feature_dicts(fresh, fresh_404, fresh_times) if fresh else []
+                    statistics = fresh_anomaly_statistics(model, feature_cols, fresh_features)
+                elif use_rust_iforest and native_batch:
                     statistics = native_statistics
                 else:
                     preds = model.predict(X)
@@ -685,7 +694,7 @@ class FlaskAITrainer:
                     
                     for ip in anomalous_ips:
                         # Skip if IP is exempted
-                        if exemption_store.is_exempted(ip):
+                        if not self.get_config('AIWAF_ENABLE_IP_BLOCKING', True) or exemption_store.is_exempted(ip):
                             continue
                         
                         # Get this IP's behavior from the data
@@ -708,12 +717,13 @@ class FlaskAITrainer:
                             continue
                         
                         # Block if it shows clear signs of malicious behavior
-                        BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})")
-                        blocked_count += 1
+                        blocked_count += evidence.block(ip, lambda: BlacklistManager.block(ip, f"AI anomaly + suspicious patterns (kw:{avg_kw_hits:.1f}, 404s:{max_404s}, burst:{avg_burst:.1f})"))
                         logger.info(f"    {ip}: Blocked for suspicious behavior")
                     
                     logger.info(f" Blocked {blocked_count}/{len(anomalous_ips)} anomalous IPs")
             
+            except TrainingEvidenceError:
+                raise
             except Exception as e:
                 logger.info(f" AI model training failed: {e}")
                 logger.info("   Continuing with keyword learning only...")

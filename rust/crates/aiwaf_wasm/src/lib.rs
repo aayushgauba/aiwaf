@@ -21,6 +21,35 @@ use wasm_bindgen::prelude::*;
 use web_sys::{Headers, Window};
 mod request_pipeline;
 
+/// Pure Rust receipt engine; the host persists snapshots under a shared lock.
+#[wasm_bindgen]
+pub struct NativeTrainingEvidence {
+    inner: aiwaf_core::training_evidence::ReceiptLedger,
+}
+
+#[wasm_bindgen]
+impl NativeTrainingEvidence {
+    #[wasm_bindgen(constructor)]
+    pub fn new(state: &str) -> Result<NativeTrainingEvidence, JsValue> {
+        Ok(Self { inner: aiwaf_core::training_evidence::ReceiptLedger::from_json(state)
+            .map_err(|e| JsValue::from_str(&e))? })
+    }
+    #[wasm_bindgen(getter)]
+    pub fn had_history(&self) -> bool { self.inner.had_history }
+    pub fn fresh_indices(&mut self, records: &str) -> Result<String, JsValue> {
+        let records = serde_json::from_str(records).map_err(|e| JsValue::from_str(&format!("{e}")))?;
+        let indices = self.inner.observe(records).map_err(|e| JsValue::from_str(&e))?;
+        serde_json::to_string(&indices).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+    pub fn can_block(&self, ip: &str) -> bool { self.inner.can_block(ip) }
+    pub fn committed_state(&self, ip: &str) -> Result<String, JsValue> {
+        self.inner.committed_state(ip).map_err(|e| JsValue::from_str(&e))
+    }
+    pub fn commit(&mut self, ip: &str) -> Result<(), JsValue> {
+        self.inner.commit(ip).map_err(|e| JsValue::from_str(&e))
+    }
+}
+
 /// Explicit stateful request engine. No JavaScript policy fallback.
 #[wasm_bindgen]
 pub struct NativeRequestPipeline {
