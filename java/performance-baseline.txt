@@ -1,4 +1,0 @@
-AIWAF Java 1.3.5 baseline
-Rules: 500
-Iterations: 100000
-Average lookup: 73311.26 ns

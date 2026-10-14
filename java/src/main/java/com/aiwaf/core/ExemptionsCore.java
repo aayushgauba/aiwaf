@@ -12,6 +12,9 @@ public final class ExemptionsCore {
         }
 
         String input = path.trim();
+        if (input.isEmpty()) {
+            return "/";
+        }
         StringBuilder result = new StringBuilder(input.length() + 2);
 
         if (input.charAt(0) != '/') {
