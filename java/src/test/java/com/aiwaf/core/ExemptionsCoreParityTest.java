@@ -8,6 +8,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ExemptionsCoreParityTest {
@@ -52,5 +53,109 @@ class ExemptionsCoreParityTest {
         assertFalse(rule.disables("geo_block"));
         assertEquals("ai_anomaly", ExemptionsCore.normalizeMiddlewareName("AIAnomalyMiddleware"));
         assertEquals("logging", ExemptionsCore.normalizeMiddlewareName("AIWAFLoggingMiddleware"));
+    }
+
+    @Test
+    void normalize_path_handles_edge_cases() {
+        assertEquals("/", ExemptionsCore.normalizePath(null, null));
+        assertEquals("/", ExemptionsCore.normalizePath("   ", null));
+
+        assertEquals("/api/users",
+                ExemptionsCore.normalizePath("API///Users", false));
+
+        assertEquals("/api/users/",
+                ExemptionsCore.normalizePath("  //API///Users//  ", true));
+
+        assertEquals("/api/users",
+                ExemptionsCore.normalizePath("/api/users/", false));
+
+        assertEquals("/api/users/",
+                ExemptionsCore.normalizePath("/api/users", true));
+
+        assertEquals("/",
+                ExemptionsCore.normalizePath("////", false));
+    }
+
+    @Test
+    void normalization_handles_all_characters_removed_by_trim() {
+        for (int code = 0; code <= 0x20; code++) {
+            String control = Character.toString((char) code);
+            for (String path : new String[]{control, " " + control + "\t", control + "API///Users" + control}) {
+                for (Boolean mode : new Boolean[]{null, true, false}) {
+                    assertEquals(originalNormalizePath(path, mode), ExemptionsCore.normalizePath(path, mode),
+                            "Control character " + code + ", mode: " + mode);
+                }
+            }
+        }
+    }
+
+    @Test
+    void control_only_prefixes_preserve_root_rule_and_exemption_behavior() {
+        String control = Character.toString((char) 0);
+        AiwafConfig.PathRule root = new AiwafConfig.PathRule(control, false, 10);
+        AiwafConfig.PathRule api = new AiwafConfig.PathRule("/api", false, 1);
+
+        assertSame(root, ExemptionsCore.getPathRuleForPath("/other", List.of(root, api)));
+        assertSame(api, ExemptionsCore.getPathRuleForPath("/api/users", List.of(root, api)));
+        assertTrue(ExemptionsCore.isPathExempt("/", List.of(control), false, true));
+        assertFalse(ExemptionsCore.isPathExempt("/api", List.of(control), false, true));
+    }
+
+    @Test
+    void optimized_normalization_matches_original() {
+        String[] paths = {
+            "",
+            "/",
+            "////",
+            "api/users",
+            "/api//users",
+            "///API///Users///",
+            "  /api/users  ",
+            "/Admin/Login",
+            "index.html",
+            "/api/v1/users/123",
+            "/a///b///c",
+            " / ",
+            "\t/api//test\n"
+        };
+
+        Boolean[] modes = {null, true, false};
+
+        for (String path : paths) {
+            for (Boolean mode : modes) {
+                String expected = originalNormalizePath(path, mode);
+                String actual = ExemptionsCore.normalizePath(path, mode);
+
+                assertEquals(expected, actual,
+                        "Mismatch for path: " + path + ", mode: " + mode);
+            }
+        }
+    }
+
+    private static String originalNormalizePath(
+            String path, Boolean trailingSlash) {
+
+        if (path == null || path.isBlank()) {
+            return "/";
+        }
+
+        String cleaned = path.trim().replaceAll("/+", "/");
+
+        if (!cleaned.startsWith("/")) {
+            cleaned = "/" + cleaned;
+        }
+
+        if (Boolean.TRUE.equals(trailingSlash)
+                && !cleaned.endsWith("/")) {
+            cleaned = cleaned + "/";
+        }
+
+        if (Boolean.FALSE.equals(trailingSlash)
+                && cleaned.length() > 1
+                && cleaned.endsWith("/")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1);
+        }
+
+        return cleaned.toLowerCase(java.util.Locale.ROOT);
     }
 }
